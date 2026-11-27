@@ -155,7 +155,7 @@ func sameJSONAnswer(t *testing.T, name, got, want string) {
 	}
 }
 
-func countReads(reads []routeRead) (data, narrowed, proofs int) {
+func countRouteReads(reads []routeRead) (data, narrowed, proofs int) {
 	for _, r := range reads {
 		switch {
 		case r.proof:
@@ -183,7 +183,7 @@ func TestServiceNameRoute_CleanWindowIsNarrowed(t *testing.T) {
 	off := serviceNameRouteProxy(t, srv.URL, func(c *Config) { c.ServiceNameStreamRoute = false })
 	for _, q := range []string{`{service_name="svc-a"}`, `{service_name="svc-a"} | json | logfmt | drop __error__, __error_details__`, `{service_name="svc-a", level="info"} |= "x"`} {
 		want := routeQuery(t, off, q, time.Hour, 0, "0", "").Body.String()
-		base, n0, pr0 := countReads(vl.take())
+		base, n0, pr0 := countRouteReads(vl.take())
 		if base == 0 || n0 != 0 || pr0 != 0 {
 			t.Fatalf("%s: route off: %d reads, %d narrowed, %d proofs", q, base, n0, pr0)
 		}
@@ -191,7 +191,7 @@ func TestServiceNameRoute_CleanWindowIsNarrowed(t *testing.T) {
 		sameJSONAnswer(t, q, got, want)
 		// A read the handler makes before it reaches the log read (the parser probe of `| json | logfmt`) is
 		// made as without the route.
-		if d, n, pr := countReads(vl.take()); d != base || n != 1 || pr != 1 {
+		if d, n, pr := countRouteReads(vl.take()); d != base || n != 1 || pr != 1 {
 			t.Errorf("%s: route on, clean: %d reads, %d narrowed, %d proofs; want %d, 1, 1", q, d, n, pr, base)
 		}
 		routeQuery(t, on, q, time.Hour, 0, "0", "")
@@ -218,16 +218,16 @@ func TestServiceNameRoute_ViolationFallsBackAndIsRemembered(t *testing.T) {
 	vl.take()
 	sameJSONAnswer(t, "after a violation", routeQuery(t, on, q, time.Hour, 0, "0", "").Body.String(), want)
 	reads := vl.take()
-	if d, n, pr := countReads(reads); d != 2 || n != 1 || pr != 1 || reads[len(reads)-1].narrowed {
+	if d, n, pr := countRouteReads(reads); d != 2 || n != 1 || pr != 1 || reads[len(reads)-1].narrowed {
 		t.Errorf("violation: %d reads, %d narrowed, %d proofs (%+v); want the narrowed read, the proof and the read without the stream filter last", d, n, pr, reads)
 	}
 	routeQuery(t, on, q, time.Hour, time.Minute, "0", "")
-	if d, n, pr := countReads(vl.take()); d != 1 || n != 0 || pr != 0 {
+	if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 0 || pr != 0 {
 		t.Errorf("after a remembered violation: %d reads, %d narrowed, %d proofs; want 1, 0, 0", d, n, pr)
 	}
 	vl.set(func(v *routeVL) { v.found = false })
 	routeQuery(t, on, q, time.Hour, 0, "2", "")
-	if d, n, pr := countReads(vl.take()); d != 1 || n != 1 || pr != 1 {
+	if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 1 || pr != 1 {
 		t.Errorf("another tenant: %d reads, %d narrowed, %d proofs; want 1, 1, 1", d, n, pr)
 	}
 }
@@ -254,7 +254,7 @@ func TestServiceNameRoute_DoubtKeepsTheDerivedFilter(t *testing.T) {
 	}
 	vl.set(func(v *routeVL) { v.throttleNarrowed = false })
 	routeQuery(t, on, q, time.Hour, 45*time.Second, "0", "")
-	if d, n, pr := countReads(vl.take()); d != 1 || n != 1 || pr != 1 {
+	if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 1 || pr != 1 {
 		t.Fatalf("a throttle is not remembered: %d reads, %d narrowed, %d proofs; want 1, 1, 1", d, n, pr)
 	}
 	vl.set(func(v *routeVL) { v.refuseNarrowed = true })
@@ -263,7 +263,7 @@ func TestServiceNameRoute_DoubtKeepsTheDerivedFilter(t *testing.T) {
 		t.Fatalf("a failed proof is not remembered, a refused narrowing falls back: %+v", reads)
 	}
 	routeQuery(t, on, q, time.Hour, 2*time.Minute, "0", "")
-	if d, n, pr := countReads(vl.take()); d != 1 || n != 0 || pr != 0 {
+	if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 0 || pr != 0 {
 		t.Errorf("after a refused narrowing: %d reads, %d narrowed, %d proofs; want 1, 0, 0", d, n, pr)
 	}
 }
@@ -294,7 +294,7 @@ func TestServiceNameRoute_KeepsTheDerivedFilter(t *testing.T) {
 		{`{job="x"}`, time.Hour, ""},
 	} {
 		routeQuery(t, on, c.query, c.window, 0, "0", c.step)
-		if d, n, pr := countReads(vl.take()); n != 0 || pr != 0 || d == 0 {
+		if d, n, pr := countRouteReads(vl.take()); n != 0 || pr != 0 || d == 0 {
 			t.Errorf("%s over %s: %d reads, %d narrowed, %d proofs; want the reads without the route", c.query, c.window, d, n, pr)
 		}
 	}
@@ -304,7 +304,7 @@ func TestServiceNameRoute_KeepsTheDerivedFilter(t *testing.T) {
 	} {
 		p := serviceNameRouteProxy(t, srv.URL, cfg)
 		routeQuery(t, p, `{service_name="svc-a"}`, time.Hour, 0, "0", "")
-		if d, n, pr := countReads(vl.take()); d != 1 || n != 0 || pr != 0 {
+		if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 0 || pr != 0 {
 			t.Errorf("%s: %d reads, %d narrowed, %d proofs; want 1, 0, 0", name, d, n, pr)
 		}
 	}
@@ -331,7 +331,7 @@ func TestServiceNameRoute_SplitWindowsShareTheirProofs(t *testing.T) {
 	want := routeQuery(t, off, q, 6*time.Hour, 0, "0", "").Body.String()
 	base := len(vl.take())
 	sameJSONAnswer(t, "split", routeQuery(t, on, q, 6*time.Hour, 0, "0", "").Body.String(), want)
-	d, n, pr := countReads(vl.take())
+	d, n, pr := countRouteReads(vl.take())
 	if d != base || n != d || pr == 0 || pr > 2 {
 		t.Errorf("split windows: %d reads (%d without the route), %d narrowed, %d proofs; want every read narrowed and 1 or 2 proofs", d, base, n, pr)
 	}
@@ -409,7 +409,7 @@ func TestServiceNameRoute_ViolationReachesPeers(t *testing.T) {
 	a, b := replicas[0], replicas[1]
 	q := `{service_name="svc-a"}`
 	routeQuery(t, a, q, time.Hour, 0, "0", "")
-	if d, n, pr := countReads(vl.take()); d != 2 || n != 1 || pr != 1 {
+	if d, n, pr := countRouteReads(vl.take()); d != 2 || n != 1 || pr != 1 {
 		t.Fatalf("replica a: %d reads, %d narrowed, %d proofs; want the narrowed read, the proof and the read without the filter", d, n, pr)
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -420,7 +420,7 @@ func TestServiceNameRoute_ViolationReachesPeers(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	routeQuery(t, b, q, time.Hour, time.Minute, "0", "")
-	if d, n, pr := countReads(vl.take()); d != 1 || n != 0 || pr != 0 {
+	if d, n, pr := countRouteReads(vl.take()); d != 1 || n != 0 || pr != 0 {
 		t.Errorf("replica b after a's violation: %d reads, %d narrowed, %d proofs; want 1, 0, 0", d, n, pr)
 	}
 	b.receiveEverywhere(serviceNameRouteSyncKeyPrefix+"x", []byte(`{"k":"response:anything","x":9999999999999}`), time.Hour)

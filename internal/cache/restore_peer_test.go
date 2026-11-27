@@ -216,6 +216,21 @@ func TestPeerRestore_NeverOverwritesFresherLocalData(t *testing.T) {
 	if v, _, ok := inMemory(nd.c, keys[3]); !ok || string(v) != "fresher" {
 		t.Fatalf("memory holds %q", v)
 	}
+	// The superseded entry is not in the restored counts.
+	var restoredBytes int64
+	for i, key := range keys {
+		if i == 3 {
+			continue
+		}
+		v, _, ok := inMemory(nd.c, key)
+		if !ok {
+			t.Fatalf("%s is not in memory", key)
+		}
+		restoredBytes += int64(entrySize(key, v))
+	}
+	if p := nd.c.HandoverStats().PeerRestore; p.RestoredEntries != 49 || p.RestoredBytes != restoredBytes {
+		t.Fatalf("restored %d entries, %d bytes, want 49 and %d", p.RestoredEntries, p.RestoredBytes, restoredBytes)
+	}
 	nd.dc.Flush()
 	if v, ok := nd.dc.Get(keys[3]); !ok || string(v) != "fresher" {
 		t.Fatalf("disk holds %q", v)

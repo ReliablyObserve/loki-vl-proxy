@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 115 items are locked; 5 carry an effort exception.
+30 of 118 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -223,6 +223,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `drilldown/patterns-full-range-counts` | 2 × 3 ranges | 6 same | worst 1.31s / 0.11s (1h) | 0.28s / 0.28s | differs; 3 slower than Loki cold | not locked |
 | `drilldown/patterns-one-series-per-level` | 2 × 3 ranges | 6 same | worst 1.31s / 0.11s (1h) | 0.28s / 0.28s | differs; 3 slower than Loki cold | not locked |
 | `explore-logs-volume-json` | 9 × 5 ranges | 32 same | worst 6.83s / 0.02s (24h) | 4.79s / 0.10s | same; 2 slower than Loki cold | not locked |
+| `field-mapping-label-names` | — | not measured | | | | not locked |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 32 same | worst 0.46s / 0.00s (24h) | 0.09s † / 0.09s | same | locked 2026-10-27 |
 | `limits/drilldown-breakdown-exact` | 5 × 5 ranges | 23 same | worst 1.32s / 0.48s (24h) | 11.49s / 0.60s | differs | not locked |
 | `limits/metadata-scan-adaptive-limit` | 4 × 4 ranges | 16 same | worst 0.03s / 0.05s (24h) | 0.09s † / 0.06s | same | locked 2026-10-27 |
@@ -245,6 +246,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `parser-error-and-label-collision` | 44 × 6 ranges | 2 faster, 2 fixed, 131 same | worst 6.83s / 0.02s (24h) | 4.79s / 0.10s | differs; 10 slower than Loki cold | not locked |
 | `parser-json` | 10 × 6 ranges | 37 same | worst 1.75s / 0.01s (24h) | 4.63s / 0.05s | differs; 1 slower than Loki cold | not locked |
 | `parser-logfmt` | 7 × 5 ranges | 23 same | worst 4.41s / 0.74s (24h) | 6.94s / 0.65s | same; 2 slower than Loki cold | not locked |
+| `parser-unpack` | — | not measured | | | | not locked |
 | `profiles/dotted-name-parse-error` | 2 × 4 ranges | 8 same | worst 0.00s (**400**) / 0.00s (**400**) (1h) | 0.00s / 0.00s | same | not locked |
 | `profiles/label-filter-on-line-field` | 3 × 4 ranges | 12 same | worst 0.12s / 0.01s (24h) | 3.57s / 0.04s | same | locked 2026-10-27 |
 | `profiles/label-filter-regexp-anchoring` | 2 × 2 ranges | 4 same | worst 0.26s / 0.01s (6h) | 0.26s / 0.02s | same | not locked |
@@ -309,6 +311,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/series-level-aggregation-bounded-memory` | 5 × 4 ranges | 7 same | worst 4.29s / 0.03s (24h-20s) | 12.04s / 0.10s | differs | not locked |
 | `semantics/stream-label-shadowed-by-ingest-json-key` | 4 × 3 ranges | 12 same | worst 0.82s / 0.51s (24h) | 0.84s / 0.26s | same | not locked |
 | `semantics/sub-second-step-grid` | 3 × 1 ranges | 3 same | worst 0.03s / 0.01s (5m-200ms) | 0.03s / 0.02s | same | not locked |
+| `semantics/translator-writes-unpack-as-unpack-json` | — | not measured | | | | not locked |
 | `semantics/two-parsers-keep-one` | — | not measured | | | | not locked |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 1.82s / 0.01s (24h) | 6.51s / 0.07s | differs; 2 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.26s / 0.02s (24h) | 0.22s / 0.01s | same | not locked; exception |

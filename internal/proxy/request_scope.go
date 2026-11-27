@@ -113,6 +113,15 @@ func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 		// identity of such a proxy is its own (json_line_keys.go).
 		parts = append(parts, "json-line-fields-as-line-keys")
 	}
+	if lt := routing.translator; lt.listsAliases() {
+		// The alias and both modes list other names than the default, with the
+		// same answer names between them: their cache identities are their own.
+		// The default mode keeps the identities of builds without the setting.
+		// names-v2: the metadata names of the both mode (each metadata field
+		// mode's own names and the aliases) differ from earlier builds of these
+		// modes, so they carry the metadata field mode too.
+		parts = append(parts, "field-mapping-label-mode", lt.labelMode, lt.listing, "names-v2", p.metadataFieldMode)
+	}
 	data, _ := json.Marshal(parts)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

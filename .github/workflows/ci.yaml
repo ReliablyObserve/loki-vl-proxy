@@ -1222,7 +1222,7 @@ jobs:
             pattern: '^(TestSetup_IngestLogs|TestErrorFlightsLive_.*)$'
             outage: "1"
           - name: semantics
-            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki)$'
+            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrix.*|TestQuerySemanticsOperationsInventory|TestOperationsMatrix_.*|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestCompat_LabelFilterExpressionSyntax|TestCompat_RepeatedLabelFiltersApplyAllLikeLoki|TestCompat_IPLabelFilterEmbeddedAddressLikeLoki|TestCompat_KeywordLabelNamesLikeLoki|TestCompat_BinaryOperandLiterals|TestCompat_SelectorValueMustBeString|TestCompat_MarkerTextInStrings|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields|TestCompat_ReservedFieldNameCaseLikeLoki|TestCompat_ReservedFieldLabelsLikeLoki|TestCompat_UnpackSumsLikeLoki)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -1365,10 +1365,10 @@ jobs:
           for rf in 1 2; do
             export FLEET_PROXY_EXTRA_ARG="-peer-replication-factor=$rf"
             export FLEET_PROOF_REPORT="$RUNNER_TEMP/fleet-peer-cache-proof-rf$rf.json"
-            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover down -v
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover --profile labelmode down -v
             docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
-            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers|TestFleet_VLRefusalHeldAcrossReplicas|TestFleet_RestartHandoverKeepsTheResponseCacheWarm|TestFleet_ServiceNameRouteViolationReachesPeers|TestFleet_PeerRestoreRefillsAWipedDisk)$' ./test/e2e-fleet/
-            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover down -v
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers|TestFleet_PushesBufferedForAPausedReplicaReachItWhenItAnswers|TestFleet_VLRefusalHeldAcrossReplicas|TestFleet_RestartHandoverKeepsTheResponseCacheWarm|TestFleet_FieldMappingLabelModesShareOnlyTheirOwnAnswers|TestFleet_PeerRestoreRefillsAWipedDisk|TestFleet_ServiceNameRouteViolationReachesPeers)$' ./test/e2e-fleet/
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge --profile handover --profile labelmode down -v
           done
 
       - name: Record fleet evidence source
@@ -1398,12 +1398,12 @@ jobs:
       - name: Fleet logs on failure
         if: failure()
         working-directory: test/e2e-fleet
-        run: docker compose --profile edge --profile handover logs --no-color --tail=300
+        run: docker compose --profile edge --profile handover --profile labelmode logs --no-color --tail=300
 
       - name: Tear down fleet
         if: always()
         working-directory: test/e2e-fleet
-        run: docker compose --profile edge --profile handover down -v
+        run: docker compose --profile edge --profile handover --profile labelmode down -v
 
   e2e-ui:
     runs-on: ubuntu-latest

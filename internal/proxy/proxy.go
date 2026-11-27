@@ -479,8 +479,11 @@ type Config struct {
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
-	FieldMappings     []FieldMapping    // custom VL↔Loki field name mappings
-	TranslateOTel     *bool
+	// FieldMappingLabelMode selects the names of mapped fields that label
+	// listings show: original (default, also empty), alias or both.
+	FieldMappingLabelMode FieldMappingLabelMode
+	FieldMappings         []FieldMapping // custom VL↔Loki field name mappings
+	TranslateOTel         *bool
 
 	// Stream optimization
 	StreamFields []string // VL _stream_fields labels — use native stream selectors for these (faster)
@@ -919,6 +922,7 @@ type Proxy struct {
 	metadataMaxStaleness                  time.Duration         // -metadata-max-staleness
 	metadataEdgeRefreshBudget             time.Duration         // -metadata-edge-refresh-budget
 	declaredLabelFields                   []string              // configured VL-native label fields (stream_fields + extras)
+	declaredLabelNames                    []string              // the same declarations as the operator spelled them
 	peerCache                             *cache.PeerCache      // L3 fleet peer cache
 	peerAuthToken                         string
 	peerInsecureIPAllowlist               bool // gate the legacy IP-allowlist fallback (default false: token required)
@@ -1558,6 +1562,13 @@ func New(cfg Config) (*Proxy, error) {
 	if cfg.TranslateOTel != nil {
 		labelTranslator.SetTranslateOTel(*cfg.TranslateOTel)
 	}
+	labelMode, err := ParseFieldMappingLabelMode(string(cfg.FieldMappingLabelMode))
+	if err != nil {
+		return nil, err
+	}
+	labelTranslator.SetFieldMappingLabelMode(labelMode)
+	// After the mode: a declared base name of a mapped field is a query name of
+	// that field in the alias and both modes.
 	declaredLabelFields := buildDeclaredLabelFields(cfg.StreamFields, cfg.ExtraLabelFields, labelTranslator)
 	patternsEnabled := true
 	if cfg.PatternsEnabled != nil {
@@ -1687,6 +1698,7 @@ func New(cfg Config) (*Proxy, error) {
 		labelBrowse:                           labelBrowse,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
 		declaredLabelFields:                   declaredLabelFields,
+		declaredLabelNames:                    declaredLabelNamesOf(cfg.StreamFields, cfg.ExtraLabelFields),
 		peerCache:                             cfg.PeerCache,
 		peerAuthToken:                         cfg.PeerAuthToken,
 		peerInsecureIPAllowlist:               cfg.PeerInsecureIPAllowlist,
@@ -2289,8 +2301,10 @@ func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	p.configMu.Lock()
 	prevTranslateOTel := p.labelTranslator.translateOTel
+	prevLabelMode := p.labelTranslator.labelMode
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
 	p.labelTranslator.SetTranslateOTel(prevTranslateOTel)
+	p.labelTranslator.SetFieldMappingLabelMode(prevLabelMode)
 	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
@@ -2324,8 +2338,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.queryStatsLayer(endpoint, p.lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.alignToStepMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h)))))))), p.rejectAdmission)))))
+								p.bothNamesLayer(endpoint, p.compatCacheMiddleware(endpoint, route,
+									p.requestTimeBounds(endpoint, h))))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -3503,7 +3517,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = checked
 	}
 
-	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+	// An instant query carries time, not start and end: the probe reads the
+	// window the query evaluates at that time.
+	logqlQuery = p.preferWorkingParserAt(r.Context(), logqlQuery, r.FormValue("time"))
 	unwrapLookup.setQuery(logqlQuery)
 
 	if spec, ok := p.bareParserMetricSpec(logqlQuery); ok {

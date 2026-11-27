@@ -17,6 +17,7 @@ smoke	internal/clientauth	FuzzParseUsersFile	12s	-	users file of caller authenti
 smoke	internal/clientauth	FuzzParseAuthorization	12s	-	Authorization header parsing of caller authentication
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
+smoke	internal/proxy	FuzzFieldMappingLabelMode	12s	-	field-mapping label modes keep query names and list only names of their field
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
 smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
@@ -40,6 +41,7 @@ smoke	internal/proxy	FuzzMetadataValidationKeepsTheRouteRules	12s	-	metadata que
 smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step
 smoke	internal/proxy	FuzzNormalizeMetadataPairs	12s	-	normalize metadata pairs
 smoke	internal/proxy	FuzzCombineBinaryMetricResultsScalarPath	12s	-	combine binary metric results scalar path
+smoke	internal/proxy	FuzzInstantParserProbeWindow	12s	-	instant parser probe window from the parsed query
 smoke	internal/proxy	FuzzParseOriginalRangeMetricSpec	12s	-	parse original range metric spec
 smoke	internal/proxy	FuzzParseLegacyRulesPath	20s	-	parse legacy rules path
 smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
@@ -174,6 +176,7 @@ smoke	internal/proxy	FuzzLokiRunLinesEstimate	12s	-	query stats limit-filled log
 smoke	internal/proxy	FuzzEntryPieces	12s	-	query stats pieces holding a returned log entry
 smoke	internal/logql	FuzzMayHaveNonFilterStage	12s	-	the stage screen the lowering flip asks never misses a parser stage and never panics
 smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
+smoke	internal/proxy	FuzzUnpackLineError	12s	-	the proxy reads a line an unpack parses without failing: an empty line and a JSON object set no error, a line with no opening brace Loki's not-an-object error
 smoke	internal/queryplan/lower	FuzzUnpackLowering	12s	-	an unpack under a range aggregation lowers to the query the string translator writes only where the result reads neither its labels nor its line
 smoke	internal/queryplan/lower	FuzzLabelFilterAfterParserLowering	12s	-	label filters after a json or logfmt parser lower to the query the string translator writes, byte for byte
 smoke	internal/queryplan/lower	FuzzNumericEqualityLowering	12s	-	numeric, duration and bytes equality after a json or logfmt parser lower to a numeric comparison on any literal, or leave it to the string translator

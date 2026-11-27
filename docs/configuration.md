@@ -78,6 +78,7 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-patterns-startup-stale-threshold` | — | `60s` | Freshness threshold used by startup warm logic/peer snapshot cache |
 | `-patterns-startup-peer-warm-timeout` | — | `5s` | Startup timeout for peer warm merge of pattern snapshots |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
+| `-field-mapping-label-mode` | `FIELD_MAPPING_LABEL_MODE` | (empty) | Which names of a mapped field answers show: unset (one name per field), `original`, `alias` or `both`. See [Field mapping label modes](#field-mapping-label-modes) |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
 | `-service-name-stream-label-only` | — | `false` | Declare that VictoriaLogs stores `service_name` only as a stream label (or not at all) and `service.name` never as a regular field of a row whose stream has a `service.name` label. A positive `{service_name="x"}` matcher then also sends the stream filter `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` beside the derived `service_name` filter, so VictoriaLogs reads only the streams that can hold that service (with `service.name` as an OpenTelemetry stream field, that service's streams) instead of every stream in the window. Answers are unchanged while the declaration holds; where it does not, rows can be missed. See [service_name stream filter](#service_name-stream-filter) for the checks to run before turning it on |
 | `-service-name-stream-route` | — | `false` | Off by default; opt in only for a large, mostly idle VictoriaLogs: it lowered throughput under load (see [service_name stream filter](#service_name-stream-filter)). Read a log query of one service (`{service_name="x"}`, a positive matcher with a value) from the streams that can hold it, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out; otherwise the read is sent again with the derived filter alone. Answers are those of the derived filter. One more VictoriaLogs read per log read, which reads the other streams: log reads get shorter, VictoriaLogs' work does not drop. See [service_name stream filter](#service_name-stream-filter) |
@@ -100,6 +101,81 @@ Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraAr
 ./loki-vl-proxy -label-style=underscores \
   -field-mapping='[{"vl_field":"my_trace_id","loki_label":"traceID"}]'
 ```
+
+A field can have more than one mapping. Queries and `/loki/api/v1/label/{name}/values` accept every `loki_label`.
+
+### Field mapping label modes
+
+`-field-mapping-label-mode` (env `FIELD_MAPPING_LABEL_MODE`, Helm `extraArgs.field-mapping-label-mode`) selects the names a mapped field has in answers: the label list (`/loki/api/v1/labels`, `/loki/api/v1/detected_labels`, the volume `targetLabels`), stream labels of log lines (query, tail) and series labels (`/loki/api/v1/series`, metric results), structured metadata, and detected fields (`/loki/api/v1/detected_fields` and `/detected_field/<name>/values`). In every mode, queries, filters, groupings and value lookups accept every name a mapping gives a field.
+
+Two terms:
+
+- the **own name** of a field is its stored name formatted by `-label-style` for labels (`k8s.namespace.name` is `k8s_namespace_name` with `underscores`, itself with `passthrough`) and by `-metadata-field-mode` for structured metadata and detected fields (`native`: the stored name; `translated`: the `-label-style` name; `hybrid`: both);
+- its **aliases** are the `loki_label`s of its mappings that differ from the `-label-style` name, in `-field-mapping` order. A `loki_label` given to two fields belongs to the later mapping only.
+
+| Mode | A mapped field shows |
+|---|---|
+| unset (default) | one name in every answer: the `loki_label` of the field's last mapping |
+| `original` | its own name only, no alias |
+| `alias` | its aliases only, in every `-metadata-field-mode`; its own name when it has no alias |
+| `both` | its own names and its aliases; a name that is the same string under both (`passthrough`) once |
+
+A field without a mapping shows the same names in every mode. Stream and series labels carry one name per field in unset, `original` and `alias` (in `alias` the last alias); in `both` they carry every listed name (the aliases and the `-label-style` name) with the field's value.
+
+For `k8s.pod.name` (a stream field) mapped to `pod`, and `k8s.namespace.name` (structured metadata) mapped to `namespace`:
+
+| `-label-style` | mode | `-metadata-field-mode` | label list, stream and series labels (`k8s.pod.name`, a stream field mapped to `pod`) | structured metadata and detected fields (`k8s.namespace.name`, mapped to `namespace`) |
+|---|---|---|---|---|
+| `underscores` | unset | `translated` | `pod` | `namespace` |
+| `underscores` | unset | `native` | `pod` | `k8s.namespace.name` |
+| `underscores` | unset | `hybrid` | `pod` | `k8s.namespace.name`, `namespace` |
+| `underscores` | `original` | `translated` | `k8s_pod_name` | `k8s_namespace_name` |
+| `underscores` | `original` | `native` | `k8s_pod_name` | `k8s.namespace.name` |
+| `underscores` | `original` | `hybrid` | `k8s_pod_name` | `k8s.namespace.name`, `k8s_namespace_name` |
+| `underscores` | `alias` | `translated` | `pod` | `namespace` |
+| `underscores` | `alias` | `native` | `pod` | `namespace` |
+| `underscores` | `alias` | `hybrid` | `pod` | `namespace` |
+| `underscores` | `both` | `translated` | `k8s_pod_name`, `pod` | `k8s_namespace_name`, `namespace` |
+| `underscores` | `both` | `native` | `k8s_pod_name`, `pod` | `k8s.namespace.name`, `namespace` |
+| `underscores` | `both` | `hybrid` | `k8s_pod_name`, `pod` | `k8s.namespace.name`, `k8s_namespace_name`, `namespace` |
+| `passthrough` | unset | `translated` | `pod` | `namespace` |
+| `passthrough` | unset | `native` | `pod` | `k8s.namespace.name` |
+| `passthrough` | unset | `hybrid` | `pod` | `k8s.namespace.name`, `namespace` |
+| `passthrough` | `original` | `translated` | `k8s.pod.name` | `k8s.namespace.name` |
+| `passthrough` | `original` | `native` | `k8s.pod.name` | `k8s.namespace.name` |
+| `passthrough` | `original` | `hybrid` | `k8s.pod.name` | `k8s.namespace.name` |
+| `passthrough` | `alias` | `translated` | `pod` | `namespace` |
+| `passthrough` | `alias` | `native` | `pod` | `namespace` |
+| `passthrough` | `alias` | `hybrid` | `pod` | `namespace` |
+| `passthrough` | `both` | `translated` | `k8s.pod.name`, `pod` | `k8s.namespace.name`, `namespace` |
+| `passthrough` | `both` | `native` | `k8s.pod.name`, `pod` | `k8s.namespace.name`, `namespace` |
+| `passthrough` | `both` | `hybrid` | `k8s.pod.name`, `pod` | `k8s.namespace.name`, `namespace` |
+
+Without the flag, detected fields leave out a structured metadata field named `namespace`, `cluster` or `app`, as before; the other modes list an alias of that name. The full matrix (two aliases of a field, unmapped fields, every surface) is `internal/proxy/testdata/field_mapping_name_matrix.golden`, held by `TestFieldMappingLabelMode_NameMatrix`, which also asks every shown name back through label values, volume target labels, detected field values, a label filter and instant and range groupings.
+
+```bash
+./loki-vl-proxy -field-mapping-label-mode=both \
+  -field-mapping='[{"vl_field":"k8s.namespace.name","loki_label":"namespace"}]'
+```
+
+In `original`, `alias` and `both`:
+
+- The `-label-style` name of a mapped field is also a query name for it (`{custom_team="core"}` for `custom.team` mapped to `team`), unless a mapping gives that name to another field. A separate stored field of that name (`custom_team` beside `custom.team`) is then no longer queried by it.
+- A grouping by any name of a mapped field answers under that name (`sum by (node) (...)` for `k8s.node.name` mapped to `node` and `nodename` answers `{node=...}`).
+- `/labels` lists the names of a field only when VictoriaLogs reports the field in the window. Declared names (`-stream-fields`, `-extra-label-fields`) are listed whenever the window has data: in `alias` and `both` a declared mapping name as declared (a declared `namespace` stays `namespace`), in `original` under the field's own name, and another declared field that VictoriaLogs does not report under its own name. A field that is not a VictoriaLogs stream field is never reported, so declare an alias to list it.
+- `detected_labels` shows each listed name with the field's cardinality. A volume request answers under whichever name `targetLabels` (or the selector) asks for, and `aggregateBy=labels` without `targetLabels` counts every listed name.
+- When a name of a mapped field is also the name of a stored field, listings hold it once, queries for it read the mapped field, and an entry that holds both fields shows it once in structured metadata, with the mapped field's value. Give aliases names no stored field uses.
+- In `alias` and `both`, a key a `| json` or `| logfmt` stage extracts under the name of an alias is read as Loki reads a parsed label that collides with a stream label. Where the entry's stream holds the alias's field, the parsed value is `<alias>_extracted` (in `detected_fields`, `/detected_field/<alias>_extracted/values`, log answers, label filters and groupings) and the alias itself is the stream label; where the stream lacks the field, the parsed key is the alias (`sum by (pod) (count_over_time({…} | logfmt [5m]))` groups such entries by their parsed `pod`). A stored field whose alias a stream carries is not listed by `detected_fields`.
+
+In `both`, the names of stream and series labels are added as the answer leaves the query, query_range and series routes (tail adds them to each line), after every evaluation step, so groupings, `without`, binary matching and `label_replace` run on one name per field, as in `alias`: series counts, values and matching are the alias mode's. A grouped answer keeps only the labels it names: a field that `by()`, `on()`, `group_left()` or `group_right()` names gains no other name, a name a `without()` lists is never added, and a label an answer already carries (a `label_replace` target) keeps its value. Effects to expect when switching a deployment to `both`:
+
+- ungrouped metric results (and alert rules over them) carry one more label per name of a mapped stream field, so an alert keyed on its labels can fire once more as a new series;
+- the new names start with a cold cache: the mode has its own cache entries;
+- a `sum without (k8s_node_name)` keeps the other names of the field (`nodename`, `node`), as a Loki that stored both names would;
+- a key a `| json` or `| logfmt` stage extracts under the `-label-style` name of a mapped stream field (`k8s_pod_name=x` in the line of a stream holding `k8s.pod.name`) keeps that name with the parsed value, and that line gets no added `k8s_pod_name` stream label; a Loki that stored both names answers `k8s_pod_name_extracted` beside the stream label. The `_extracted` rules apply to aliases only;
+- answers grow by the added labels, and the route reads the whole JSON answer and writes it again once (no streaming in this mode; a cached answer is rewritten on each hit).
+
+The mode changes no VictoriaLogs request count. Replicas in `original`, `alias` or `both` keep their own cache entries (memory, disk and peers), which also carry the `-metadata-field-mode`; replicas that leave the flag unset share them with builds that predate the flag.
 
 ### Custom Drilldown Patterns
 

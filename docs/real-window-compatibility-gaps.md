@@ -63,7 +63,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **28 of 570** pairs are slower (5%): log queries **0 of 79**, Drilldown and Explore pages **9 of 118**, metric queries **16 of 366**.
 - Between 1× and 2× Loki: **22** rows on the first request, **2** on a repeat; above 2× Loki: **4** on the first request and **0** on a repeat (the 2026-11-23 distribution).
-- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 30 of 115 covered registry items are locked at their bound (29 at 2×, 1 at 1×).
+- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 30 of 118 covered registry items are locked at their bound (29 at 2×, 1 at 1×).
 - In the run shown, **2** of those rows measured above 2× Loki and **1** within 2×.
 - Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.51 s** against **0.18 s**; `LS8 json count by level_extracted, collision` over 1h, **0.10 s** against **0.04 s**.
 - Answers: **40 of 785** pairs return a different result from Loki, and **15** could not be compared.
@@ -154,8 +154,8 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 14 of 25 |
 | Behaviour and feature items | 11 proven, 27 partial, 3 gaps |
-| Known differences from Loki (ranked) | **229**: 201 open, 16 documented, 7 owner-kept, 5 upstream |
-| Open differences visible in Grafana (registry impact) | **133 of 201**: 113 Explore, 18 Logs Drilldown, 2 Grafana datasource; 21 API only, 47 edge cases |
+| Known differences from Loki (ranked) | **230**: 202 open, 16 documented, 7 owner-kept, 5 upstream |
+| Open differences visible in Grafana (registry impact) | **133 of 202**: 113 Explore, 18 Logs Drilldown, 2 Grafana datasource; 21 API only, 48 edge cases |
 
 **Readiness by client**
 

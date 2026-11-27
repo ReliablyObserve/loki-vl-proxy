@@ -552,7 +552,10 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	// detected_level is derived per sampled line; no stored column holds it.
 	derivedLevel := fieldName == detectedLevelLabel
 	nativeField, nativeOK := "", false
-	if !derivedLevel {
+	// An alias (-field-mapping-label-mode alias and both) is a stream label where
+	// the stream holds its field and a parsed label where it does not: the field's
+	// values are the parsed ones the scan reads, not the stored field's.
+	if !derivedLevel && !p.labelTranslator.isAliasLabel(fieldName) {
 		var resolveErr error
 		nativeField, nativeOK, resolveErr = p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName)
 		// Naming the stored column is a shortcut to the same values the scan below reads: a failed lookup sends
