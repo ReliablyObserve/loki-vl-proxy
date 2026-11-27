@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 27 partial, 3 gaps, 0 waived, 17 with no state recorded
+- Behaviour and feature items: **11 proven**, 27 partial, 3 gaps, 0 waived, 18 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -84,6 +84,7 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 5 | — |
 | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 12 | — |
 | `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | — | 0 / 0 | 5 | — |
+| `field-mapping-label-names` — A mapped field has one name in answers, and the operator chooses the names the label pickers list | — | 1 / 1 | 6 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 5 | — |

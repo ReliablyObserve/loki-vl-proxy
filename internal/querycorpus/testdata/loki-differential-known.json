@@ -638,6 +638,13 @@
     },
     "q": "{probe=\"anchor<ts>\"} | json | svc=~\"api|api-gateway\""
   },
+  "q-b58432c224ed": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{service_name=\"cache-redis\"} | logfmt | level_extracted=~\"err.*\""
+  },
   "q-b6872f5bc067": {
     "classes": {
       "categorized: keeps a line Loki drops": "semantics/stream-label-shadowed-after-json-parser",

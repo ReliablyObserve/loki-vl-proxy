@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `/labels` can list a field-mapping alias that the field's later mapping hid (#1762): set `-field-mapping-label-mode` to `alias` or `both`. In those modes a `-extra-label-fields` or `-stream-fields` entry that is a mapping's `loki_label` is listed as declared whenever the window has data, instead of being merged into the mapped field. In those modes a key a `| json` or `| logfmt` stage extracts under the name of an alias answers as Loki answers a parsed label that collides with a stream label: `<alias>_extracted` in `detected_fields`, its values, log answers, label filters and groupings where the entry's stream holds the alias's field, the alias itself (the parsed key) where it does not; the stored field of an alias is no detected field. Checked against Loki 3.7.10 holding the same lines under the pre-migration names (`TestCompat_FieldMappingAliasCollisionsMatchLoki`).
+
+### Added
+
+- `-field-mapping-label-mode` (env `FIELD_MAPPING_LABEL_MODE`, Helm `extraArgs.field-mapping-label-mode`) selects the names of `-field-mapping` fields that `/labels`, `detected_labels` and the volume `targetLabels` show. `original`, the default, is the current behaviour: one name per field, the `loki_label` of its last mapping. `alias` lists every alias of a field (the `loki_label`s that differ from the name `-label-style` gives the field), or that base name when there is none; `both` lists the aliases and the base name. In `alias` and `both`, stream and series labels carry one name per field, the last alias in `-field-mapping`; queries and `/label/{name}/values` accept every name, the base name of a mapped field included; `/labels` adds the aliases of a field only when VictoriaLogs reports the field in the window (declared names are listed whenever the window has data); and a volume request answers under whichever name of a mapping it asks for. The listing modes make the same VictoriaLogs calls as the default and keep their own cache entries on every tier.
+
 ## [2.375.0] - 2026-11-27
 
 ### Added
