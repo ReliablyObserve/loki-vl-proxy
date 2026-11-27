@@ -41,9 +41,9 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 		labels []string
 		answer string
 	}{
-		proxy.FieldMappingLabelModeOriginal: {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
-		proxy.FieldMappingLabelModeAlias:    {[]string{"namespace", "service_name"}, "namespace"},
-		proxy.FieldMappingLabelModeBoth:     {[]string{"k8s_namespace_name", "namespace", "service_name"}, "namespace"},
+		proxy.FieldMappingLabelModeUnset: {[]string{"k8s_namespace_name", "service_name"}, "k8s_namespace_name"},
+		proxy.FieldMappingLabelModeAlias: {[]string{"namespace", "service_name"}, "namespace"},
+		proxy.FieldMappingLabelModeBoth:  {[]string{"k8s_namespace_name", "namespace", "service_name"}, "namespace"},
 	} {
 		t.Run(string(mode), func(t *testing.T) {
 			server := labelModeServer(t, func(cfg *proxy.Config) {
@@ -129,7 +129,7 @@ func TestCompat_FieldMappingLabelModes(t *testing.T) {
 						t.Errorf("stream %v carries a second name of the field", stream)
 					}
 				}
-				if mode == proxy.FieldMappingLabelModeOriginal && name != want.answer {
+				if mode == proxy.FieldMappingLabelModeUnset && name != want.answer {
 					continue // docs/KNOWN_ISSUES.md: volume by another mapping name
 				}
 				volume := get("/loki/api/v1/index/volume?query=" + selector + "&targetLabels=" + name + "&" + window)

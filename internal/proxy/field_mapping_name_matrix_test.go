@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// The name matrix: every -label-style x -field-mapping-label-mode x
+// The name matrix: every -label-style x -field-mapping-label-mode (unset too) x
 // -metadata-field-mode on every surface that names a field, for a stream field
 // with one alias (k8s.pod.name: pod), a stream field with two (k8s.node.name:
 // node, nodename), a structured metadata field with one alias
@@ -216,7 +216,7 @@ func nameMatrixShow(t testing.TB, style LabelStyle, mode FieldMappingLabelMode, 
 		}
 		// Without the flag an instant grouping by another name of a mapped field
 		// answers under the field's answer name, as on main.
-		if mode == FieldMappingLabelModeOriginal {
+		if mode == FieldMappingLabelModeUnset {
 			continue
 		}
 		q := fmt.Sprintf(`sum by (%s) (count_over_time({pod="api-1"}[5m]))`, name)
@@ -280,9 +280,13 @@ func TestFieldMappingLabelMode_NameMatrix(t *testing.T) {
 	b.WriteString("# stream: service.name=api (unmapped), k8s.pod.name=api-1 (pod), k8s.node.name=node-a (node, nodename)\n")
 	b.WriteString("# structured metadata: k8s.namespace.name=prod (namespace), custom.team=core (team, squad), host.name=host-a (unmapped)\n")
 	for _, style := range []LabelStyle{LabelStyleUnderscores, LabelStylePassthrough} {
-		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeUnset, FieldMappingLabelModeOriginal, FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 			for _, metadata := range []MetadataFieldMode{MetadataFieldModeTranslated, MetadataFieldModeNative, MetadataFieldModeHybrid} {
-				name := string(style) + "/" + string(mode) + "/" + string(metadata)
+				modeName := string(mode)
+				if mode == FieldMappingLabelModeUnset {
+					modeName = "unset"
+				}
+				name := string(style) + "/" + modeName + "/" + string(metadata)
 				t.Run(name, func(t *testing.T) {
 					row := nameMatrixShow(t, style, mode, metadata)
 					fmt.Fprintf(&b, "\n## %s\n", name)
