@@ -461,8 +461,9 @@ def stitched_reference_problems(ref, shape, query, secs, step, end, loki_url):
         wanted = perf_matrix.request_url(loki_url, shape, query_text, stop - start, step, stop)
         expected = perf_matrix.urllib.parse.urlsplit(wanted)
         projected = report.correctness_cache_projection(receipt.get("cache_raw"))
+        endpoint = answers.source_endpoint(wanted)
         return (url.scheme in ("http", "https") and url.netloc
-                and answers.source_endpoint(receipt.get("url")) == answers.source_endpoint(wanted) is not None
+                and endpoint is not None and answers.source_endpoint(receipt.get("url")) == endpoint
                 and (url.path, url.query) == (expected.path, expected.query)
                 and receipt.get("status") == 200 and receipt.get("answer_proof") == "answer" and not receipt.get("warnings")
                 and type(receipt.get("response_bytes")) is int and 0 < receipt["response_bytes"] <= perf_matrix.CORRECTNESS_BODY_CAP
