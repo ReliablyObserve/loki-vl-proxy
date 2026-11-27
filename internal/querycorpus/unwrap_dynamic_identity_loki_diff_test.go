@@ -38,7 +38,7 @@ const dynamicIdentityAnswersPath = "testdata/unwrap-dynamic-identity-loki-diff.j
 // dynamicIdentityFuncs are the functions taken per series that an outer aggregation folds.
 var dynamicIdentityFuncs = []string{
 	"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "quantile_over_time",
-	"rate_counter",
+	"rate_counter", "first_over_time", "last_over_time",
 }
 
 // dynamicIdentityShapes are the query shapes, %s the function call's head.

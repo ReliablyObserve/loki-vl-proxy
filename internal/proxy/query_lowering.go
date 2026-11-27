@@ -461,7 +461,7 @@ func dynamicIdentityOp(op string) bool {
 }
 
 // dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
-var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "first_over_time", "last_over_time"}
 
 // misreadLeaf is the kinds of the values of the leaves of e that misreadFilterValue names.
 func misreadLeaf(e *logqlpkg.LabelFilterExpr) misreadKind {
