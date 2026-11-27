@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.54 identity": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.54 no body scan": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.54 no body scan, stream fields, keepLine": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.54 stream fields": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.54 stream fields and labels": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.54 stream labels": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.54 stream labels keepLine": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.54 underscores": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.54 underscores keepLine": {
-      "rows": 2769,
-      "keys": 2714,
+      "rows": 2772,
+      "keys": 2717,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -350,7 +350,7 @@
       "the plan does not route it: VectorAgg route evaluated level": 173,
       "the plan does not route it: VectorAgg route level filter": 12,
       "the plan does not route it: VectorAgg route operand": 8,
-      "the plan does not route it: VectorAgg route pipeline": 228,
+      "the plan does not route it: VectorAgg route pipeline": 231,
       "the plan does not route it: VectorAgg route rewrite": 2,
       "the plan does not route it: VectorAgg route unwrap filter": 1,
       "the plan does not route it: VectorAgg route unwrap pipeline": 120,
@@ -998,9 +998,9 @@
     }
   },
   "shadow": {
-    "rows": 25365,
+    "rows": 25392,
     "profiles": 12,
-    "native": 23215,
+    "native": 23242,
     "native_proxy_evaluated": 4617,
     "native_loki_held": 762,
     "mismatches": 0,
