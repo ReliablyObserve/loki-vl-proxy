@@ -69,6 +69,38 @@ class StackFixtureTest(unittest.TestCase):
         self.assertEqual(entry["values"][0][0], str(6900 * 1_000_000_000 + 500_000_000))
 
 
+class PackedUnpackFixtureTest(unittest.TestCase):
+    def test_packed_unpack_fixture_is_mirrored_without_message_parsing(self):
+        sent = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        def send(req, timeout):
+            sent.append((req.full_url, req.data))
+            return Response()
+
+        backend = type("Backend", (), {"loki": "http://loki", "vl": "http://vl"})()
+        with patch.object(stack.urllib.request, "urlopen", side_effect=send):
+            stack.seed_packed_unpack_fixture(backend, 7200)
+
+        self.assertEqual([url for url, _ in sent],
+                         ["http://loki/loki/api/v1/push",
+                          "http://vl/insert/loki/api/v1/push?disable_message_parsing=1"])
+        self.assertEqual(sent[0][1], sent[1][1])
+        stream = json.loads(sent[0][1])["streams"][0]
+        lines = [json.loads(line) for _, line in stream["values"]]
+        self.assertEqual(len(lines), 119)
+        self.assertEqual(sum(isinstance(line.get("_entry"), str) for line in lines), 40)
+        self.assertTrue(any("_entry" not in line for line in lines))
+        self.assertTrue(any(isinstance(line.get("_entry"), int) for line in lines))
+        self.assertLess(int(stream["values"][-1][0]), 7200 * 1_000_000_000)
+
+
 class PluginWaitTest(unittest.TestCase):
     def test_plugin_ids_drop_versions_and_urls(self):
         self.assertEqual(stack.plugin_ids("victoriametrics-logs-datasource@0.30.0, grafana-lokiexplore-app@2.0.4@https://x/y.zip"),
