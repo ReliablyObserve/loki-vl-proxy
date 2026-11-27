@@ -176,17 +176,25 @@ func TestStartClientAuthWatcher_ReloadsAndReports(t *testing.T) {
 		}
 	}
 	waitFor("caller authentication on")
-	if err := os.WriteFile(path, []byte("users: ["), 0o600); err != nil {
-		t.Fatal(err)
+	// Replace by rename, as a mounted secret does: the watcher must not read a
+	// half-written file, which it would report as a second failure.
+	replace := func(data []byte) {
+		t.Helper()
+		next := path + ".next"
+		if err := os.WriteFile(next, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(next, path); err != nil {
+			t.Fatal(err)
+		}
 	}
+	replace([]byte("users: ["))
 	waitFor("auth users file reload failed")
 	if a.Users().Len() != 1 {
 		t.Fatal("last good users lost")
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte("rotated"), bcrypt.MinCost)
-	if err := os.WriteFile(path, fmt.Appendf(nil, "users:\n  - name: grafana\n    password_hash: %q\n  - name: second\n    password_hash: %q\n", hash, hash), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	replace(fmt.Appendf(nil, "users:\n  - name: grafana\n    password_hash: %q\n  - name: second\n    password_hash: %q\n", hash, hash))
 	waitFor("auth users file reloaded")
 	if a.Users().Len() != 2 {
 		t.Fatalf("users %d after reload", a.Users().Len())
