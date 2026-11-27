@@ -373,6 +373,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/instant-parser-probe-window` — The parser probe of an instant query reads the window the query evaluates (fixed) | #1825 | 0 | 0 |
 | `semantics/json-detected-level-error-split` — `sum by (detected_level)` over `\| json` with the parser errors kept, or `\| json \| __error__!=""`, is answered from VictoriaLogs stats,... | perf/detected-level-native-count | 0 | 0 |
 | `semantics/json-metric-step-wider-than-range` — A `\| json` metric whose range is shorter than the step (`[1m]` at a 120 s step) is answered from VictoriaLogs stats over the lines insid... | perf/dlv-step-longer-than-range | 0 | 0 |
+| `semantics/parser-probe-drop-keeps-range` — Keeping one of `\| json` and `\| logfmt` leaves the range of a metric query in place (fixed) | #TBD | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |
 | `semantics/stream-label-shadowed-by-ingest-json-key` — A metric grouped by a stream label that a JSON line's key shadows in VictoriaLogs groups by the stream label, like Loki (fixed) | #1065 | 0 | 0 |
 | `severity/detected-level-filter-json-level` — `\| detected_level=` filters select different lines than Loki (JSON-level lines, stream level precedence) (fixed) | #1037 | 0 | 0 |

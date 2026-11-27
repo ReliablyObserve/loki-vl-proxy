@@ -913,6 +913,9 @@
     "semantics/parsed-unwrap-vector-fold-values-residual | compare:observed",
     "semantics/parsed-unwrap-vector-fold-values-residual | gap:open",
     "semantics/parsed-unwrap-vector-fold-values-residual | query",
+    "semantics/parser-probe-drop-keeps-range | compare:observed",
+    "semantics/parser-probe-drop-keeps-range | gap:fixed",
+    "semantics/parser-probe-drop-keeps-range | query",
     "semantics/parser-reads-unicode-blank-as-white-space | compare:observed",
     "semantics/parser-reads-unicode-blank-as-white-space | gap:fixed",
     "semantics/parser-reads-unicode-blank-as-white-space | query",
@@ -1560,6 +1563,7 @@
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/deep_call_cost_test.go | semantics/nested-calls-read-once",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
+    "internal/logql/drop_parser_stages_test.go | semantics/parser-probe-drop-keeps-range",
     "internal/logql/error_order_loki_test.go | semantics/loki-error-phases",
     "internal/logql/error_phase_calls_test.go | semantics/loki-error-phase-order",
     "internal/logql/error_phase_fuzz_test.go | semantics/loki-error-phase-order",
@@ -2321,9 +2325,14 @@
     "internal/proxy/parenthesized_range_test.go | semantics/parenthesized-log-range",
     "internal/proxy/parser_capture_identity_test.go | parsed-label-series-identity",
     "internal/proxy/parser_capture_identity_test.go | semantics/detected-level-missing-from-stats-answers",
+    "internal/proxy/parser_probe_drop_loki_test.go | loki_api_v1_query",
+    "internal/proxy/parser_probe_drop_loki_test.go | loki_api_v1_query_range",
+    "internal/proxy/parser_probe_drop_loki_test.go | semantics/parser-probe-drop-keeps-range",
+    "internal/proxy/parser_probe_drop_loki_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/parser_probe_window_test.go | loki_api_v1_query",
     "internal/proxy/parser_probe_window_test.go | loki_api_v1_query_range",
     "internal/proxy/parser_probe_window_test.go | semantics/instant-parser-probe-window",
+    "internal/proxy/parser_probe_window_test.go | semantics/parser-probe-drop-keeps-range",
     "internal/proxy/parser_probe_window_test.go | semantics/two-parsers-keep-one",
     "internal/proxy/pattern_cluster_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/pattern_cluster_test.go | loki_api_v1_patterns",
@@ -3788,13 +3797,13 @@
     "case_consumers": {
       "any": 50,
       "api": 124,
-      "drilldown": 64,
+      "drilldown": 65,
       "explore": 270,
       "grafana-datasource": 4,
       "operator": 6
     },
     "claiming_tests": {
-      "go": 890,
+      "go": 892,
       "playwright": 3
     },
     "page_kinds": {
@@ -3816,7 +3825,7 @@
     "shape_covers_distinct": 118,
     "shapes_path_only": 10,
     "unwired_items": 155,
-    "wired_items": 500
+    "wired_items": 501
   },
   "gates": [
     "A/B shape selection",
