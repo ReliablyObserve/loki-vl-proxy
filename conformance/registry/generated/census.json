@@ -1224,6 +1224,9 @@
     "semantics/typed-negative-filter-stage-composition-extra-entries | query",
     "semantics/unary-plus-literal-rejected | compare:observed",
     "semantics/unary-plus-literal-rejected | gap:open",
+    "semantics/ungrouped-sum-skips-unpack | compare:exact",
+    "semantics/ungrouped-sum-skips-unpack | perf",
+    "semantics/ungrouped-sum-skips-unpack | query",
     "semantics/unknown-pipeline-stage-error-text | compare:observed",
     "semantics/unknown-pipeline-stage-error-text | gap:open",
     "semantics/unpack-instant-grouped-sum-reads-every-line | compare:exact",
@@ -3038,6 +3041,7 @@
     "internal/querycorpus/typed_pair_blank_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/querycorpus/unpack_error_lines_test.go | semantics/unpack-parser-error-not-raised",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-instant-grouped-sum-reads-every-line",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-parser-error-not-raised",
@@ -3117,6 +3121,7 @@
     "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/queryplan/lower/unpack_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_blank_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/queryplan/lower/unwrap_count_variance_test.go | semantics/count-over-stdvar-answers-variance",
@@ -3804,7 +3809,7 @@
       "any": 50,
       "api": 124,
       "drilldown": 64,
-      "explore": 270,
+      "explore": 271,
       "grafana-datasource": 4,
       "operator": 6
     },
@@ -3828,10 +3833,10 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 118,
+    "shape_covers_distinct": 119,
     "shapes_path_only": 10,
     "unwired_items": 155,
-    "wired_items": 500
+    "wired_items": 501
   },
   "gates": [
     "A/B shape selection",
@@ -4702,6 +4707,7 @@
     "unpack-sum/UP1 sum count_over_time over unpack",
     "unpack-sum/UP2 sum count_over_time over unpack and a drop, instant",
     "unpack-sum/UP3 sum absent_over_time over unpack with no stream",
+    "unpack-sum/UP4 sum rate over unpack and a keep",
     "unwrap-conversion-error/E1 json duration_ms sum by service",
     "unwrap-conversion-error/E2 json duration_ms p95 by service",
     "unwrap-conversion-error/E3 logfmt latency_ms rate, production",

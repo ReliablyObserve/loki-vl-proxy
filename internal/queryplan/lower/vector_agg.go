@@ -120,13 +120,24 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	// A sum with no clause adds up every series of a count, a rate or an absence check, so it reads nothing an unpack
 	// splits the series by: it is lowered over an unpack where the range aggregation under it is (unpackRangeFor).
 	// src still holds the stages as the client wrote them, an unwrap included.
+	unparsed := false
 	if sumReadsNoSeries(va, ra) && unwrapStage(src) == nil {
-		unpacked, err := unpackRangeFor(ra, "VectorAgg")
+		at, err := unpackLowered(ra, "VectorAgg")
 		if err != nil {
 			return builtVector{}, err
 		}
-		if unpacked != ra {
-			ra, src = unpacked, unpacked.In
+		switch {
+		case at < 0:
+		case ra.Op == logql.RangeAbsentOverTime:
+			if ra, err = unpackRangeFor(ra, "VectorAgg"); err != nil {
+				return builtVector{}, err
+			}
+			src = ra.In
+		default:
+			// The sum of a count or a rate reads only how many lines each window holds, which neither the unpack nor
+			// the drops and keeps after it change: none of them is written (unpackSkipped).
+			ra, unparsed = unpackSkipped(ra, at), true
+			src = ra.In
 		}
 	}
 	if ra.By != nil {
@@ -152,6 +163,10 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	log, err := metricLogQuery(ra.In, prof, "VectorAgg")
 	if err != nil {
 		return builtVector{}, err
+	}
+	if unparsed {
+		// A rate's series are the stream's, as over the unpack the query has: the sum adds them up whatever they are.
+		log.parser = true
 	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.

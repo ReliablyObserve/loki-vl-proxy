@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- `sum(count_over_time({...} | unpack [5m]))` and `sum(rate({...} | unpack [5m]))`, with line filters before the unpack and drops or keeps after it, no longer make VictoriaLogs parse every line. Such a sum counts lines and needs no label, so Loki parses no line for it; the query plan now writes it without the `unpack_json` pipe and without the stages after the unpack, and the proxy serves it from the plan. On 600,000 packed lines in few streams, VictoriaLogs answers the count over 6 h in 5 ms instead of 58-65 ms and over 24 h in 5-6 ms instead of 93-123 ms (v1.49.0 and v1.54.0). Answers are unchanged, also over lines that are no JSON object (`TestUnpackSumMatchesLoki`, Loki's engine and VictoriaLogs v1.49.0 and v1.54.0). A `by` or `without` clause, `bytes_over_time`, `absent_over_time`, an unwrap, and any stage after the unpack that reads its labels or line keep the unpack.
+
 ### Fixed
 
 - A `sum`, `max`, `min` or `avg` of `first_over_time` or `last_over_time` over an unwrapped label after a `| json` or `| logfmt` parser with no `keep` answers Loki's series and values: a series is the stream and every label the parser extracts (a line with a key of its own, such as a request id, is a series of its own), and on a range longer than the step each point reads the window (t-range, t]. It summed the lines of one step instead, so `sum(last_over_time({service_name="payment-service"} | logfmt | unwrap amount [5m]))` answered about half of Loki's points at a 5 s step and values 5 to 30 times lower at 10 s and 60 s steps. Answers cached before this are not served.

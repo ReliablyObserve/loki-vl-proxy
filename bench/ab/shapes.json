@@ -3741,7 +3741,7 @@
    ]
   },
   "unpack-sum": {
-   "description": "A sum with no by or without clause of a count or an absence check over `| unpack`, which the query plan lowers (the handlers still serve it from the string translator). The seeded lines are JSON objects with no `_entry`, which unpack leaves as they are.",
+   "description": "A sum with no by or without clause of a count, a rate or an absence check over `| unpack`. The count and the rate are served from the query plan with no unpack pipe (semantics/ungrouped-sum-skips-unpack); the absence check keeps the string translator's text. The seeded lines are JSON objects with no `_entry`, which unpack leaves as they are.",
    "ranges": [
     "1h",
     "6h",
@@ -3753,6 +3753,7 @@
      "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack [5m]))",
      "covers": [
       "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
       "parser-unpack",
       "loki_api_v1_query_range"
      ]
@@ -3762,10 +3763,21 @@
      "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack | drop level [1h]))",
      "covers": [
       "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
       "parser-unpack",
       "loki_api_v1_query"
      ],
      "instant": true
+    },
+    {
+     "name": "UP4 sum rate over unpack and a keep",
+     "query": "sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | keep app [5m]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
     },
     {
      "name": "UP3 sum absent_over_time over unpack with no stream",

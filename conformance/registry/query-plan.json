@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.54 identity": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.54 no body scan": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.54 no body scan, stream fields, keepLine": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.54 stream fields": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.54 stream fields and labels": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.54 stream labels": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.54 stream labels keepLine": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.54 underscores": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.54 underscores keepLine": {
-      "rows": 2775,
-      "keys": 2720,
+      "rows": 2779,
+      "keys": 2724,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -996,11 +996,11 @@
     }
   },
   "shadow": {
-    "rows": 25419,
+    "rows": 25455,
     "profiles": 12,
-    "native": 23278,
+    "native": 23305,
     "native_proxy_evaluated": 4617,
-    "native_loki_held": 933,
+    "native_loki_held": 987,
     "mismatches": 0,
     "rejected": 345,
     "delegated_by_construct": {
@@ -1035,6 +1035,7 @@
       "VectorAgg LogSelect json extraction": 297,
       "VectorAgg LogSelect label filter json extraction label": 9,
       "VectorAgg LogSelect level filter after stage": 18,
+      "VectorAgg LogSelect unpack parser": 9,
       "VectorAgg grouping": 27,
       "VectorAgg nested unwrap": 36,
       "VectorAgg operand": 198,
