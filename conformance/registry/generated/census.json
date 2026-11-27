@@ -3707,6 +3707,7 @@
     "test/e2e-compat/topk_range_per_step_test.go | semantics/topk-grouped-spellings",
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query",
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/unpack_metrics_test.go | semantics/ungrouped-sum-skips-unpack",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-grouped-sum-reads-every-line",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unwrap-conversion-check-reads-unpack-unlike-loki",

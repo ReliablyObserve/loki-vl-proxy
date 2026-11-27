@@ -2698,7 +2698,8 @@
     ],
     "semantics/ungrouped-sum-skips-unpack": [
       "internal/querycorpus/unpack_sum_loki_diff_test.go",
-      "internal/queryplan/lower/unpack_test.go"
+      "internal/queryplan/lower/unpack_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
     ],
     "semantics/unknown-pipeline-stage-error-text": [
       "internal/proxy/error_refusals_test.go",
@@ -7310,6 +7311,7 @@
     "test/e2e-compat/unpack_metrics_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
+      "semantics/ungrouped-sum-skips-unpack",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream",
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
