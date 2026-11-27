@@ -83,7 +83,7 @@ For full details including request flow diagrams, TTL preservation, circuit brea
 
 Current implementation notes:
 
-- the current chart can wire peer discovery automatically through `peerCache.enabled=true`, including `-peer-auth-token` from `peerCache.authToken`, `peerCache.existingSecret`, or a generated `<release>-peer-auth` Secret
+- the current chart can wire peer discovery automatically through `peerCache.enabled=true`, including `-peer-auth-token-file` from `peerCache.authToken`, `peerCache.existingSecret`, or a generated `<release>-peer-auth` Secret
 - larger `/_cache/get` responses can be `zstd`- or `gzip`-compressed between peers
 - `-peer-write-through=true` is enabled by default; non-owner writes above `-peer-write-through-min-ttl` are pushed to owners
 - `-peer-auth-token` is required when peer discovery is configured: the proxy refuses to start without it unless `-peer-insecure-ip-allowlist=true` restores the legacy IP-membership check. All `/_cache/*` endpoints compare `X-Peer-Token` in constant time and return `401` on mismatch

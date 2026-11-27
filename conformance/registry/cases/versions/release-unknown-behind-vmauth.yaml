@@ -1,0 +1,39 @@
+id: versions/release-unknown-behind-vmauth
+title: 'Behind vmauth the proxy never learned the VictoriaLogs release, so release-only gates stayed off (fixed by naming the version source)'
+proves:
+  - vl-backend-version-source
+  - vl-capability-layer
+consumer: operator
+why: |
+  vmauth answers /metrics itself, so the version read found vmauth's own version
+  and logged only that the check was partial, with the reason at DEBUG. The line
+  now names the reason at WARN, loki_vl_proxy_backend_version_known is 0, and
+  -backend-version-url or -backend-version supplies the release, checked by the
+  feature probes (TestVersionURLAnswers, TestPartialCheckNamesTheReason,
+  TestDeclaredVersionAgainstProbes).
+request:
+  method: GET
+  path: /loki/api/v1/drilldown-limits
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    A proxy whose -backend is a vmauth, with -backend-version-url naming the VictoriaLogs /metrics.
+  verify:
+    blocked_by: proxy_only
+    reason: 'the answer describes the proxy''s own reading of its backend; Loki has no such field'
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    The proxy knows the release it was pointed at (backend_version_semver).
+gap:
+  status: fixed
+  fixed_by: "#1769"
+  impact: edge
+  effort: M
+  area: 'internal/proxy/backend_version_source.go'
+  loki: 'n/a (backend capability)'
+  proxy: 'release unknown behind vmauth; release-only gates off; reason logged at DEBUG only'
+  planned_test: 'TestVersionURLAnswers + TestPartialCheckNamesTheReason (internal/proxy)'
+  clusters: []
+pending: true

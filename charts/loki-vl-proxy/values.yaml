@@ -17,6 +17,13 @@ workload:
   kind: Deployment
   # Deployment-only rollout strategy. Leave empty to use the Kubernetes default.
   deploymentStrategy: {}
+  # Deployment-only progressDeadlineSeconds. Unset renders none (the Kubernetes
+  # default, 600 s), except with a disk cache and its startup probe, where the
+  # chart renders: terminationGracePeriodSeconds + the startup probe window +
+  # (with cacheHandover) startupWarmTimeoutSeconds and minReadySeconds + 300 s,
+  # when that exceeds 600 (935 with a disk cache, 1170 with the hand-over, at
+  # the defaults). A warm-up timeout set through extraArgs is not counted.
+  progressDeadlineSeconds: null
   statefulSet:
     # Headless service name used by StatefulSet network identity.
     # Empty = <release>-headless.
@@ -35,6 +42,11 @@ workload:
 image:
   repository: ghcr.io/reliablyobserve/loki-vl-proxy
   tag: ""  # defaults to Chart.appVersion
+  # digest pins the image, as sha256:<64 hex>: the multi-arch index digest of a
+  # release (image-digests.txt on the release page). Set, the chart renders
+  # <repository>@<digest>, or <repository>:<tag>@<digest> with a tag; the digest
+  # decides what runs. See "Verify before deploying" in SECURITY.md.
+  digest: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
 
@@ -294,6 +306,13 @@ extraArgs:
   # disk-cache-max-index-bytes: "16777216"
   # disk-cache-flush-interval: "5s"
   # disk-cache-max-bytes: "21474836480" # 20Gi logical LRU cap; bbolt retains free pages
+  # Restart hand-over of the response cache (needs disk-cache-path; off by default).
+  # cache-shutdown-flush-timeout: "60s" # keep inside terminationGracePeriodSeconds
+  # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
+  # cache-startup-warm-timeout: "120s" # ready when the warm-up finishes, or after this, whichever is first
+  # cache-startup-peer-restore: "true" # with nothing local to warm from (new or no disk), pull this replica's entries from its peers within the warm-up's bytes and timeout
+  # cache-startup-peer-restore-concurrency: "4" # peers that peer restore streams from at once
+  # cache-startup-peer-restore-max-bytes-per-second: "67108864" # most bytes per second the restore reads in all, leaving the node's network to its neighbours; 0 = no cap
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
@@ -301,6 +320,14 @@ extraArgs:
   # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"   # plain value is visible in the pod spec and `helm get values`; prefer backendAuth.existingSecret
+  # backend-basic-auth-file: ""                 # file holding user:password (backendAuth.existingSecret renders it)
+  # VictoriaLogs release behind vmauth (vmauth answers /metrics itself; see docs/configuration.md "Backend version behind vmauth")
+  # backend-version-url: "http://vlselect:9471/metrics"
+  # backend-version-basic-auth: "user:password"   # prefer backendVersionAuth.existingSecret
+  # backend-version-basic-auth-file: ""         # file holding user:password (backendVersionAuth.existingSecret renders it)
+  # cache-key-secret: ""                        # keys the credential digests in cache keys; prefer cacheKeySecret.existingSecret
+  # cache-key-secret-file: ""                   # file holding the secret (cacheKeySecret.existingSecret renders it)
+  # backend-version: "v1.54.0"    # only when no endpoint reports the release
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
@@ -308,6 +335,7 @@ extraArgs:
   #                               # Requires the delete API's own token (deleteAuth.existingSecret): every delete request must carry it in X-Delete-Token or
   #                               # Authorization: Bearer; rendering fails without one. The admin token and the admin listener are unaffected.
   # delete-api-auth-token: ""     # the delete API's token; prefer deleteAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
+  # delete-api-auth-token-file: ""              # file holding the delete token (deleteAuth.existingSecret renders it)
   # Compatibility profile knobs:
   # - label-style: passthrough | underscores (binary default: underscores)
   # - metadata-field-mode: native | translated | hybrid (binary default: translated)
@@ -384,6 +412,9 @@ extraArgs:
   #
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
+  # cache-reuse-protection-percent: "0"        # share of the memory caches kept for entries read again; capacity evictions take entries read once first (0 = plain LRU, the default; 20 recommended against floods; max 90; TTLs unchanged)
+  # cache-sizing-signals: "false"              # export ghost hits (2x budget, 2x TTL), working set, reuse interval and byte hit ratio of the primary cache (about 50 ns per lookup)
+  # cache-demote-on-evict: "false"             # a capacity eviction of an entry read at least once keeps or writes its disk copy with the TTL it has left (needs disk-cache-path)
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
   # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
   # max-metadata-cache-freshness: "24h"       # Loki max_metadata_cache_freshness, applied to all tenants: /labels, /label/{name}/values and /series requests ending within this window of now refetch a cached answer older than recent-tail-refresh-max-staleness, so streams written in the window appear as in Loki (the newest minute and due revalidations are read live; sealed buckets stay cached); 0 keeps the previous caching
@@ -431,6 +462,7 @@ extraArgs:
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
+  # metrics.duration-buckets: ""                # comma-separated duration histogram bounds in seconds (ascending, at most 32); empty = 0.001 … 10,15,20,30,45,60,90,120
   # server.metrics-max-concurrency: "1"         # bound concurrent /metrics scrapes (binary default 1; 0 disables the cap)
   # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
   # Binary defaults flipped: server.register-instrumentation is now false in the
@@ -445,6 +477,10 @@ extraArgs:
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints; prefer adminAuth.existingSecret (a plain value is visible in the pod spec and `helm get values`)
+  # server.admin-auth-token-file: ""            # file holding the admin token (adminAuth.existingSecret renders it)
+  # server.auth-users-reload-interval: "30s"    # caller authentication (clientAuth below): how often the users file is re-read
+  # server.auth-cache-ttl: "5m"                 # how long a verified Basic credential skips bcrypt; 0 runs bcrypt on every request
+  # server.auth-max-concurrent-verifications: "4"   # bcrypt verifications in flight; a flood of wrong passwords costs at most this many cores
   # tail.mode: "auto"                           # auto | native | synthetic
   # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
   # tail.backend-retry-window: "30s"            # how long a live tail stays open and retries while VictoriaLogs restarts or fails (resumes without repeating or skipping lines); 0 closes the tail on the first failure
@@ -452,7 +488,8 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
+  # peer-auth-token: ""                         # DO NOT SET HERE with peerCache.enabled=true: the chart passes -peer-auth-token-file from a Secret and rendering fails on the conflict. Use peerCache.authToken or peerCache.existingSecret (see below).
+  # peer-auth-token-file: ""                    # chart-managed when peerCache.enabled=true (rendering fails if set here too)
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-read-hedge-max-delay: "200ms"         # longest a read waits on one replica's headers before asking the next replica or reading VictoriaLogs; 0 = off
@@ -460,6 +497,9 @@ extraArgs:
   # peer-write-through: "true"                  # push eligible writes to the key's replicas
   # peer-push-buffer-max-entries: "8192"       # pushes kept (all peers) while a peer's breaker is open or it restarts, replayed when it answers; 0 = off
   # peer-push-buffer-max-bytes: "33554432"     # bytes of those buffered pushes (32 MiB); 0 = off
+  # peer-bulk-serve-max-streams: "2"            # peer restore streams (a replica with a new disk pulling its entries) served at once; beyond them 429 and the requester retries; 0 = serve none
+  # peer-bulk-serve-max-bytes-per-second: "67108864" # ceiling of those streams together (64 MiB/s); below it they back off under any query, CPU, memory, disk or network pressure; 0 = no ceiling
+  # peer-bulk-serve-max-pause: "30s"            # a stream paused under severe pressure ends after this (the requester keeps what it got)
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
   # peer-hot-read-ahead-enabled: "false"        # bounded periodic prefetch from peer hot indexes
   # peer-hot-read-ahead-interval: "30s"         # base period for hot-index pull cycle
@@ -527,6 +567,11 @@ observability:
   metrics:
     maxTenants: 256
     maxClients: 256
+    # Bounds, in seconds, of the duration histograms (-metrics.duration-buckets), as one comma-separated string,
+    # for example "0.01,0.1,1,10,30,60,120": above zero, ascending, at most 32. Empty keeps the binary default
+    # (0.001 0.005 0.01 0.025 0.05 0.1 0.25 0.5 1 2.5 5 10 15 20 30 45 60 90 120). Each bound adds one series
+    # to every duration histogram series.
+    durationBuckets: ""
     trustProxyHeaders: false
     exportSensitiveLabels: false
   # Who ran a query: the Grafana user on the request, upstream_request, slow_request and
@@ -544,32 +589,77 @@ observability:
     registerInstrumentation: true
     metricsMaxConcurrency: 1
 
-# Admin/debug endpoint bearer token (-server.admin-auth-token) from an existing
-# Secret. The chart renders -server.admin-auth-token=$(ADMIN_AUTH_TOKEN) with the
-# variable sourced from a secretKeyRef, so the token never appears in the pod
-# spec or in `helm get values`. The plain value (extraArgs."server.admin-auth-token")
-# keeps working; setting both fails rendering.
+# Secrets from existing Secrets. The chart mounts the Secret key as a read-only
+# file under /var/run/secrets/loki-vl-proxy/ and passes the proxy its path
+# (-...-file), so the value is in no pod spec, process argument or environment
+# variable, and not in `helm get values`. The proxy reads the file once at
+# startup: restart the pods after rotating a Secret. A chart that renders a
+# -file flag needs an image of the same release or newer: an older proxy exits
+# on the unknown flag. A plain value in extraArgs keeps working but is readable
+# in the pod spec and in /proc; setting both fails rendering. See
+# docs/security.md.
+
+# Admin/debug endpoint bearer token (-server.admin-auth-token-file).
 adminAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 
-# Delete API token (-delete-api-auth-token) from an existing Secret. Required by
-# extraArgs.delete-api-enabled: "true". The chart renders
-# -delete-api-auth-token=$(DELETE_API_AUTH_TOKEN) with the variable sourced from
-# a secretKeyRef. The plain value (extraArgs.delete-api-auth-token) keeps
-# working; setting both fails rendering. Separate from adminAuth: enabling
+# Caller authentication (-server.auth-users-file), off by default. Set
+# existingSecret to a Secret whose key holds the users file:
+#   users:
+#     - name: grafana                 # letters, digits, - _ . @ (64 bytes max)
+#       password_hash: "$2y$12$..."   # bcrypt: htpasswd -nbBC 12 grafana '<password>' | cut -d: -f2
+#       tenant: team-a                # optional: the only X-Scope-OrgID this user may send
+#     - name: ci
+#       token_sha256: "<64 hex>"      # printf %s '<token>' | sha256sum
+# The chart mounts the Secret's directory read-only at mountPath (no subPath,
+# so a changed Secret reaches the pod and the proxy re-reads it) and sets
+# -server.auth-users-file. Every route then needs Authorization: Basic or
+# Bearer, except /ready, /health, /healthz, /alive, /livez (the probes keep
+# working), /metrics and the peer cache routes (peerCache's own token); a
+# missing or wrong credential gets 401 with WWW-Authenticate. In Grafana set
+# the Loki datasource's Basic authentication (or an Authorization header).
+# Admin and delete tokens are then sent in X-Admin-Token / X-Delete-Token.
+# The default networkPolicy already admits only Grafana pods on 3100.
+clientAuth:
+  existingSecret: ""
+  existingSecretKey: "users.yaml"
+  mountPath: /etc/loki-vl-proxy/auth
+
+# Delete API token (-delete-api-auth-token-file). Required by
+# extraArgs.delete-api-enabled: "true". Separate from adminAuth: enabling
 # deletes leaves the admin listener as it is.
 deleteAuth:
   existingSecret: ""
   existingSecretKey: "token"       # key within existingSecret
 
-# VictoriaLogs backend basic auth (-backend-basic-auth) from an existing Secret.
-# The Secret key holds the whole "user:password" string. The chart renders
-# -backend-basic-auth=$(BACKEND_BASIC_AUTH) from a secretKeyRef. The plain value
-# (extraArgs.backend-basic-auth) keeps working; setting both fails rendering.
+# VictoriaLogs backend basic auth (-backend-basic-auth-file). The Secret key
+# holds the whole "user:password" string.
 backendAuth:
   existingSecret: ""
   existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Basic auth of -backend-version-url (-backend-version-basic-auth-file) from a
+# Secret key holding "user:password".
+backendVersionAuth:
+  existingSecret: ""
+  existingSecretKey: "basic-auth"  # key within existingSecret
+
+# Secret keying the digests of credentials in cache keys
+# (-cache-key-secret-file): forwarded Authorization headers and cookies
+# (-forward-authorization, -forward-headers, -forward-cookies) and
+# backendAuth. With existingSecret unset and generate=true, the chart keeps a
+# random value in <release>-cache-key: created on the first install, kept on
+# every upgrade (lookup), shared by every replica, so a replica with a
+# persistent cache keeps credential-scoped entries across restarts. A render
+# without cluster access (helm template, Argo CD) renders and mounts no key
+# rather than a new one per render: set existingSecret there. Deleting the
+# Secret rotates the key on the next upgrade (credential-scoped entries miss
+# once). See docs/security.md#cache-key-secret.
+cacheKeySecret:
+  existingSecret: ""
+  existingSecretKey: "secret"      # key within existingSecret
+  generate: true                   # keep a chart-generated key when existingSecret is unset
 
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:
@@ -760,6 +850,12 @@ peerService:
 # Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
 serviceMonitor:
   enabled: false
+  # Keep the proxy's own label values when they collide with the scrape target's. The proxy's request, backend
+  # and cache metrics carry an "endpoint" label (query_range, labels, ...) and the Prometheus Operator adds a
+  # target label of the same name (the Service port name): with false the proxy's value arrives as
+  # "exported_endpoint" and "endpoint" is "metrics" on every series, so the chart's dashboard and alerts that
+  # select or group by endpoint do not work. A Prometheus or VMAgent "overrideHonorLabels" setting overrides this.
+  honorLabels: true
   namespace: ""
   annotations: {}
   interval: "30s"
@@ -805,8 +901,14 @@ resources:
 # - liveness:  /alive  (process is running)
 # - readiness: /ready  (backend + circuit-breaker checks)
 # - startup:   /health (basic process health)
-# Startup probe is disabled by default because the proxy starts quickly in the
-# common in-memory-cache case; enable it for slower cold starts.
+# Startup probe (startup.enabled unset): off, because the proxy starts quickly in
+# the common in-memory-cache case, and on with cacheHandover.enabled, because
+# the disk cache index is rebuilt before the listener opens. Set true or false to
+# decide yourself; every other probe.startup value you set is used as set.
+# While it has not succeeded, Kubernetes runs neither the liveness nor the
+# readiness probe, and their initialDelaySeconds count from its success.
+# Never point it at /ready: /ready also checks VictoriaLogs, so a backend outage
+# would restart every proxy.
 probe:
   liveness:
     enabled: true
@@ -825,17 +927,30 @@ probe:
     failureThreshold: 3
     successThreshold: 1
   startup:
-    enabled: false
+    # unset = off, or on with a disk cache (persistence.enabled or
+    # extraArgs.disk-cache-path): the cache index is rebuilt before the
+    # listener opens, one disk read per record.
+    enabled: null
     path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    failureThreshold: 30
+    # unset = 30, or 120 with a disk cache (5 s + 120 x 5 s = 605 s for the
+    # process to open its listener before it is restarted; about twice the
+    # estimated rebuild of 94,000 records on a volume with 3 ms reads). A pod
+    # that hangs before listening is restarted only after that long.
+    failureThreshold: null
 
 # --- Pod Disruption Budget ---
 # Recommended whenever replicaCount > 1 or HPA is enabled.
 podDisruptionBudget:
-  enabled: false
+  # unset = no PodDisruptionBudget, except with cacheHandover.enabled and
+  # replicaCount > 1 or HPA, which renders one with maxUnavailable: 1.
+  # true renders minAvailable / maxUnavailable as set here; false renders none
+  # (also when you manage a PodDisruptionBudget for these pods yourself: two
+  # budgets over one pod make its eviction fail).
+  enabled: null
+  # With maxUnavailable, set enabled: true and minAvailable: null.
   minAvailable: 1
   # maxUnavailable: 1
 
@@ -963,11 +1078,67 @@ podLabels: {}
 extraLabels: {}
 
 # --- Lifecycle ---
+# With cacheHandover.enabled the pod gets at least the preStop sleep + 60 (the
+# proxy's HTTP drain: 30 s for the main listener, 30 s for the admin and metrics
+# listeners) + shutdownFlushTimeoutSeconds + 5 seconds. The pod exits as soon as
+# the proxy is done; the grace period is only the upper bound.
 terminationGracePeriodSeconds: 30
+# A non-empty lifecycle replaces the preStop sleep cacheHandover adds.
+# The image is distroless (no shell): use the native sleep action.
 lifecycle: {}
   # preStop:
-  #   exec:
-  #     command: ["/bin/sh", "-c", "sleep 5"]
+  #   sleep:
+  #     seconds: 5
+
+# --- Response cache restart hand-over ---
+# Keeps a replica's memory cache warm across rolling restarts: on SIGTERM the
+# proxy writes its memory hot set to the disk cache (after the HTTP drain,
+# within shutdownFlushTimeoutSeconds), and the next start loads it back before
+# /ready answers 200. A pod becomes ready when it is warm, or partly warm after
+# startupWarmTimeoutSeconds, so the readiness probe holds the rollout until
+# then. Needs the disk cache (persistence.enabled, or extraArgs.disk-cache-path
+# on a volume that survives the restart). See
+# docs/disk-cache.md#restart-hand-over.
+# Enabled, the chart also renders (your own settings win):
+# - one pod at a time: a Deployment without workload.deploymentStrategy gets
+#   RollingUpdate with maxSurge: 0 and maxUnavailable: 1 (a surge pod would wait
+#   forever for the disk cache file lock of the old pod); with one replica the
+#   rollout therefore has a gap. A StatefulSet updates one pod at a time
+#   already.
+# - a PodDisruptionBudget with maxUnavailable: 1 when replicaCount > 1 or HPA
+#   is on (podDisruptionBudget.enabled unset);
+# - a startup probe (probe.startup; a disk cache without the hand-over renders
+#   it too);
+# - minReadySeconds.
+cacheHandover:
+  enabled: false
+  # -cache-shutdown-flush-timeout. Set it here rather than in extraArgs, so the
+  # grace period follows it.
+  shutdownFlushTimeoutSeconds: 60
+  # -cache-startup-warm-bytes, integer bytes: at most half of -cache-max-bytes
+  # is warmed (128 MiB at the default 256 MiB); also the most memory-only
+  # answer bytes the shutdown keeps.
+  startupWarmBytes: 134217728
+  # -cache-startup-warm-timeout: the longest /ready answers 503 for the warm-up.
+  # The pod is ready when the warm-up finishes, or partly warm once this passes
+  # (counted from before the listener opens). Generous, so a full warm-up
+  # finishes; raise it with startupWarmBytes on a slow volume.
+  startupWarmTimeoutSeconds: 120
+  # A replica with nothing local to warm from (a new volume, an emptyDir disk)
+  # pulls the entries it owns or replicates from its peers instead, within the
+  # same startupWarmBytes and startupWarmTimeoutSeconds (needs peerCache);
+  # false renders -cache-startup-peer-restore=false. See
+  # docs/disk-cache.md#restore-from-peers.
+  peerRestore: true
+  # preStop sleep (the native sleep action, rendered on Kubernetes 1.30+ only)
+  # so endpoint removal reaches clients before the HTTP drain starts; 0 adds
+  # none.
+  preStopSleepSeconds: 5
+  # minReadySeconds of the workload: a restarted replica stays ready this long
+  # before the rollout stops the next one, so a crash right after ready halts the
+  # rollout and the other replicas refresh their peer list (every 15 s) first.
+  # 0 renders none.
+  minReadySeconds: 15
 
 # --- Additional containers/volumes ---
 # Escape hatches for sidecars, init containers, extra config volumes, and

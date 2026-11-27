@@ -13,11 +13,11 @@ version: "3.8"
 # was started with. Host ports, images and container names can be overridden
 # to run a second, isolated copy of the stack:
 #   FLEET_VL_PORT, FLEET_LOKI_PORT, FLEET_PROXY_{A,B,C}_PORT,
-#   FLEET_PROXY_{DISKFULL,READONLY}_PORT, FLEET_PROXY_EXTRA_ARG (one extra
+#   FLEET_PROXY_{DISKFULL,READONLY,HANDOVER_A,HANDOVER_B}_PORT, FLEET_PROXY_EXTRA_ARG (one extra
 #   proxy flag, e.g. -peer-replication-factor=2 on a build that has it),
 #   VICTORIALOGS_IMAGE, LOKI_IMAGE, PROXY_IMAGE, FLEET_NAME_PREFIX
 # and the test reads FLEET_VL_URL, FLEET_LOKI_URL,
-# FLEET_PROXY_{A,B,C,DISKFULL,READONLY}_URL; it writes its measurements to
+# FLEET_PROXY_{A,B,C,DISKFULL,READONLY,HANDOVER_A,HANDOVER_B}_URL; it writes its measurements to
 # FLEET_PROOF_REPORT (JSON).
 
 services:
@@ -312,6 +312,106 @@ services:
     depends_on:
       victorialogs:
         condition: service_healthy
+
+  # Restart hand-over of the response cache (-cache-shutdown-flush-timeout,
+  # -cache-startup-warm-bytes), started and removed by
+  # TestFleet_RestartHandoverKeepsTheResponseCacheWarm and
+  # TestFleet_PeerRestoreRefillsAWipedDisk
+  # (`docker compose --profile handover up proxy-handover-a proxy-handover-b`):
+  # a ring of two replicas of their own, outside proxy-a/b/c's.
+  proxy-handover-a:
+    profiles: ["handover"]
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-handover-a
+    user: root
+    # The hand-over flush runs after the HTTP server drained, inside the
+    # -cache-shutdown-flush-timeout below; compose's default 10 s stop timeout
+    # would cut it.
+    stop_grace_period: 40s
+    ports:
+      - "${FLEET_PROXY_HANDOVER_A_PORT:-3105}:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-cache-ttl=30s"
+      - "-cache-max=20000"
+      - "-disk-cache-path=/cache/proxy-handover-a.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-handover-a:3100"
+      - "-peer-write-through=true"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-handover-a:3100,proxy-handover-b:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-server.admin-auth-token=e2e-test-token"
+      - "-server.register-instrumentation=true"
+      - "-labels-cache-warm=false"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-debug-vl-calls-header=true"
+      - "-cache-shutdown-flush-timeout=20s"
+      - "-cache-startup-warm-bytes=134217728"
+      - "-cache-startup-warm-timeout=20s"
+      - "${FLEET_PROXY_EXTRA_ARG:--log-level=debug}"
+    volumes:
+      - /cache
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+  proxy-handover-b:
+    profiles: ["handover"]
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
+    container_name: ${FLEET_NAME_PREFIX:-fleet}-proxy-handover-b
+    user: root
+    # The hand-over flush runs after the HTTP server drained, inside the
+    # -cache-shutdown-flush-timeout below; compose's default 10 s stop timeout
+    # would cut it.
+    stop_grace_period: 40s
+    ports:
+      - "${FLEET_PROXY_HANDOVER_B_PORT:-3106}:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-cache-ttl=30s"
+      - "-cache-max=20000"
+      - "-disk-cache-path=/cache/proxy-handover-b.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-handover-b:3100"
+      - "-peer-write-through=true"
+      - "-peer-discovery=static"
+      - "-peer-static=proxy-handover-a:3100,proxy-handover-b:3100"
+      - "-peer-auth-token=e2e-test-token"
+      - "-server.admin-auth-token=e2e-test-token"
+      - "-server.register-instrumentation=true"
+      - "-labels-cache-warm=false"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-debug-vl-calls-header=true"
+      - "-cache-shutdown-flush-timeout=20s"
+      - "-cache-startup-warm-bytes=134217728"
+      - "-cache-startup-warm-timeout=20s"
+      - "${FLEET_PROXY_EXTRA_ARG:--log-level=debug}"
+    volumes:
+      - /cache
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 
 volumes:
   vl-data:

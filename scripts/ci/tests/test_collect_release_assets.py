@@ -160,6 +160,17 @@ class CollectReleaseAssetsTests(unittest.TestCase):
             ],
         )
 
+    def test_the_documented_command_reads_the_image_digest(self):
+        found = re.search(r'^DIGEST="\$\((grep .+ image-digests\.txt \| cut .+)\)"$',
+                          (REPO / "SECURITY.md").read_text(), re.MULTILINE)
+        self.assertIsNotNone(found, "SECURITY.md no longer reads the digest from image-digests.txt")
+        for has_docker_hub in ("true", "false"):
+            with self.subTest(has_docker_hub=has_docker_hub):
+                proc = self.run_script(GHCR_IMAGE="ghcr.io/reliablyobserve/loki-vl-proxy", HAS_DOCKERHUB=has_docker_hub)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                read = subprocess.run(["bash", "-c", found.group(1)], cwd=self.dist, capture_output=True, text=True)
+                self.assertEqual(read.stdout, DIGEST + "\n", read.stderr)
+
     def test_digests_without_docker_hub(self):
         proc = self.run_script(HAS_DOCKERHUB="false", BUNDLE_IMAGE_DH="")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)

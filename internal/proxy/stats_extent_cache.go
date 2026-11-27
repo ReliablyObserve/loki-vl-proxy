@@ -670,7 +670,8 @@ func (p *Proxy) statsExtentRequestFor(ctx context.Context, params url.Values) (*
 	}
 	sort.Strings(names)
 	h := sha256.New()
-	_, _ = io.WriteString(h, p.contextScopeFingerprint(ctx))
+	scope := p.contextScopeFingerprint(ctx)
+	_, _ = io.WriteString(h, scope)
 	for _, name := range names {
 		_, _ = io.WriteString(h, "\x00"+name)
 		for _, v := range params[name] {
@@ -678,7 +679,7 @@ func (p *Proxy) statsExtentRequestFor(ctx context.Context, params url.Values) (*
 		}
 	}
 	_, _ = io.WriteString(h, "\x00chunk="+strconv.FormatInt(req.chunk, 10))
-	req.key = statsExtentKeyPrefix + hex.EncodeToString(h.Sum(nil))
+	req.key = statsExtentKeyPrefix + hex.EncodeToString(h.Sum(nil)) + credentialScopeMark(scope)
 	return req, true
 }
 
