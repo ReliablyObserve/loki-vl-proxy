@@ -89,8 +89,8 @@ func answerTTLKeyRequests() map[string]*http.Request {
 }
 
 // answerTTLKeys are the shared-tier keys of a class: the single-tenant read
-// cache key, the multi-tenant merge key and, for detected_fields, the field
-// detection cache key.
+// cache key, the multi-tenant merge key and the field or label detection
+// cache key.
 func answerTTLKeys(p *Proxy, class string, r *http.Request) []string {
 	keys := []string{p.canonicalReadCacheKey(class, "team-a", r)}
 	mt := r.Clone(r.Context())
@@ -98,8 +98,11 @@ func answerTTLKeys(p *Proxy, class string, r *http.Request) []string {
 	if key, ok := p.multiTenantCacheKey(mt, class); ok {
 		keys = append(keys, key)
 	}
-	if class == "detected_fields" {
+	switch class {
+	case "detected_fields":
 		keys = append(keys, p.detectedFieldsCacheKey(context.Background(), `{app="api"}`, "1", "2", 1000))
+	case "detected_labels":
+		keys = append(keys, p.detectedLabelsCacheKey(context.Background(), `{app="api"}`, "1", "2", 1000))
 	}
 	return keys
 }
@@ -205,6 +208,20 @@ func TestAnswerCacheTTLShortensEveryCacheOfTheClass(t *testing.T) {
 		p.setMultiTenantMergeCache("labels", "mt:empty", empty)
 		if _, remaining, ok := p.cache.GetWithTTL("mt:empty"); !ok || remaining > tc.want || remaining < tc.want-time.Second {
 			t.Fatalf("%v: empty merged labels kept %s (%v), want %s", tc.ttls, remaining, ok, tc.want)
+		}
+	}
+	// The label detection cache under /detected_labels keeps its 30 s unless
+	// the setting is shorter, and its key changes only then.
+	for _, tc := range []struct {
+		setting, want time.Duration
+		fenced        bool
+	}{{60 * time.Second, 30 * time.Second, false}, {10 * time.Second, 10 * time.Second, true}} {
+		p := newAnswerTTLProxy(t, map[string]time.Duration{"detected_labels": tc.setting})
+		if got := p.shortenedTTL("detected_labels", detectedLabelsDetectionTTL); got != tc.want {
+			t.Fatalf("detected_labels %s: detection TTL %s, want %s", tc.setting, got, tc.want)
+		}
+		if key := p.detectedLabelsCacheKey(context.Background(), "{}", "1", "2", 1); strings.Contains(key, "@ttl=") != tc.fenced {
+			t.Fatalf("detected_labels %s: detection key %q", tc.setting, key)
 		}
 	}
 	// The window-scaled metadata TTLs scale the shortened base.
@@ -347,6 +364,66 @@ func TestAnswerCacheTTLKeysFenceTheSharedTiers(t *testing.T) {
 	} {
 		getAnswerTTLIndexStats(t, process(step.ttls))
 		disk.Flush()
+		if got := vl.calls.Load(); got != step.wantCalls {
+			t.Fatalf("step %d (%s): %d VictoriaLogs calls, want %d", i, step.name, got, step.wantCalls)
+		}
+	}
+}
+
+// The same across replicas through the real peer protocol: every key is owned
+// by one peer, the replicas push their answers to it (write-through) and read
+// it on a memory miss. A replica with a shortened TTL never reads the entry a
+// replica with the built-in TTL pushed, and replicas with the same setting
+// share theirs.
+//
+// conformance: cache-answer-ttl-shorten-only
+func TestAnswerCacheTTLKeysFenceThePeerTier(t *testing.T) {
+	owner := cache.New(time.Minute, 100)
+	t.Cleanup(owner.Close)
+	server := cache.NewPeerCache(cache.PeerConfig{})
+	t.Cleanup(server.Close)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { server.ServeHTTP(w, r, owner) }))
+	t.Cleanup(srv.Close)
+	vl := &countingIndexStatsVL{}
+	backend := vl.server(t).URL
+	replica := func(i int, ttls map[string]time.Duration) *Proxy {
+		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: "replica-" + strconv.Itoa(i) + ":3100", DiscoveryType: "static", StaticPeers: strings.TrimPrefix(srv.URL, "http://"),
+			Timeout: 5 * time.Second, WriteThrough: true, WriteThroughMinTTL: time.Second})
+		t.Cleanup(pc.Close)
+		l1 := cache.New(time.Minute, 100)
+		l1.SetL3(pc)
+		return newAnswerTTLProxy(t, ttls, func(c *Config) { c.BackendURL = backend; c.Cache = l1; c.PeerCache = pc })
+	}
+	r := httptest.NewRequest(http.MethodGet, answerTTLIndexStatsTarget(), nil)
+	r.Header.Set("X-Scope-OrgID", "0")
+	waitOwner := func(p *Proxy) {
+		t.Helper()
+		key := p.canonicalReadCacheKey("index_stats", "0", r)
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if _, ok := owner.Peek(key); ok {
+				return
+			}
+		}
+		t.Fatalf("the owner never received %q", key)
+	}
+	// A peer serves an entry with at least 5 s left, so the shortened TTL is 8 s.
+	shortened := map[string]time.Duration{"index_stats": 8 * time.Second}
+	for i, step := range []struct {
+		name      string
+		ttls      map[string]time.Duration
+		wantCalls int64
+		pushes    bool
+	}{
+		{"built-in TTL pushes to the owner", nil, 1, true},
+		{"shortened TTL does not read the pushed entry", shortened, 2, true},
+		{"same shortened TTL reads it from the owner", shortened, 2, false},
+		{"built-in TTL still reads its own", nil, 2, false},
+	} {
+		p := replica(i, step.ttls)
+		getAnswerTTLIndexStats(t, p)
+		if step.pushes {
+			waitOwner(p)
+		}
 		if got := vl.calls.Load(); got != step.wantCalls {
 			t.Fatalf("step %d (%s): %d VictoriaLogs calls, want %d", i, step.name, got, step.wantCalls)
 		}

@@ -121,6 +121,19 @@ func (p *Proxy) answerTTLKeyFence(endpoint string) string {
 	return ""
 }
 
+// detectedLabelsDetectionTTL is the TTL of the label detection cache under
+// /detected_labels: 30 s, or the class's shorter setting.
+const detectedLabelsDetectionTTL = 30 * time.Second
+
+// detectLabelsTTLKeyFence fences the label detection cache's key once the
+// detected_labels setting is below its 30 s.
+func (p *Proxy) detectLabelsTTLKeyFence() string {
+	if ttl := p.shortenedTTL("detected_labels", detectedLabelsDetectionTTL); ttl < detectedLabelsDetectionTTL {
+		return "@ttl=" + ttl.String()
+	}
+	return ""
+}
+
 // readCacheKeyTTLFence is the fence of an endpoint's canonical read cache key.
 func (p *Proxy) readCacheKeyTTLFence(endpoint string) string {
 	if !readCacheKeyFencedByTTL(endpoint) {

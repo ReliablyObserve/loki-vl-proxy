@@ -30,7 +30,8 @@ proxy: |
   the setting and their 10 s; an empty merged label list keeps the negative
   TTL unless the class is shorter), the detected field and label read caches
   (still scaled with the request window, from the shorter base), the field
-  detection cache, the index stats and volume read caches. The label handler
+  detection cache, the label detection cache (30 s, or the setting when
+  shorter), the index stats and volume read caches. The label handler
   cache (-labels-cache-ttl), the query_range windows and extents, the
   parse-risk probe, label_inventory and patterns keep their own TTLs.
   A cache entry carries its expiry, not its age, so a copy written under a
@@ -88,10 +89,10 @@ decisions:
       its own TTL. Keys that differ by TTL keep each setting's entries apart,
       need no change to records or protocols, and cost only reuse between
       replicas with different settings while they differ.
-    evidence: 'internal/proxy (2026-11-28): TestAnswerCacheTTLKeysFenceTheSharedTiers (five processes on one disk tier: the built-in TTL writes; a shorter TTL does not read that record and asks VictoriaLogs; the same shorter TTL reads its record from disk; the built-in TTL still reads its own; another shorter TTL reads neither); with the fence removed the second step makes no VictoriaLogs call and the test fails; TestAnswerCacheTTLChangesTheHandoverScope (a setting by flag or by variable changes the restart hand-over scope)'
+    evidence: 'internal/proxy (2026-11-28): TestAnswerCacheTTLKeysFenceTheSharedTiers (five processes on one disk tier: the built-in TTL writes; a shorter TTL does not read that record and asks VictoriaLogs; the same shorter TTL reads its record from disk; the built-in TTL still reads its own; another shorter TTL reads neither); TestAnswerCacheTTLKeysFenceThePeerTier (four replicas through the real peer protocol, write-through to one owner: the same steps across replicas); with the fence removed the second step of both makes no VictoriaLogs call and both fail; TestAnswerCacheTTLChangesTheHandoverScope (a setting by flag or by variable changes the restart hand-over scope)'
     code: [internal/proxy/answer_cache_ttl.go, internal/proxy/cache_keys.go, internal/proxy/multitenant.go, internal/proxy/drilldown.go]
-    tests: [TestAnswerCacheTTLKeysFenceTheSharedTiers, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLChangesTheHandoverScope]
-    quality: 'A replica never serves an answer of a shortened class older than its own TTL from memory, disk or a peer, and keys are unchanged while the class keeps its built-in TTL.'
+    tests: [TestAnswerCacheTTLKeysFenceTheSharedTiers, TestAnswerCacheTTLKeysFenceThePeerTier, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLChangesTheHandoverScope]
+    quality: 'No entry of the caches a setting governs is served past the replica''s own TTL from memory, disk or a peer (the query_range windows and extents keep their own TTLs), and keys are unchanged while the class keeps its built-in TTL.'
     performance:
       tracked: ['canonical read cache key on a memo miss and a memo hit, unset and shortened (benchstat)']
       bound: 'unset: the key paths unchanged; shortened: the fence is computed only on a memo miss'
