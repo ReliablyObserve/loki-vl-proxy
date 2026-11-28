@@ -1,0 +1,100 @@
+id: cache-answer-ttl-shorten-only
+kind: resource_control
+title: An operator can shorten the cache TTL of each Loki answer class, never lengthen it, and replicas or restarts with other settings never serve each other's entries
+pending: true
+
+loki: |
+  Loki's results cache keeps an extent until it is evicted, and a query that
+  ends within max_cache_freshness_per_query (and the metadata and stats
+  freshness limits) of now is not cached at all. The proxy's per-class TTLs
+  are its own; this item changes no Loki answer, only how long a cached
+  answer of the proxy may be served, and only toward fresher.
+
+victorialogs: |
+  VictoriaLogs keeps no answer cache the proxy reads. A shorter TTL means
+  more VictoriaLogs reads for repeated requests: a repeat within the TTL makes
+  no VictoriaLogs call, one after it the class's usual calls.
+
+proxy: |
+  -cache-answer-ttl-<class> (env CACHE_ANSWER_TTL_<CLASS>, the flag wins)
+  shortens the built-in TTL of one of eleven Loki answer classes, the
+  "Loki answer cache" rows of loki_vl_proxy_cache_ttl_seconds{class}:
+  query_range and query (5m), labels and label_values (5m), series (30s),
+  detected_fields, detected_field_values and detected_labels (90s),
+  index_stats, volume and volume_range (10s). A value above the built-in TTL,
+  or a negative one, stops the start with an error naming the flag, the
+  variable and the built-in TTL; 0 (the default) or the built-in value keeps
+  the TTLs and keys of a proxy without the setting. The setting replaces the
+  built-in value wherever the proxy stores the class with it: the Loki answer
+  cache, the multi-tenant merge (query_range and query keep the shorter of
+  the setting and their 10 s; an empty merged label list keeps the negative
+  TTL unless the class is shorter), the detected field and label read caches
+  (still scaled with the request window, from the shorter base), the field
+  detection cache, the label detection cache (30 s, or the setting when
+  shorter), the index stats and volume read caches. The label handler
+  cache (-labels-cache-ttl), the query_range windows and extents, the
+  parse-risk probe, label_inventory and patterns keep their own TTLs.
+  A cache entry carries its expiry, not its age, so a copy written under a
+  longer TTL could be served past a shorter one. A shortened class's keys in
+  the shared tiers (memory, disk, peers) therefore carry its TTL
+  (@ttl=<ttl>): replicas with the same setting share entries, replicas with
+  different settings never serve each other's entries, and after a restart
+  with a new setting the disk records of the old one are not read. The Loki
+  answer cache is memory only; the memory-only answers a graceful shutdown
+  keeps are restored only by a process with the same flag values. The
+  existing eviction and rejection metric families are unchanged.
+
+implementation:
+  - internal/proxy/answer_cache_ttl.go
+  - internal/proxy/cache_keys.go
+  - internal/proxy/multitenant.go
+  - internal/proxy/middleware.go
+  - internal/proxy/cache_layer_metrics.go
+  - internal/proxy/drilldown.go
+  - internal/proxy/label_handlers.go
+  - internal/proxy/patterns.go
+  - internal/proxy/volume.go
+  - cmd/proxy/answer_cache_ttl.go
+  - cmd/proxy/main.go
+
+decisions:
+  - id: shorten-only-per-class-flags
+    chosen: 'One duration flag per Loki answer class (-cache-answer-ttl-<class>, env CACHE_ANSWER_TTL_<CLASS>), 0 keeping the built-in TTL, any value above the built-in TTL refused at start'
+    over:
+      - 'keeping the TTLs fixed (#1801 declined settable TTLs because a longer TTL serves staler answers; a setting that can only shorten cannot)'
+      - 'allowing longer TTLs (answers staler than the built-in TTLs, which keep them fresh)'
+      - 'clamping a longer value to the built-in TTL with a warning (a configuration the operator believes in silently does something else)'
+      - 'one map-valued flag (class=ttl,...) (new parsing for a list the flag package already gives as typed durations)'
+      - 'a setting for patterns (its TTL keeps mined patterns until they are replaced; it is no freshness bound, and shortening it drops state Loki keeps)'
+      - '0 meaning "do not cache" (the convention of -labels-cache-ttl is 0 = built-in; turning a class off was not asked)'
+    why: |
+      Issue #1802 item 6 asks for settable TTLs of the fixed Loki answer
+      classes only where a setting cannot make an answer staler than today.
+      A shortened TTL is never staler; refusing longer values at start keeps
+      that a property of every accepted configuration.
+    evidence: 'internal/proxy and cmd/proxy (2026-11-28): TestAnswerCacheTTLSettingsOnlyShorten (every class: 0, 1 ns, 1 s and the built-in accepted; negative, built-in + 1 ns and 24 h refused by the validator and by New, the error names the built-in TTL; patterns and the classes with their own flags are no class); TestAnswerCacheTTLFlagsAndEnv (the flag and variable of each class through run: the built-in accepted, a longer value or a negative one refused naming flag, variable and built-in, the flag wins over the variable, an unparsable variable refused)'
+    code: [internal/proxy/answer_cache_ttl.go, cmd/proxy/answer_cache_ttl.go]
+    tests: [TestAnswerCacheTTLSettingsOnlyShorten, TestAnswerCacheTTLFlagsAndEnv, TestAnswerCacheTTLUnsetKeepsTTLsAndKeys, TestAnswerCacheTTLUnsetKeysMatchMain, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLExpiresAtTheShortenedTTL]
+    quality: 'Unset, or set to the built-in value, every TTL and every shared-tier key equals that of a proxy without the setting (TestAnswerCacheTTLUnsetKeepsTTLsAndKeys).'
+  - id: ttl-in-the-shared-tier-key
+    chosen: 'A shortened class appends @ttl=<ttl> to its keys in the shared tiers (canonical read cache keys of the detected, index stats and volume classes, every multi-tenant merge key of the class, the field detection key); unset, keys are unchanged'
+    over:
+      - 'capping the remaining TTL of an entry read from disk or a peer (an entry has no age: a copy received with less TTL left than the cap can still be older than the shorter TTL)'
+      - 'storing the write time with every entry and checking the age on read (changes the disk record and peer formats and the restart hand-over)'
+      - 'fencing the Loki answer cache keys too (that cache is memory only and empty after a restart; its oversized replies stay local and are restored only under the same flag values)'
+    why: |
+      With mixed settings in a fleet (a rolling restart that changes the
+      setting, or replicas configured apart), a replica with a shorter TTL
+      would otherwise serve a peer's or its old disk's copy that is older than
+      its own TTL. Keys that differ by TTL keep each setting's entries apart,
+      need no change to records or protocols, and cost only reuse between
+      replicas with different settings while they differ.
+    evidence: 'internal/proxy (2026-11-28): TestAnswerCacheTTLKeysFenceTheSharedTiers (five processes on one disk tier: the built-in TTL writes; a shorter TTL does not read that record and asks VictoriaLogs; the same shorter TTL reads its record from disk; the built-in TTL still reads its own; another shorter TTL reads neither); TestAnswerCacheTTLKeysFenceThePeerTier (four replicas through the real peer protocol, write-through to one owner: the same steps across replicas); with the fence removed the second step of both makes no VictoriaLogs call and both fail; TestAnswerCacheTTLChangesTheHandoverScope (a setting by flag or by variable changes the restart hand-over scope)'
+    code: [internal/proxy/answer_cache_ttl.go, internal/proxy/cache_keys.go, internal/proxy/multitenant.go, internal/proxy/drilldown.go]
+    tests: [TestAnswerCacheTTLKeysFenceTheSharedTiers, TestAnswerCacheTTLKeysFenceThePeerTier, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLChangesTheHandoverScope]
+    quality: 'No entry of the caches a setting governs is served past the replica''s own TTL from memory, disk or a peer (the query_range windows and extents keep their own TTLs), and keys are unchanged while the class keeps its built-in TTL.'
+    performance:
+      tracked: ['canonical read cache key on a memo miss and a memo hit, unset and shortened (benchstat)']
+      bound: 'unset: the key paths unchanged; shortened: the fence is computed only on a memo miss'
+      measured: 'see the pull request benchstat tables'
+      benchmarks: [BenchmarkAnswerCacheTTLReadCacheKey]

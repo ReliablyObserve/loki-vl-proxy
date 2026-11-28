@@ -217,12 +217,12 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 	}
 	cacheKey := p.canonicalReadCacheKey(endpoint, orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), endpoint, cacheKey); ok {
-		if !p.shouldBypassRecentTailCache(endpoint, CacheTTLs[endpoint], remaining, r) {
+		if !p.shouldBypassRecentTailCache(endpoint, p.endpointTTL(endpoint), remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
-			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs[endpoint]) {
+			if p.shouldRefreshLabelsInBackground(remaining, p.endpointTTL(endpoint)) {
 				p.refreshVolumeCacheAsync(endpoint, orgID, cacheKey, req, p.snapshotForwardedAuth(r))
 			}
 			return
@@ -239,7 +239,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 		p.metrics.RecordRequest(endpoint, status, time.Since(start))
 		return
 	}
-	p.setEndpointJSONCacheWithTTL(endpoint, cacheKey, CacheTTLs[endpoint], result)
+	p.setEndpointJSONCacheWithTTL(endpoint, cacheKey, p.endpointTTL(endpoint), result)
 	p.writeJSON(w, result)
 	p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))
 }
@@ -258,7 +258,7 @@ func (p *Proxy) refreshVolumeCacheAsync(endpoint, orgID, cacheKey string, req vo
 			}
 			result, err := p.computeVolume(ctx, req)
 			if err == nil {
-				p.setEndpointJSONCacheWithTTL(endpoint, cacheKey, CacheTTLs[endpoint], result)
+				p.setEndpointJSONCacheWithTTL(endpoint, cacheKey, p.endpointTTL(endpoint), result)
 			}
 			return nil, err
 		})

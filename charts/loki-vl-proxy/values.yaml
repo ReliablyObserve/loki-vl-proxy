@@ -421,6 +421,17 @@ extraArgs:
   # cache-sizing-signals: "false"              # export ghost hits (2x budget, 2x TTL), working set, reuse interval and byte hit ratio of the primary cache (about 50 ns per lookup)
   # cache-demote-on-evict: "false"             # a capacity eviction of an entry read at least once keeps or writes its disk copy with the TTL it has left (needs disk-cache-path)
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # cache-answer-ttl-query-range: "0"          # shorten the TTL of query_range answers in the Loki answer cache; built-in 5m is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-query: "0"                # shorten the TTL of instant query answers in the Loki answer cache; built-in 5m is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-labels: "0"               # shorten the TTL of /labels answers in the Loki answer cache and multi-tenant merge (handler cache: labels-cache-ttl); built-in 5m is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-label-values: "0"         # shorten the TTL of /label/{name}/values answers likewise; built-in 5m is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-series: "0"               # shorten the TTL of /series answers; built-in 30s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-detected-fields: "0"      # shorten the TTL of /detected_fields answers (window-scaled from this base); built-in 90s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-detected-field-values: "0"# shorten the TTL of /detected_field/{name}/values answers (window-scaled); built-in 90s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-detected-labels: "0"      # shorten the TTL of /detected_labels answers (window-scaled); built-in 90s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-index-stats: "0"          # shorten the TTL of /index/stats answers; built-in 10s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-volume: "0"               # shorten the TTL of /index/volume answers; built-in 10s is the longest accepted (longer fails the start); 0 keeps it
+  # cache-answer-ttl-volume-range: "0"         # shorten the TTL of /index/volume_range answers; built-in 10s is the longest accepted (longer fails the start); 0 keeps it
   # labels-cache-warm: "true"                  # warm the 1h/6h/24h/7d label presets at startup and keep them warm; "false" on replicas without interactive label pickers
   # max-metadata-cache-freshness: "24h"       # Loki max_metadata_cache_freshness, applied to all tenants: /labels, /label/{name}/values and /series requests ending within this window of now refetch a cached answer older than recent-tail-refresh-max-staleness, so streams written in the window appear as in Loki (the newest minute and due revalidations are read live; sealed buckets stay cached); 0 keeps the previous caching
   # max-stats-cache-freshness: "10m"          # Loki max_stats_cache_freshness: an instant /index/volume is summed from cached UTC-aligned segments; segments ending within this window of now are read from VictoriaLogs on every request; 0 caches all but the newest minute
