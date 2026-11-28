@@ -210,9 +210,6 @@ func (s SeriesMetadata) withoutDropped(rest []Pipe) []Pipe {
 	return pipes
 }
 
-// HoldsSeriesMetadata reports a query WithSeriesMetadata wrote an identity into.
-func HoldsSeriesMetadata(q Query) bool { return holdsSeriesMetadata(q) }
-
 // holdsSeriesMetadata reports a query an identity was written into already: a set_stream_fields pipe that does not
 // read _stream (the proxy's other set_stream_fields pipes, the parser identities, keep the stream in it).
 func holdsSeriesMetadata(q Query) bool {
@@ -257,4 +254,39 @@ func scratchCaptures(pattern string) bool {
 		}
 		n++
 	}
+}
+
+// SeriesIdentityRead is an outbound VictoriaLogs read that reads a series per stream (ReadsStreamIdentity) and holds
+// no structured-metadata identity yet: the parsed query the proxy writes the identity into, read once.
+type SeriesIdentityRead struct{ q Query }
+
+// ReadSeriesIdentity parses text, a query about to be sent to VictoriaLogs, as the outbound guard does
+// (GuardReservedFieldCase): ok is false for a query that reads no series per stream or holds an identity already,
+// and err is the parser's error for a text the proxy's parser does not read.
+func ReadSeriesIdentity(text string) (r SeriesIdentityRead, ok bool, err error) {
+	q, err := Parse(text)
+	if err != nil {
+		return SeriesIdentityRead{}, false, err
+	}
+	if !ReadsStreamIdentity(*q) || holdsSeriesMetadata(*q) {
+		return SeriesIdentityRead{}, false, nil
+	}
+	return SeriesIdentityRead{q: *q}, true, nil
+}
+
+// Filter is the text of the read's filters, the query the fields of its rows are listed with.
+func (r SeriesIdentityRead) Filter() string { return Query{Filter: r.q.Filter}.String() }
+
+// RowCount is the query that counts the rows the read's filters match, as rows.
+func (r SeriesIdentityRead) RowCount() string {
+	return Query{Filter: r.q.Filter, Pipes: []Pipe{PipeStats{Funcs: []StatsFuncAlias{{Func: Count{}, Alias: "rows"}}}}}.String()
+}
+
+// With is the read's text with s written into it (WithSeriesMetadata), and false when s changes nothing.
+func (r SeriesIdentityRead) With(s SeriesMetadata) (string, bool) {
+	q, changed := WithSeriesMetadata(r.q, s)
+	if !changed {
+		return "", false
+	}
+	return q.String(), true
 }

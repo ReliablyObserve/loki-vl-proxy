@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +44,31 @@ type metadataSeriesMemo struct {
 	mu      sync.Mutex
 	entries []metadataSeriesEntry
 	counts  map[string]int64
+	// rebuilt are the reads the request rebuilt, by their rebuilt text.
+	rebuilt map[string]logsql.SeriesIdentityRead
+}
+
+// noteRebuilt keeps the read a text was rebuilt from (a few per request: the request's reads share their texts).
+func (m *metadataSeriesMemo) noteRebuilt(text string, read logsql.SeriesIdentityRead) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rebuilt == nil {
+		m.rebuilt = map[string]logsql.SeriesIdentityRead{}
+	}
+	if len(m.rebuilt) < 16 {
+		m.rebuilt[text] = read
+	}
+}
+
+// rebuiltRead is the read text was rebuilt from, when this request rebuilt it.
+func (m *metadataSeriesMemo) rebuiltRead(text string) (logsql.SeriesIdentityRead, bool) {
+	if m == nil {
+		return logsql.SeriesIdentityRead{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.rebuilt[text]
+	return r, ok
 }
 
 func (m *metadataSeriesMemo) rows(key string) (int64, bool) {
@@ -131,12 +155,12 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		return params
 	}
 	started := time.Now()
-	q, err := logsql.Parse(text)
+	read, ok, err := logsql.ReadSeriesIdentity(text)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "unread", time.Since(started))
 		return params
 	}
-	if !logsql.ReadsStreamIdentity(*q) {
+	if !ok {
 		return params
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
@@ -145,7 +169,7 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_window", time.Since(started))
 		return params
 	}
-	spec, ok, err := p.seriesMetadataFor(ctx, memo, *q, from, to)
+	spec, ok, err := p.seriesMetadataFor(ctx, memo, read.Filter(), from, to)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "listing_failed", time.Since(started))
 		return params
@@ -154,15 +178,17 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_metadata", time.Since(started))
 		return params
 	}
-	rebuilt, changed := logsql.WithSeriesMetadata(*q, spec)
+	rebuilt, changed := read.With(spec)
 	if !changed {
 		return params
 	}
+	// The slicer finds the read it rebuilt by its text (slicedSeriesMetadataRead), with what it counts its rows by.
+	memo.noteRebuilt(rebuilt, read)
 	out := make(url.Values, len(params))
 	for k, v := range params {
 		out[k] = v
 	}
-	out["query"] = []string{rebuilt.String()}
+	out["query"] = []string{rebuilt}
 	p.observeInternalOperation(ctx, "metadata_series_identity", "rebuilt", time.Since(started))
 	return out
 }
@@ -170,8 +196,7 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 // seriesMetadataFor is the series identity of the rows q's filters read in [from, to], widened to whole hours: the
 // stream fields and all fields VictoriaLogs lists for them there (field_names and stream_field_names, both cached),
 // or the identity the request listed already over a window that holds this one.
-func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, q logsql.Query, from, to int64) (logsql.SeriesMetadata, bool, error) {
-	filter := logsql.Query{Filter: q.Filter}.String()
+func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, filter string, from, to int64) (logsql.SeriesMetadata, bool, error) {
 	if e, ok := memo.find(filter, from, to); ok {
 		return e.spec, e.ok, nil
 	}
@@ -236,16 +261,12 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); fetch {
 		return nil, false, nil
 	}
-	text := params.Get("query")
-	if !strings.Contains(text, "| set_stream_fields ") {
-		return nil, false, nil
-	}
-	q, err := logsql.Parse(text)
-	if err != nil || !logsql.HoldsSeriesMetadata(*q) {
+	read, ok := metadataSeriesOf(ctx).rebuiltRead(params.Get("query"))
+	if !ok {
 		return nil, false, nil
 	}
 	started := time.Now()
-	rows, err := p.seriesMetadataReadRows(ctx, logsql.Query{Filter: q.Filter}.String(), params)
+	rows, err := p.seriesMetadataReadRows(ctx, read, params)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "count_failed", time.Since(started))
 		return nil, true, err
@@ -324,14 +345,14 @@ func statsExtentFragmentBytes(f *statsExtentFragment) int64 {
 
 // seriesMetadataReadRows is the rows filter matches in the read's window (params' start and end): one count, kept for
 // the request (its time chunks and operands share the read's filter).
-func (p *Proxy) seriesMetadataReadRows(ctx context.Context, filter string, params url.Values) (int64, error) {
+func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesIdentityRead, params url.Values) (int64, error) {
 	memo := metadataSeriesOf(ctx)
-	key := filter + "\x00" + params.Get("start") + "\x00" + params.Get("end")
+	key := read.Filter() + "\x00" + params.Get("start") + "\x00" + params.Get("end")
 	if rows, ok := memo.rows(key); ok {
 		return rows, nil
 	}
 	count := url.Values{}
-	count.Set("query", filter+" | stats count() as rows")
+	count.Set("query", read.RowCount())
 	count.Set("start", params.Get("start"))
 	count.Set("end", params.Get("end"))
 	count.Set("time", params.Get("end"))
