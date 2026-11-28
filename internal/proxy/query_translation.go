@@ -182,6 +182,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
@@ -1609,7 +1610,7 @@ func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[st
 		// an unrelated per-line id into a metric series label.
 		_, metadataFields, parsedFields, _ = p.classifyEntryFieldsWithFlags(entry, desc.rawLabels, true, exposure, exposureCache, smBuf, pfBuf)
 	} else {
-		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.finalLabels(), exposure, true, exposureCache, smBuf, pfBuf)
 	}
 	addParsedSeriesLabels(metric, parsedFields, unwrapField, captureLabels, includeParsed)
 	if includeParsed {

@@ -188,7 +188,13 @@ A response key fence (`responseKeyFences`, `internal/proxy/response_key_fences.g
 constant to a response cache key when the query holds the construct a fix changed, so an answer cached before the fix
 is not served. The parser reads more spellings than the lower case, single-space form clients usually send: every
 keyword and function name in any case (`| KEEP`, `TOPK(`, `Sum by`), letters that lower case to ASCII ones (U+212A,
-U+0130), `#` comments between tokens (a quote in a comment opens no string), and names of any Unicode letters.
+U+0130), `#` comments between tokens (a quote in a comment opens no string), names of any Unicode letters, and a
+name that is one character starting no token (a control character, `$&;?\~`, a char literal, a non-ASCII character
+that is no letter), which Loki's lexer and the parser read as a label name after another filter of a stage.
+
+- A screen that meets a candidate it does not fence (the ip() screen: an `ip(` after an `=` whose name it does not
+  read) decides from the memoised parsed tree (`sharedLogQLExpr`) instead of growing another text rule; queries with
+  no candidate never parse there.
 
 - A new or changed fence screen reads those spellings, allocates nothing, and keeps firing for every spelling its
   older form fired for (so no key of the fleet's caches becomes unreachable). The shared readers are in

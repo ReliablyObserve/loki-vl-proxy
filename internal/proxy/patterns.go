@@ -1595,7 +1595,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("detected_labels", orgID, r)
-	detectedLabelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_labels"])
+	detectedLabelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.endpointTTL("detected_labels"))
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)

@@ -1133,6 +1133,10 @@ func TestResponseKeyFenceScreensDoNotAllocate(t *testing.T) {
 		`{app="a"} | json | KEEP level | UNWRAP n | x = IP("1.2.3.4") | y = "z" | _TIME > 5s`,
 		"{app=\"a\"} # \"\n | json | (x=\"1\") | (y=\"2\") | Keep a",
 		`sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m]))`,
+		// The ip() screen reads these from the memoised tree: a label named by a character that starts no token, and
+		// a query with the letters ip and no ip() call.
+		`{app="a"} | json | A="x" ;=ip("1.2.3.4")`,
+		`{app="zipkin"} |= "error"`,
 	} {
 		for name, screen := range map[string]func(string) string{
 			"keep":     keepMetadataProjectionResponseKeyVersion,
