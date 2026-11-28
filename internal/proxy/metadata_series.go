@@ -179,7 +179,7 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_window", time.Since(started))
 		return params
 	}
-	spec, ok, err := p.seriesMetadataFor(ctx, memo, read.Filter(), from, to)
+	spec, ok, err := p.seriesMetadataFor(ctx, memo, read, from, to)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "listing_failed", time.Since(started))
 		return params
@@ -206,7 +206,8 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 // seriesMetadataFor is the series identity of the rows q's filters read in [from, to], widened to whole hours: the
 // stream fields and all fields VictoriaLogs lists for them there (field_names and stream_field_names, both cached),
 // or the identity the request listed already over a window that holds this one.
-func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, filter string, from, to int64) (logsql.SeriesMetadata, bool, error) {
+func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, read logsql.SeriesIdentityRead, from, to int64) (logsql.SeriesMetadata, bool, error) {
+	filter := read.Filter()
 	if e, ok := memo.find(filter, from, to); ok {
 		return e.spec, e.ok, nil
 	}
@@ -223,15 +224,26 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
 	params.Set("end", strconv.FormatInt(hi, 10))
-	// The two listings are read side by side: neither needs the other.
+	// The two listings are read side by side, and beside them the read's row counts, which the bound of every
+	// rebuilt read of the request reads (seriesMetadataReadRows): none needs another.
 	var stream []string
 	var streamErr error
-	done := make(chan struct{})
+	done := make(chan struct{}, 2)
 	go func() {
-		defer close(done)
+		defer func() { done <- struct{}{} }()
 		stream, streamErr = p.seriesMetadataListing(ctx, "/select/logsql/stream_field_names", "smsfn:", params)
 	}()
+	go func() {
+		defer func() { done <- struct{}{} }()
+		if _, ok := memo.histogram(filter, from, to); ok {
+			return
+		}
+		if hist, err := p.seriesMetadataRowsCached(ctx, read, from, to); err == nil {
+			memo.addHistogram(filter, hist)
+		}
+	}()
 	fields, err := p.seriesMetadataListing(ctx, "/select/logsql/field_names", "smfn:", params)
+	<-done
 	<-done
 	if err == nil {
 		err = streamErr
@@ -299,6 +311,10 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	}
 	started := time.Now()
 	rows, err := p.seriesMetadataReadRows(ctx, read, params)
+	if errors.Is(err, errMetadataSeriesNoWindow) {
+		// A read whose window cannot be read is sent as it is, as metadataSeriesParams sends one.
+		return nil, false, nil
+	}
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "count_failed", time.Since(started))
 		return nil, true, err
@@ -400,7 +416,7 @@ func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesId
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
 	to, okTo := parseFlexibleUnixNanos(params.Get("end"))
 	if !okFrom || !okTo || to < from {
-		return 0, errors.New("metadata series read without a window")
+		return 0, errMetadataSeriesNoWindow
 	}
 	filter := read.Filter()
 	hist, ok := memo.histogram(filter, from, to)
@@ -720,3 +736,6 @@ func (c *seriesSpecCache) add(scope string, e metadataSeriesEntry, expires time.
 	}
 	c.entries[key] = append(kept, seriesSpecEntry{metadataSeriesEntry: e, expires: expires})
 }
+
+// errMetadataSeriesNoWindow is a read whose start and end do not make a window.
+var errMetadataSeriesNoWindow = errors.New("metadata series read without a window")
