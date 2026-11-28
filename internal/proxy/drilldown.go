@@ -1507,6 +1507,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				}
 				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
 					rowAliases = addRowAlias(rowAliases, alias)
+					if base, ok := p.labelTranslator.bothBaseName(key); ok {
+						rowAliases = addRowAlias(rowAliases, base)
+					}
 				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
 					rowAliases = addRowAlias(rowAliases, lokiLabel) // a stored field named like the alias
 				}
@@ -2315,6 +2318,12 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 // VL-indexed (inside JSON or logfmt _msg). Used as a last-resort fallback
 // when neither native field_values nor log-line scanning produced values.
 func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
+	// A stream label of a mapped field in the alias and both modes (an alias, and in both the -label-style name) is
+	// a detected field only as the parsed key of a line whose stream lacks the field, which the field scan reads with
+	// Loki's collision rule: Loki lists no stream label, so neither fallback answers for it.
+	if p.labelTranslator.isAliasLabel(field) {
+		return nil, nil
+	}
 	logsqlQuery, err := p.translateQueryWithContext(ctx, defaultQuery(query))
 	if err != nil {
 		return nil, err

@@ -856,6 +856,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			break
 		}
 		readCtx, meter := withStatsReadMeter(r.Context())
+		meter.chunks = chunkReads.rereadsInChunks(r, windowAggFunc)
 		series, ok, err := collect(readCtx, fetchStart, endTS)
 		if p.rereadOverflowedInChunks(w, r, meter, &chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
 			return true
@@ -1147,13 +1148,42 @@ func isUnpackSumAll(query string) bool {
 	return ok && (grouping == nil || len(grouping.Labels) == 0)
 }
 
-// unpackSumGrouping is the grouping of the sum of an isUnpackSum query.
+// unpackSumGrouping is the grouping of the sum of an isUnpackSum query, read under the label_replace calls and the
+// rankings (sort, sort_desc, topk, bottomk) at its root: an instant ranking hands its operand to the stats routes
+// with the whole query as the request's (answerInstantMetricPostAggregation), and the operand is the sum.
 func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 	// The shared parse of the query: it is read, never changed.
-	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
 	if !ok {
 		return nil, false
 	}
+	return unpackSumGroupingOf(underRankings(expr))
+}
+
+// underRankings is the expression under the label_replace calls and the rankings at the root of expr.
+func underRankings(expr logqlpkg.Expr) logqlpkg.Expr {
+	for {
+		switch e := expr.(type) {
+		case *logqlpkg.OpaqueMetricExpr:
+			if e.Func != "label_replace" || !e.Typed || e.Inner == nil {
+				return expr
+			}
+			expr = e.Inner
+		case *logqlpkg.VectorAggregation:
+			switch e.Op {
+			case logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+				expr = e.Inner
+			default:
+				return expr
+			}
+		default:
+			return expr
+		}
+	}
+}
+
+// unpackSumGroupingOf is unpackSumGrouping of a parsed node.
+func unpackSumGroupingOf(expr logqlpkg.Expr) (*logqlpkg.Grouping, bool) {
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
 	if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping != nil && agg.Grouping.Without {
 		return nil, false
@@ -1175,8 +1205,10 @@ func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 }
 
 // unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
-// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
-const unpackMetricResponseVersion = "@unpack-metric-v1:"
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream,
+// v1), and a topk over a sum with no label behind a keep, or with an empty by clause, answered other values than
+// Loki's (semantics/ungrouped-sum-skips-unpack, v2).
+const unpackMetricResponseVersion = "@unpack-metric-v2:"
 
 // unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an
 // _over_time function is fenced whatever its shape (one more cache miss), and no query without an unpack changes
@@ -1867,16 +1899,19 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		}
 		metricObj := mv.GetObject()
 		var metric map[string]string
+		var seriesKey string
 		if streamGrouped {
 			derived := statsGroupDerivedLevel(metricObj, streamGroupedByDetectedLevel)
-			metric = p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy).translated
+			entry := p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy)
+			metric, seriesKey = entry.translated, entry.key
 			if keepsParsedGroupLabels(ctx) {
 				metric = p.withParsedGroupLabels(metric, metricObj, groupBy, vlToLoki)
+				seriesKey = canonicalLabelsKey(metric)
 			}
 		} else {
 			metric = p.statsGroupMetric(metricObj, vlToLoki)
+			seriesKey = canonicalLabelsKey(metric)
 		}
-		seriesKey := canonicalLabelsKey(metric)
 		if fold != nil && fold.readsRow(seriesMap, seriesKey, metricObj, metric, name, values, start, hitStep) {
 			return
 		}
@@ -2392,11 +2427,16 @@ func statsGroupDerivedLevel(metric *fj.Object, grouped bool) *string {
 // derived, when not nil, is the detected_level VictoriaLogs computed for the
 // group or row (the translator's pipes); empty, a stage removed the label.
 // Otherwise it is the level, else unknown.
+//
+// A per-stream read holds a series per stream, so this runs once per series of the answer: the stream's labels are
+// parsed into a map of its own (ownedStreamLabels), the stream level is read before the level labels change it, and
+// a grouping by the stream keeps that map as the series' labels (buildManualMetricLabels would copy every label).
 func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
-	rawStreamLabels := parseStreamLabels(streamStr)
-	streamLabels := make(map[string]string, len(rawStreamLabels))
-	for k, v := range rawStreamLabels {
-		streamLabels[k] = v
+	streamLabels := ownedStreamLabels(streamStr)
+	var ownLevel string
+	ownLevelOK := false
+	if derived == nil {
+		ownLevel, ownLevelOK = streamLevel(streamLabels)
 	}
 	if levelStr != "" {
 		streamLabels["level"] = levelStr
@@ -2415,8 +2455,8 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 		// level="ERROR" (error) rather than a value of the row. Then the row's
 		// level field (rule 3), normalised, then unknown. A group read by
 		// stream alone (stats by (_stream)) carries no level column.
-		if v, ok := streamLevel(rawStreamLabels); ok {
-			streamLabels["detected_level"] = v
+		if ownLevelOK {
+			streamLabels["detected_level"] = ownLevel
 		} else if levelStr != "" {
 			streamLabels["detected_level"] = normalizedLevel(levelStr)
 		} else {
@@ -2425,7 +2465,13 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 	}
 	ensureSyntheticServiceName(streamLabels)
 
-	metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
+	var metricLabels map[string]string
+	if streamGroupedLabels(groupBy, byExplicit, origGroupBy) {
+		// Every stream label, and the grouping's other keys are the stream's own: the labels as they are.
+		metricLabels = streamLabels
+	} else {
+		metricLabels = buildManualMetricLabels(streamLabels, groupBy, byExplicit)
+	}
 
 	// Rename VL-translated groupBy keys back to their original Loki names.
 	// Example: VL "level" was produced by translating Loki "detected_level";
@@ -2452,6 +2498,35 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, derived *stri
 		translated:   translated,
 		key:          canonicalLabelsKey(translated),
 	}
+}
+
+// streamGroupedLabels reports a grouping whose series labels are the stream's labels as they are
+// (buildManualMetricLabels copies every one of them, the other keys of the grouping are among them) and which renames
+// none of its keys back to a Loki name.
+func streamGroupedLabels(groupBy []string, byExplicit bool, origGroupBy []string) bool {
+	if byExplicit && len(groupBy) == 0 || !slices.Contains(groupBy, "_stream") {
+		return false
+	}
+	if len(origGroupBy) == len(groupBy) {
+		for i, key := range groupBy {
+			if origGroupBy[i] != key {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ownedStreamLabels is parseStreamLabels(s) in a map the caller owns: a copy of the parsed map this replica keeps
+// for s, else s parsed into a new map (not kept: a per-stream read holds more streams than the parse cache).
+func ownedStreamLabels(s string) map[string]string {
+	streamLabelsCacheMu.RLock()
+	cached, ok := streamLabelsCache[s]
+	streamLabelsCacheMu.RUnlock()
+	if ok {
+		return maps.Clone(cached)
+	}
+	return parseStreamLabelsUncached(s)
 }
 
 // withParsedGroupLabels adds to the labels of a stream-grouped series the other

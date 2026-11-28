@@ -53,7 +53,7 @@ func TestIsUnpackSumAll(t *testing.T) {
 
 // The fence moves the key of a metric query that names unpack, on every response key, and of no other.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/ungrouped-sum-skips-unpack
 func TestUnpackMetricFence(t *testing.T) {
 	key := func(q string, site responseKeySite) string {
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+url.Values{"query": {q}}.Encode(), nil)
@@ -67,10 +67,18 @@ func TestUnpackMetricFence(t *testing.T) {
 		`sum(rate({a="b"}[1m]))`:                 false,
 		`{a="b"} | unpack`:                       false,
 		`count_over_time({a="b"} |= "k" [1m])`:   false,
+		// The answers a topk over a sum behind a keep or with an empty by clause gave before
+		// semantics/ungrouped-sum-skips-unpack (v2).
+		`topk(1, sum(rate({a="b"} | unpack | keep c [1m])))`:          true,
+		`topk(1, sum by () (count_over_time({a="b"} | unpack [1m])))`: true,
 	} {
 		for _, site := range []responseKeySite{responseKeyCompatQuery, responseKeyCompatQueryRange, responseKeyInnerQueryRange} {
 			if got := strings.Contains(key(q, site), unpackMetricResponseVersion); got != want {
 				t.Errorf("%s at site %d: fenced %v, want %v", q, site, got, want)
+			}
+			// A key written before v2 is not read back.
+			if want && strings.Contains(key(q, site), "@unpack-metric-v1:") {
+				t.Errorf("%s at site %d: keyed under the v1 fence", q, site)
 			}
 		}
 	}

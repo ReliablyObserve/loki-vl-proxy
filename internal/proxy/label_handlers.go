@@ -895,6 +895,12 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 // detectedLabelValuesForField returns the values the stream labels hold for fieldName. A label read that fails is
 // the error, not "no values".
 func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, query, start, end string, lineLimit int) ([]string, error) {
+	// A stream label of a mapped field in the alias and both modes (an alias, and in both the -label-style name) is
+	// a detected field only as the parsed key of a line whose stream lacks the field, which the field scan reads with
+	// Loki's collision rule: Loki lists no stream label, so neither fallback answers for it.
+	if p.labelTranslator.isAliasLabel(fieldName) {
+		return nil, nil
+	}
 	// The scan supplement of detectLabels is where level and service_name come from when no stored label holds them.
 	_, summaries, err := p.detectLabelsFor(ctx, query, start, end, lineLimit, fieldName == "level" || fieldName == "service_name")
 	if err != nil {

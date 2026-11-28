@@ -292,6 +292,12 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownCountVariance]++
 				continue
 			}
+			if lower.WritesSkippedUnpack(plan) && !sameAsTranslator(got, legacy) {
+				// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on,
+				// held to Loki (TestUnpackSumMatchesLoki).
+				delegated["known divergence "+knownSkippedUnpack]++
+				continue
+			}
 			spelling := translatorspelling.Case(q, plan)
 			if routed, _ := routedRoot(plan); !routed && spelling != "" && !sameAsTranslator(got, legacy) {
 				// A spelling the translator reads otherwise than the plan, which the proxy serves: held to a spelling or

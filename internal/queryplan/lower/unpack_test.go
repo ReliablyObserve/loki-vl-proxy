@@ -290,7 +290,7 @@ func unpackPlan(t *testing.T, q string, prof Profile) (physical.Op, error) {
 // for it (TestUnpackFamiliesMatchLoki); every other shape is delegated under the name of what it reads, and a log
 // query under the line the unpack replaces.
 //
-// conformance: semantics/translator-writes-unpack-as-unpack-json
+// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/ungrouped-sum-skips-unpack
 func TestUnpackLowering(t *testing.T) {
 	v54 := Profile{Caps: logsql.CapabilitiesFor("v1.54.0")}
 	// lowered: the translator's text, with its unpack_json.
@@ -309,12 +309,8 @@ func TestUnpackLowering(t *testing.T) {
 		`absent_over_time({app="x"} | unpack [5m])`,
 		`rate({app="x"} | unpack [5m])`,
 		`rate({app="x"} | unpack | drop a [5m])`,
-		`sum(count_over_time({app="x"} | unpack [5m]))`,
-		`sum(rate({app="x"} | unpack | keep a, b [5m]))`,
-		`sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`,
 		`sum(absent_over_time({app="x"} | unpack [5m]))`,
-		`max(sum(count_over_time({app="x"} | unpack [5m])))`,
-		`count(sum(count_over_time({app="x"} | unpack | drop a [5m])))`,
+		`sum(rate({app="x"} | unpack | keep a, b [5m]))`,
 	} {
 		op, err := unpackPlan(t, q, v54)
 		if err != nil {
@@ -331,6 +327,55 @@ func TestUnpackLowering(t *testing.T) {
 		}
 		if !strings.Contains(text, " | unpack_json") {
 			t.Errorf("%s: lowered %s, want the unpack_json pipe", q, text)
+		}
+	}
+	// lowered with no stage from the unpack on: a sum with no clause or an empty by clause of a count or a rate
+	// (semantics/ungrouped-sum-skips-unpack), at the root, under another aggregation, a binary operation or a
+	// label_replace call; a rate keeps the stream's series the query over the unpack has. A keep after the unpack keeps
+	// the unpack of a rate (the translator's text, above).
+	rateText := ` | stats by (_stream) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats sum(__lvp_rate)`
+	for q, want := range map[string]string{
+		`sum(count_over_time({app="x"} | unpack [5m]))`:                                     `app:="x" | stats count()`,
+		`sum(count_over_time({app="x"} | unpack | drop a, b [5m]))`:                         `app:="x" | stats count()`,
+		`sum(count_over_time({app="x"} | unpack | drop __error__, __error_details__ [5m]))`: `app:="x" | stats count()`,
+		`sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`:           `app:="x" ~"k" | stats count()`,
+		`sum(count_over_time({app="x"} != "k" | l="a" | unpack | drop b [5m]))`:             `app:="x" NOT ~"k" l:="a" | stats count()`,
+		`sum(count_over_time({app="x"} | line_format "x" | unpack [5m]))`:                   `app:="x" | format "x" | stats count()`,
+		`sum(rate({app="x"} | unpack [5m]))`:                                                `app:="x"` + rateText,
+		`sum(rate({app="x"} |= "k" | unpack | drop a [5m] offset 1h))`:                      `app:="x" ~"k"` + rateText,
+		`max(sum(count_over_time({app="x"} | unpack [5m])))`:                                `app:="x" | stats count() as __lvp_inner | stats max(__lvp_inner)`,
+		`count(sum(count_over_time({app="x"} | unpack | drop a [5m])))`:                     `app:="x" | stats count() as __lvp_inner | stats count()`,
+		// A count behind a keep counts every line.
+		`sum(count_over_time({app="x"} | unpack | drop a | keep b [5m]))`: `app:="x" | stats count()`,
+		`sum(count_over_time({app="x"} | unpack | keep a, b [5m])) * 2`:   `__binary__:*:app:="x" | stats count()|||2`,
+		// An empty by clause is no grouping: one series, as in Loki.
+		`sum by () (count_over_time({app="x"} | unpack [5m]))`:                                `app:="x" | stats count()`,
+		`sum by () (rate({app="x"} | unpack | drop a [5m]))`:                                  `app:="x"` + rateText,
+		`sum by () (count_over_time({app="x"} | unpack [5m])) * 2`:                            `__binary__:*:app:="x" | stats count()|||2`,
+		`label_replace(sum(count_over_time({app="x"} | unpack [5m])), "d", "x", "", "")`:      `app:="x" | stats count()__lvp_lr:ZAB4AAA=__`,
+		`sum(count_over_time({app="x"} | unpack [5m])) / sum(count_over_time({app="x"}[5m]))`: `__binary__:/:app:="x" | stats count()|||app:="x" | stats count()`,
+	} {
+		op, err := unpackPlan(t, q, v54)
+		if err != nil {
+			t.Errorf("%s: not lowered: %v", q, err)
+			continue
+		}
+		if text := physical.Encode(op); text != want {
+			t.Errorf("%s:\n lowered %s\n    want %s", q, text, want)
+		}
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		queryplan.Resolve(p)
+		root := strings.HasPrefix(q, "sum(") || strings.HasPrefix(q, "sum by () (")
+		wrapped := strings.HasPrefix(q, "label_replace(") || strings.Contains(q, ") * 2") || strings.Contains(q, ") / sum(")
+		if !WritesSkippedUnpack(p) || SkipsUnpack(p) != root && !wrapped || SkipsUnpackWrapped(p) != wrapped {
+			t.Errorf("%s: WritesSkippedUnpack %v, SkipsUnpack %v, SkipsUnpackWrapped %v", q, WritesSkippedUnpack(p), SkipsUnpack(p), SkipsUnpackWrapped(p))
 		}
 	}
 	// delegated, by construct.
@@ -357,7 +402,6 @@ func TestUnpackLowering(t *testing.T) {
 		`sum by (a) (rate({app="x"} | unpack [5m]))`:                      "VectorAgg " + unpackParserConstruct,
 		`sum by (app) (count_over_time({app="x"} | unpack [5m]))`:         "VectorAgg " + unpackParserConstruct,
 		`sum without (a) (count_over_time({app="x"} | unpack [5m]))`:      "VectorAgg " + unpackParserConstruct,
-		`sum by () (count_over_time({app="x"} | unpack [5m]))`:            "VectorAgg " + unpackParserConstruct,
 		`count(count_over_time({app="x"} | unpack [5m]))`:                 "VectorAgg " + unpackParserConstruct,
 		`min(count_over_time({app="x"} | unpack [5m]))`:                   "VectorAgg " + unpackParserConstruct,
 		`max(rate({app="x"} | unpack [5m]))`:                              "VectorAgg " + unpackParserConstruct,
@@ -385,10 +429,10 @@ func TestUnpackLowering(t *testing.T) {
 // FuzzUnpackLowering holds the lowering of a query with an unpack to the contract of this file on any selector,
 // stage before and after the unpack, function and wrapper: a range aggregation the lowering writes is a count, a
 // rate or an absence check whose stages after the unpack are drops and keeps and whose only parser is the unpack,
-// alone or under a sum with no clause, written as the string translator writes it; a log query, and every other
-// shape, is left to the translator.
+// alone or under a sum with no clause, written as the string translator writes it, except a count or a rate under the
+// sum, written with no stage from the unpack on; a log query, and every other shape, is left to the translator.
 //
-// conformance: semantics/translator-writes-unpack-as-unpack-json
+// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/ungrouped-sum-skips-unpack
 func FuzzUnpackLowering(f *testing.F) {
 	f.Add("a", "x", uint8(0), uint8(0), uint8(0), uint8(0), uint8(0))
 	f.Add("k8s.pod", "é\n", uint8(3), uint8(4), uint8(7), uint8(2), uint8(1))
@@ -417,7 +461,7 @@ func FuzzUnpackLowering(f *testing.F) {
 			` | label_format b=a`, ` | drop ` + ident + ` | ` + ident + `=~"x"`,
 		}[after%12]
 		stages := pre + ` | unpack` + post
-		var q string
+		var q, unpackOnly string
 		switch log % 5 {
 		case 0:
 			q = `{app="a"}` + stages
@@ -426,10 +470,16 @@ func FuzzUnpackLowering(f *testing.F) {
 		default:
 			fn := []string{"count_over_time", "rate", "absent_over_time", "bytes_over_time", "bytes_rate"}[fn%5]
 			q = fn + `({app="a"}` + stages + ` [5m])`
+			unpackOnly = fn + `({app="a"}` + pre + ` | unpack [5m])`
 		}
 		if log%5 != 0 {
 			q = fmt.Sprintf([]string{`%s`, `sum(%s)`, `sum by (a) (%s)`, `count(%s)`}[wrap%4], q)
+			unpackOnly = fmt.Sprintf([]string{`%s`, `sum(%s)`, `sum by (a) (%s)`, `count(%s)`}[wrap%4], unpackOnly)
 		}
+		// A sum with no clause of a count or a rate is written with no stage from the unpack on: the translator's text
+		// of the query with nothing after the unpack, less its unpack_json pipe (semantics/ungrouped-sum-skips-unpack); a
+		// keep after the unpack keeps it under a rate, and a count behind it counts every line.
+		skipped := log%5 > 1 && wrap%4 == 1 && fn%5 < 2 && (fn%5 == 0 || !strings.Contains(post, "keep"))
 		for _, v := range []string{"v1.49.0", "v1.54.0"} {
 			prof := Profile{Caps: logsql.CapabilitiesFor(v)}
 			op, err := unpackPlan(t, q, prof)
@@ -443,9 +493,19 @@ func FuzzUnpackLowering(f *testing.F) {
 			if log%5 == 0 || log%5 == 1 {
 				t.Fatalf("%s: lowered, a log query and an unwrapped value over an unpack are delegated", q)
 			}
-			legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), nil, nil, prof.Caps)
+			ref := q
+			if skipped {
+				ref = unpackOnly
+			}
+			legacy, err := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(ref), nil, nil, prof.Caps)
 			if err != nil {
-				t.Fatalf("%s: %v", q, err)
+				t.Fatalf("%s: %v", ref, err)
+			}
+			if skipped {
+				if !strings.Contains(legacy, " | unpack_json") {
+					t.Fatalf("%s: the translator writes no unpack_json: %s", ref, legacy)
+				}
+				legacy = strings.Replace(legacy, " | unpack_json", "", 1)
 			}
 			if text := op.(physical.VLQuery).Text; text != legacy {
 				t.Fatalf("%s:\n lowered %s\n  string %s", q, text, legacy)
@@ -533,6 +593,52 @@ func BenchmarkUnpackSumLowered(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := PlanQuery(unpackSumBenchQueries[i%len(unpackSumBenchQueries)], plans[i%len(plans)], Profile{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// unpackSumWrappedBenchQueries are the sums over an unpack under an empty by clause, a binary operation and a
+// label_replace call, and behind a keep (semantics/ungrouped-sum-skips-unpack).
+var unpackSumWrappedBenchQueries = []string{
+	`sum by () (count_over_time({app="x"} | unpack [5m]))`,
+	`sum(count_over_time({app="x"} | unpack [5m])) * 2`,
+	`label_replace(sum(rate({app="x"} | unpack | drop a [5m])), "d", "x", "", "")`,
+	`sum(count_over_time({app="x"} | unpack | keep a [5m]))`,
+}
+
+// The string translator on the wrapped sums.
+func BenchmarkUnpackSumWrappedTranslator(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := translator.TranslateLogQLWithLabels(unpackSumWrappedBenchQueries[i%len(unpackSumWrappedBenchQueries)], nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The lowering of the wrapped sums, from the resolved plan, with the check that serves them (SkipsUnpack or
+// SkipsUnpackWrapped).
+func BenchmarkUnpackSumWrappedLowered(b *testing.B) {
+	plans := make([]*queryplan.Plan, len(unpackSumWrappedBenchQueries))
+	for i, q := range unpackSumWrappedBenchQueries {
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if plans[i], err = queryplan.Build(expr, queryplan.Inputs{}); err != nil {
+			b.Fatal(err)
+		}
+		queryplan.Resolve(plans[i])
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p := plans[i%len(plans)]
+		if !SkipsUnpack(p) && !SkipsUnpackWrapped(p) {
+			b.Fatal("not skipped")
+		}
+		if _, err := PlanQuery(unpackSumWrappedBenchQueries[i%len(unpackSumWrappedBenchQueries)], p, Profile{}); err != nil {
 			b.Fatal(err)
 		}
 	}
