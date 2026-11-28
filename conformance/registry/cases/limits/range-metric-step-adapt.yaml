@@ -31,8 +31,7 @@ why: |
   400 ms (a multiple). At 53 ms it is 360 ms (223 points over 80 s), not the
   19.08 s multiple (5 points). The answer is Loki's answer to the query at
   the effective step, with timestamps anchored as Loki anchors a request at
-  it: multiples of it with -align-queries-with-step, start + j x step
-  without. On a multiple every point is also one of Loki's points at the
+  it: its multiples inside the requested range. On a multiple every point is also one of Loki's points at the
   requested step. The answer carries Loki's warnings field and the header
   X-Proxy-Step-Adjusted. It is counted by loki_vl_proxy_step_adjusted_total
   and never cached as such.

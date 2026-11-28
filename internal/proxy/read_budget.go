@@ -129,10 +129,10 @@ func readGridOf(ctx context.Context) (readGrid, bool) {
 //     multiple that fits is 19.08 s, 5 points over 80 s, where 360 ms fits with 223) it is that smallest step: the
 //     answer is Loki's answer to the same query at that step.
 //
-// Times are anchored as Loki anchors a request at the effective step: with the bounds moved onto the step grid
-// (-align-queries-with-step, Loki's align_queries_with_step) at the multiples of the effective step inside the
-// requested range, without it at start + j * effective step. Each value is Loki's at its time, because the range
-// window of every range aggregation stays what the query says.
+// Times are anchored as Loki anchors a request at the effective step: at its multiples inside the requested range, as
+// Loki's step alignment (align_queries_with_step) does and as its interval splitting (split_queries_by_interval, on by
+// default) floors the start to the step. Each value is Loki's at its time, because the range window of every range
+// aggregation stays what the query says.
 
 // stepMultipleDensity is how many times coarser than the finest fitting step the smallest fitting multiple of the
 // requested step may be and still be chosen.
