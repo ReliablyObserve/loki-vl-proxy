@@ -47,6 +47,7 @@ implementation:
   - internal/middleware/coalescer.go
   - internal/metrics/vl_savings.go
   - internal/cache/error_flights.go
+  - internal/proxy/telemetry.go
 
 decisions:
   - id: reuse-cost-recorded-at-build
@@ -62,6 +63,12 @@ decisions:
       the caches off makes the calls of the replay with them on plus the
       avoided calls. Entries this replica did not build since it started have
       no measured cost: they count as unknown, never as zero or a guess.
+      A shared VictoriaLogs call carries its work in the coalescer's flight
+      (middleware.CallWork, read through the call's context; nested calls
+      add to the call they run in), so measuring it allocates nothing; the
+      request telemetry stays 760 bytes (one 8-bit field moved into padding
+      makes room for the shared-work pointer), and the request line writes
+      flow.vl.rows and the reuse counts only when the request has them.
     evidence: |
       TestAvoidedCallsMatchTheCallsOfARunWithoutReuse (replay, cache and
       coalescer on vs off: off calls = on calls + avoided calls, exactly),
@@ -69,7 +76,7 @@ decisions:
       TestCoalescedCallsCountTheSharedCallsWork, TestRequestFlightFollowersCountTheLeadersWork,
       TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing.
     code: [internal/proxy/vl_reuse.go, internal/metrics/vl_savings.go]
-    tests: [TestResponseCacheReuseCountsTheBuildWork, TestAvoidedCallsMatchTheCallsOfARunWithoutReuse, TestCoalescedCallsCountTheSharedCallsWork, TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing, TestBuildCostLedgerNeverAnswersAnotherKey, TestServedClass, TestWorkScopesNest, TestWindowReuseCountsTheWindowsOwnWork, TestRequestFlightFollowersCountTheLeadersWork, TestStatsExtentReuseIsCountedWithUnknownCost, TestBurstJoinerCountsAnUnknownCostReuse, TestCoalescerHooksSeeTheCallAndEachWaiter, TestCoalescerInheritedRetryIsNotASaving, TestSavingsMetricsExposition, TestSavingsMetricsEmpty]
+    tests: [TestResponseCacheReuseCountsTheBuildWork, TestAvoidedCallsMatchTheCallsOfARunWithoutReuse, TestCoalescedCallsCountTheSharedCallsWork, TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing, TestBuildCostLedgerNeverAnswersAnotherKey, TestServedClass, TestWorkScopesNest, TestWindowReuseCountsTheWindowsOwnWork, TestRequestFlightFollowersCountTheLeadersWork, TestStatsExtentReuseIsCountedWithUnknownCost, TestBurstJoinerCountsAnUnknownCostReuse, TestCoalescerSharesTheCallsWorkWithEachWaiter, TestCoalescerInheritedRetryIsNotASaving, TestSavingsMetricsExposition, TestSavingsMetricsEmpty]
     quality: |
       Counted layers: the response cache, query_range log windows, request
       flights, held failures, shared VictoriaLogs calls (with recorded cost),
@@ -78,8 +85,8 @@ decisions:
       (cache) but not as reuse yet. The ledger holds 32768 keys (1.25 MiB);
       an older key whose slot a newer one took reads as unknown.
     performance:
-      tracked: ['BenchmarkRequestPath', 'BenchmarkRequestLogger', 'BenchmarkProxy_Series_CompatCacheHit', 'BenchmarkProxy_QueryRange_CacheHit']
-      bound: 'no size class change of the request telemetry (768 B); a reuse adds one ledger read (a hash of the key and a striped lock) and the counters; a cache hit allocates no more'
+      tracked: ['BenchmarkRequestPath', 'BenchmarkRequestLogger', 'BenchmarkProxy_Series_CompatCacheHit', 'BenchmarkProxy_QueryRange_CacheHit', 'BenchmarkCacheReadWrapper', 'BenchmarkCoalescerCall', 'BenchmarkRecordServedAndReuse']
+      bound: 'no added allocation on the request path, the cache hit or a shared call; the request telemetry keeps its 760 bytes; the request line buffer is 88 values (1408 B, one size class over 80); a reuse adds one ledger read (a hash of the key and a striped lock); recording a served request and a reuse costs about 50 ns and 0 allocations'
     pending: true
   - id: coalescer-saved-excludes-inherited-retries
     chosen: 'loki_vl_proxy_coalesced_saved_total counts a follower only when it does not start the call again after an inherited cancellation; request_coalesced_success_total counts a follower of a stored answer only when the response cache answered it'
