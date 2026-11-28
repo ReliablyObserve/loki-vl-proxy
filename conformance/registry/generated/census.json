@@ -2777,6 +2777,7 @@
     "internal/proxy/unknown_logql_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/proxy/unpack_parser_error_test.go | semantics/unpack-parser-error-not-raised",
     "internal/proxy/unpack_parser_error_test.go | semantics/unwrap-conversion-check-reads-unpack-unlike-loki",
+    "internal/proxy/unpack_sum_rate_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/proxy/unpack_sum_rate_test.go | semantics/unpack-instant-grouped-sum-reads-every-line",
     "internal/proxy/unpack_sum_rate_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/proxy/unwrap_binary_operand_loki_test.go | semantics/unwrap-conversion-error",
