@@ -168,7 +168,9 @@ func TestUngroupedParserSumProbeSkipFollowsTheTranslation(t *testing.T) {
 		cfg  func(*Config)
 	}{
 		{"default", func(*Config) {}},
-		{"underscores translated", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeTranslated }},
+		{"underscores translated", func(c *Config) {
+			c.LabelStyle, c.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeTranslated
+		}},
 		{"passthrough native", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStylePassthrough, MetadataFieldModeNative }},
 		{"hybrid", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeHybrid }},
 		{"field mappings original", func(c *Config) { c.FieldMappings = mappings }},
