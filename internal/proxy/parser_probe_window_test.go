@@ -451,7 +451,9 @@ func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 			if res.Code != http.StatusOK || bytes.Contains(res.Body.Bytes(), []byte("stale")) || bytes.Contains(res.Body.Bytes(), []byte(`"streams"`)) {
 				t.Fatalf("an answer cached under the old key was served: %d %s", res.Code, res.Body)
 			}
-			if len(b.probes) == 0 {
+			// The sum runs no parser and sends no probe (semantics/ungrouped-sum-skips-parsers): its stats read is
+			// the request reaching VictoriaLogs.
+			if len(b.probes)+len(b.reads) == 0 {
 				t.Fatal("the request did not reach VictoriaLogs")
 			}
 		})
