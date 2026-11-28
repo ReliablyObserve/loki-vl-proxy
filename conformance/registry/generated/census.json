@@ -2018,6 +2018,7 @@
     "internal/proxy/field_mapping_both_names_test.go | field-mapping-label-names",
     "internal/proxy/field_mapping_both_names_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/field_mapping_collision_test.go | field-mapping-label-names",
+    "internal/proxy/field_mapping_collision_test.go | loki_api_v1_query_range",
     "internal/proxy/field_mapping_collision_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/field_mapping_labels_test.go | field-mapping-label-names",
     "internal/proxy/field_mapping_labels_test.go | loki_api_v1_label_name_values",

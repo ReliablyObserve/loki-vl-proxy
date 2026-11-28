@@ -721,6 +721,7 @@
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/field_mapping_both_answers_test.go",
+      "internal/proxy/field_mapping_collision_test.go",
       "internal/proxy/field_mapping_name_matrix_test.go",
       "internal/proxy/first_last_range_longer_than_step_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
@@ -4367,6 +4368,7 @@
     ],
     "internal/proxy/field_mapping_collision_test.go": [
       "field-mapping-label-names",
+      "loki_api_v1_query_range",
       "semantics/field-mapping-label-modes"
     ],
     "internal/proxy/field_mapping_labels_test.go": [

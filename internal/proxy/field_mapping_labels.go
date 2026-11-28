@@ -324,14 +324,20 @@ func (lt *LabelTranslator) aliasField(label string) string {
 // name_extracted beside it, as Loki renames a key named like a stream label.
 // false in the other modes and for a field the both mode lists no base name of.
 func (lt *LabelTranslator) bothBaseName(field string) (string, bool) {
-	if lt.labelMode != FieldMappingLabelModeBoth {
+	if lt == nil || lt.labelMode != FieldMappingLabelModeBoth {
 		return "", false
 	}
-	base := lt.baseName(field)
-	if _, ok := lt.aliasAnswer(field); !ok || !slices.Contains(lt.listing[field], base) {
+	// The both mode lists a field's aliases, the answer alias last, then the
+	// -label-style name when the field owns it (SetFieldMappingLabelMode): read
+	// from the listing, nothing is allocated per call.
+	names := lt.listing[field]
+	if len(names) < 2 {
 		return "", false
 	}
-	return base, true
+	if last := names[len(names)-1]; last != lt.vlToLoki[field] {
+		return last, true
+	}
+	return "", false
 }
 
 // fieldAlias is the alias a stored field carries as its stream label in the

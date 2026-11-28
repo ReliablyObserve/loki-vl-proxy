@@ -340,3 +340,47 @@ func TestFieldMappingLabelMode_BothBaseNameParsedKeyInLogAnswer(t *testing.T) {
 		}
 	}
 }
+
+// A stream that stores a field named like an alias itself (never renamed)
+// holds the alias's stream label there: its parsed key is pod_extracted, so
+// /detected_field/pod/values lists nothing over such streams (alias and both).
+//
+// conformance: field-mapping-label-names, semantics/field-mapping-label-modes
+func TestFieldMappingLabelMode_StoredAliasStreamFieldValues(t *testing.T) {
+	row := map[string]string{"_time": "2026-01-01T00:00:01Z", "_stream": `{pod="npod-a",service.name="svc"}`, "_stream_id": "1",
+		"_msg": "level=info pod=line-a", "pod": "npod-a", "service.name": "svc"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			_ = json.NewEncoder(w).Encode(row)
+		case "/select/logsql/streams":
+			_ = json.NewEncoder(w).Encode(map[string]any{"values": []map[string]any{{"value": row["_stream"], "hits": 1}}})
+		case "/select/logsql/field_values", "/select/logsql/stream_field_values":
+			_ = json.NewEncoder(w).Encode(map[string]any{"values": []map[string]any{{"value": "npod-a", "hits": 1}}})
+		default:
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
+		p := newMappingProxy(t, srv.URL, nil, Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
+			FieldMappingLabelMode: mode, FieldMappings: collisionMappings()})
+		var out struct {
+			Values []string `json:"values"`
+		}
+		body := mappingGet(t, p, "/loki/api/v1/detected_field/pod/values", url.Values{"query": {`{service_name="svc"}`}})
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatal(err)
+		}
+		if len(out.Values) != 0 {
+			t.Errorf("%s: /detected_field/pod/values = %v, want none (Loki: the key is pod_extracted)", mode, out.Values)
+		}
+		var ext struct {
+			Values []string `json:"values"`
+		}
+		body = mappingGet(t, p, "/loki/api/v1/detected_field/pod_extracted/values", url.Values{"query": {`{service_name="svc"}`}})
+		if err := json.Unmarshal(body, &ext); err != nil || !slices.Equal(ext.Values, []string{"line-a"}) {
+			t.Errorf("%s: /detected_field/pod_extracted/values = %v (%v), want [line-a]", mode, ext.Values, err)
+		}
+	}
+}
