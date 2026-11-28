@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -140,6 +141,57 @@ func appendOrderedMetricFences(b *fenceChain, query string, logfmtWord bool) {
 	if containsOrderedJSONEvaluatorMetric(expr) {
 		b.add(orderedJSONEvaluatorResponseVersion)
 	}
+}
+
+// ipFilterInTree reports an ip() line filter, line filter alternative or label filter in the parsed tree of query,
+// for the spellings the text screens of ipFilterIn do not fence: a label whose name is one character that starts no
+// token (a control character, one of $&;?\~, a char literal, a non-ASCII character that is no letter), which
+// Loki's lexer and the parser read as a name, after another filter of the stage (`A="x" ;=ip("10.0.0.0/8")`). The
+// tree is the memoised one the handler reads (sharedLogQLExpr); a query the parser rejects has none. ipFilterIn
+// calls it only for a query in which a screen met an ip( it did not fence.
+func ipFilterInTree(query string) bool {
+	expr, ok := sharedLogQLExpr(fenceVariablesResolved(query))
+	return ok && exprHoldsIPFilter(expr)
+}
+
+func exprHoldsIPFilter(expr logqlpkg.Expr) bool {
+	switch n := expr.(type) {
+	case *logqlpkg.LogQuery:
+		for _, stage := range n.Pipeline {
+			switch s := stage.(type) {
+			case *logqlpkg.LineFilterStage:
+				if s.IP || slices.ContainsFunc(s.Or, func(a logqlpkg.LineFilterAlt) bool { return a.IP }) {
+					return true
+				}
+			case *logqlpkg.LabelFilterStage:
+				if labelFilterHoldsIP(s.Expr) {
+					return true
+				}
+			}
+		}
+		return false
+	case *logqlpkg.RangeAggregation:
+		return exprHoldsIPFilter(n.Inner)
+	case *logqlpkg.VectorAggregation:
+		return exprHoldsIPFilter(n.Inner)
+	case *logqlpkg.BinOpExpr:
+		return exprHoldsIPFilter(n.Left) || exprHoldsIPFilter(n.Right)
+	case *logqlpkg.OpaqueMetricExpr:
+		return n.Inner != nil && exprHoldsIPFilter(n.Inner)
+	}
+	return false
+}
+
+// labelFilterHoldsIP reports an ip() leaf of a label filter, and a leaf whose string literal the parser could not
+// read (its kind is none) with ip in its text in any case: the stage is accepted as written.
+func labelFilterHoldsIP(e *logqlpkg.LabelFilterExpr) bool {
+	if e == nil {
+		return false
+	}
+	if e.Op == logqlpkg.LabelFilterLeaf {
+		return e.Kind == logqlpkg.LabelFilterValueIP || e.Kind == logqlpkg.LabelFilterValueNone && containsFold(e.Leaf, "ip")
+	}
+	return labelFilterHoldsIP(e.Left) || labelFilterHoldsIP(e.Right)
 }
 
 const mixedParserMetricResponseVersion = "@ordered-mixed-parser-metric-v1:"

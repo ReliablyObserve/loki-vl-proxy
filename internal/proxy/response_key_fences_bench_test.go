@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,9 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 		{"keep_unwrap", `sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m]))`},
 		{"keep_unwrap_replace", `label_replace(sum by (x) (sum_over_time({app="a"} | json | keep x | unwrap n [5m])), "p", "x-$1", "x", "(.*)")`},
 		{"ip", `{app="a"} | json | addr = ip("10.0.0.0/8") | status = "500"`},
+		{"ip_unknown_name", `{app="a"} | json | status = "500" ;= ip("10.0.0.0/8")`},
+		{"ip_substring", `{app="zipkin"} | json | client_ip = "10.0.0.1"`},
+		{"ip_substring_no_parser", `{app="zipkin"} |= "error"`},
 		{"escaped_regexp", `{app="a"} |~ "\\d+ ms" | json | status = "500"`},
 		{"marker_bytes", `{app="a"} | o="\x02\x00\x02" | json`},
 		{"numeric_equality", `{app="a"} | json | status = 500`},
@@ -55,5 +59,31 @@ func BenchmarkResponseKeyFences(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// BenchmarkResponseKeyFencesColdMemo builds the fence chain of queries the plan memo does not hold (more distinct
+// texts than its two generations keep, round robin): the first key a query builds. Queries that hold the letters
+// ip and no ip() call read their tree from the memo there; the handler's translation reads the same entry after.
+func BenchmarkResponseKeyFencesColdMemo(b *testing.B) {
+	for _, tc := range []struct{ name, format string }{
+		{"selector", `{app="svc-%d"}`},
+		{"ip_substring", `{app="zipkin-%d"} | json | client_ip = "10.0.0.1"`},
+		{"ip_substring_no_parser", `{app="zipkin-%d"} |= "error"`},
+		{"ip", `{app="svc-%d"} | json | addr = ip("10.0.0.0/8")`},
+	} {
+		queries := make([]string, 2*planMemoLimit+1)
+		for i := range queries {
+			queries[i] = fmt.Sprintf(tc.format, i)
+		}
+		v := url.Values{"start": {"1700000000"}, "end": {"1700003600"}, "step": {"15"}}
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+v.Encode(), nil)
+		r.ParseForm()
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_ = responseKeyFences(r, queries[i%len(queries)], responseKeyInnerQueryRange)
+			}
+		})
 	}
 }

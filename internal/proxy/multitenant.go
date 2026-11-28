@@ -250,9 +250,9 @@ func (p *Proxy) multiTenantMergeStale(endpoint string, cached []byte, remaining,
 	if !isMetadataListEndpoint(endpoint) {
 		return false
 	}
-	ttl := CacheTTLs[endpoint]
+	ttl := p.endpointTTL(endpoint)
 	if (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(cached) {
-		ttl = p.metadataNegativeTTL()
+		ttl = p.shortenedTTL(endpoint, p.metadataNegativeTTL())
 	}
 	return p.shouldBypassStaleEntry(endpoint, ttl, remaining, age, r)
 }
@@ -260,9 +260,9 @@ func (p *Proxy) multiTenantMergeStale(endpoint string, cached []byte, remaining,
 // setMultiTenantMergeCache stores a merged multi-tenant response through the
 // normal write path; empty merged label lists use the negative TTL.
 func (p *Proxy) setMultiTenantMergeCache(endpoint, cacheKey string, body []byte) {
-	ttl := CacheTTLs[endpoint]
+	ttl := p.endpointTTL(endpoint)
 	if (endpoint == "labels" || endpoint == "label_values") && metadataListPayloadEmpty(body) {
-		ttl = p.metadataNegativeTTL()
+		ttl = p.shortenedTTL(endpoint, p.metadataNegativeTTL())
 	}
 	p.cache.SetWithTTL(cacheKey, body, ttl)
 }
@@ -432,6 +432,11 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 			// answer over the series limit is partial, every other client's
 			// is an error, so the two never share an entry.
 			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.responseProfileCacheKey(r, endpoint))
+		}
+		if len(p.answerCacheTTLs) != 0 && !readCacheKeyFencedByTTL(endpoint) {
+			// The merge is stored with endpointTTL (setMultiTenantMergeCache);
+			// the canonical key fenced the others already.
+			key += p.answerTTLKeyFence(endpoint)
 		}
 		return key, true
 	}

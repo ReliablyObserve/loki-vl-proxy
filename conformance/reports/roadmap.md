@@ -7,7 +7,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 ## Where we are
 
 - Read endpoints with a test comparing the proxy against Loki: **70%**
-- Behaviour and feature items: **11 proven**, 27 partial, 3 gaps, 0 waived, 18 with no state recorded
+- Behaviour and feature items: **11 proven**, 28 partial, 3 gaps, 0 waived, 18 with no state recorded
 
 
 ## Next: unproven behaviour
@@ -28,8 +28,9 @@ Proven in part; the rest is named in the item's cases.
 |---|---|---:|---:|---|
 | `drilldown-service-landing` — Logs Drilldown ranks services on the landing page | drilldown | 1 / 5 | 1 | 1/3 deltas proven. |
 | `explore-logs-volume-json` — Grafana Explore renders the logs volume for a `| json` query | explore | 9 / 17 | 7 | 3/6 deltas proven. |
+| `cache-answer-ttl-shorten-only` — An operator can shorten the cache TTL of each Loki answer class, never lengthen it, and replicas or restarts with other settings never serve each other's entries | — | 0 / 0 | 2 | Unit-proven in internal/proxy and cmd/proxy: start-up refusal of longer values, unchanged TTLs and keys when unset, ever |
 | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | — | 0 / 0 | 4 | Unit-proven in internal/cache, internal/metrics and internal/proxy (every reason, the invariant with the layer counters  |
-| `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 17 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
+| `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 18 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
 | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | — | 0 / 0 | 3 | Unit-proven in internal/cache, internal/metrics and cmd/proxy: the segment invariants over random and concurrent operati |
 | `cache-sizing-signals` — The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class | — | 0 / 0 | 3 | Unit-proven in internal/cache, internal/metrics, internal/proxy and cmd/proxy (exact ghost, working-set, reuse and byte  |
 | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 11 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
@@ -82,9 +83,9 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 5 | — |
-| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 13 | — |
+| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 14 | — |
 | `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | — | 0 / 0 | 5 | — |
-| `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | — | 1 / 1 | 10 | — |
+| `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | — | 1 / 1 | 11 | — |
 | `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 8 | — |

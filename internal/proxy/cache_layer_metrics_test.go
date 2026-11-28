@@ -209,8 +209,8 @@ func TestCacheTTLGaugeMatchesTheConfiguredTTLs(t *testing.T) {
 		t.Fatalf("classes %d: %v", len(got), got)
 	}
 	for _, endpoint := range []string{"query_range", "query", "labels", "series"} {
-		if compatAnswerTTL(endpoint) != got[endpoint] {
-			t.Fatalf("%s: gauge %s, answer cache %s", endpoint, got[endpoint], compatAnswerTTL(endpoint))
+		if p.compatAnswerTTL(endpoint) != got[endpoint] {
+			t.Fatalf("%s: gauge %s, answer cache %s", endpoint, got[endpoint], p.compatAnswerTTL(endpoint))
 		}
 	}
 	body := scrapeProxyCacheLayers(t, p)

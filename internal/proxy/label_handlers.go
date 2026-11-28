@@ -580,7 +580,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("index_stats", status, time.Since(start))
 		return
 	}
-	p.setEndpointReadCacheWithTTL("index_stats", cacheKey, result, CacheTTLs["index_stats"])
+	p.setEndpointReadCacheWithTTL("index_stats", cacheKey, result, p.endpointTTL("index_stats"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
@@ -754,7 +754,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	lineLimit := p.detectedFieldsLineLimit(r)
 	cacheKey := p.canonicalReadCacheKey("detected_fields", orgID, r)
-	detectedFieldsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_fields"])
+	detectedFieldsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.endpointTTL("detected_fields"))
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_fields", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -839,7 +839,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	lineLimit := parseDetectedLineLimit(r)
 	cacheKey := p.canonicalReadCacheKey("detected_field_values", orgID, r, fieldName)
-	detectedFieldValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_field_values"])
+	detectedFieldValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.endpointTTL("detected_field_values"))
 	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_field_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -895,6 +895,12 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 // detectedLabelValuesForField returns the values the stream labels hold for fieldName. A label read that fails is
 // the error, not "no values".
 func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, query, start, end string, lineLimit int) ([]string, error) {
+	// A stream label of a mapped field in the alias and both modes (an alias, and in both the -label-style name) is
+	// a detected field only as the parsed key of a line whose stream lacks the field, which the field scan reads with
+	// Loki's collision rule: Loki lists no stream label, so neither fallback answers for it.
+	if p.labelTranslator.isAliasLabel(fieldName) {
+		return nil, nil
+	}
 	// The scan supplement of detectLabels is where level and service_name come from when no stored label holds them.
 	_, summaries, err := p.detectLabelsFor(ctx, query, start, end, lineLimit, fieldName == "level" || fieldName == "service_name")
 	if err != nil {

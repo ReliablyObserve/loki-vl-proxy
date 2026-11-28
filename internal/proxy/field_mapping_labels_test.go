@@ -721,6 +721,25 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 						t.Fatalf("both: added %q is no listed name", k)
 					}
 				}
+				// The collision labels of a stream descriptor: never overwrite a
+				// label, and add only listed names of a field the stream stores.
+				p := &Proxy{labelTranslator: lt}
+				raw := map[string]string{field1: "a1"}
+				translated := map[string]string{lt.ToLoki(field1): "a1", label2: "v2"}
+				collision := p.bothCollisionLabels(raw, translated)
+				for k, v := range translated {
+					if collision != nil && collision[k] != v {
+						t.Fatalf("both: collision label %q overwritten: %q -> %q", k, v, collision[k])
+					}
+				}
+				for k := range collision {
+					if _, had := translated[k]; had {
+						continue
+					}
+					if !slices.Contains(lt.listing[field1], k) {
+						t.Fatalf("both: collision name %q is no listed name of the stored field %q (%v)", k, field1, lt.listing)
+					}
+				}
 			}
 			for _, m := range mappings {
 				if m.VLField == "" || m.LokiLabel == "" {
@@ -746,11 +765,18 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 						t.Fatalf("%s: listed alias %q of %q reads %q", mode, name, m.VLField, lt.ToVL(name))
 					}
 				}
-				// The alias functions of the lowering: an alias names its field both ways, any other label none.
+				// The alias functions of the lowering: an alias names its field both ways, any other label none;
+				// in the both mode the field's -label-style name names it too (bothBaseName).
 				for _, label := range []string{m.LokiLabel, lt.baseName(m.VLField), answer} {
 					field := lt.aliasField(label)
 					if lt.isAliasLabel(label) != (field != "") {
 						t.Fatalf("%s: alias %q names field %q", mode, label, field)
+					}
+					if base, ok := lt.bothBaseName(field); field != "" && ok && base == label {
+						if mode != FieldMappingLabelModeBoth || lt.fieldAlias(field) == "" {
+							t.Fatalf("%s: base name %q of %q read as a stream label", mode, label, field)
+						}
+						continue
 					}
 					if field != "" && lt.fieldAlias(field) != label {
 						t.Fatalf("%s: field %q of alias %q names %q", mode, field, label, lt.fieldAlias(field))

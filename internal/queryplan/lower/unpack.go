@@ -63,9 +63,24 @@ func unpackRange(ra *queryplan.RangeAgg) (*queryplan.RangeAgg, error) {
 // the labels the unpack makes, and a NotLoweredError naming what it reads otherwise, under owner, the construct of
 // the aggregation that lowers it.
 func unpackRangeFor(ra *queryplan.RangeAgg, owner string) (*queryplan.RangeAgg, error) {
+	at, err := unpackLowered(ra, owner)
+	if at < 0 || err != nil {
+		return ra, err
+	}
+	in := *ra.In
+	in.Stages = append([]queryplan.Stage(nil), ra.In.Stages...)
+	in.Stages[at] = &queryplan.Parse{Type: logql.ParserJSON}
+	cp := *ra
+	cp.In = &in
+	return &cp, nil
+}
+
+// unpackLowered is the index of the unpack stage of ra's log query when its result reads neither the line nor the
+// labels the unpack makes, -1 when it has none, and a NotLoweredError naming what it reads otherwise, under owner.
+func unpackLowered(ra *queryplan.RangeAgg, owner string) (int, error) {
 	at := unpackStage(ra.In)
 	if at < 0 {
-		return ra, nil
+		return -1, nil
 	}
 	reads := func(what string) error { return &NotLoweredError{Construct: owner + " LogSelect " + what} }
 	parsers := 0
@@ -75,32 +90,138 @@ func unpackRangeFor(ra *queryplan.RangeAgg, owner string) (*queryplan.RangeAgg, 
 		}
 	}
 	if parsers != 1 {
-		return nil, reads(unpackOrderConstruct)
+		return -1, reads(unpackOrderConstruct)
 	}
 	// An unwrapped value is a promoted label, whichever function reads it.
 	if unwrapStage(ra.In) != nil {
-		return nil, reads(unpackLabelReadConstruct)
+		return -1, reads(unpackLabelReadConstruct)
 	}
 	switch ra.Op {
 	case logql.RangeCountOverTime, logql.RangeRate, logql.RangeAbsentOverTime:
 	case logql.RangeBytesOverTime, logql.RangeBytesRate:
-		return nil, reads(unpackLineReadConstruct)
+		return -1, reads(unpackLineReadConstruct)
 	default:
-		return nil, reads(unpackLabelReadConstruct)
+		return -1, reads(unpackLabelReadConstruct)
 	}
 	for _, st := range ra.In.Stages[at+1:] {
 		switch st.(type) {
 		case *queryplan.Drop, *queryplan.Keep:
 		case *queryplan.LabelFilter, *queryplan.LabelFormat:
-			return nil, reads(unpackLabelReadConstruct)
+			return -1, reads(unpackLabelReadConstruct)
 		default:
-			return nil, reads(unpackLineReadConstruct)
+			return -1, reads(unpackLineReadConstruct)
 		}
 	}
+	return at, nil
+}
+
+// unpackSkipped is ra, a count or a rate over an unpack at stage at that unpackLowered allows, with no stage from the
+// unpack on:
+// for a sum with no by or without clause above it. Loki parses no line for such a sum (it needs no label: the
+// recorded rule semantics/loki-pipeline-error-rules, and TestUnpackSumMatchesLoki over lines that are no JSON object),
+// and the stages it is written for after the unpack are drops and, for a count, keeps (a rate keeps the unpack behind
+// a keep: keepsAfterRate), which change labels and keep every line,
+// so the number of lines in each window is the one the query without them counts. VictoriaLogs then reads no line
+// for the unpack (semantics/ungrouped-sum-skips-unpack).
+func unpackSkipped(ra *queryplan.RangeAgg, at int) *queryplan.RangeAgg {
 	in := *ra.In
-	in.Stages = append([]queryplan.Stage(nil), ra.In.Stages...)
-	in.Stages[at] = &queryplan.Parse{Type: logql.ParserJSON}
+	in.Stages = ra.In.Stages[:at:at]
 	cp := *ra
 	cp.In = &in
-	return &cp, nil
+	return &cp
+}
+
+// SkipsUnpack reports a plan whose root is a sum with no by or without clause of a count_over_time or a rate over an
+// unpack the lowering writes with no stage from the unpack on (unpackSkipped): the proxy serves it from the plan,
+// where the string translator writes the unpack_json pipe and the drops after it
+// (semantics/ungrouped-sum-skips-unpack).
+func SkipsUnpack(p *queryplan.Plan) bool {
+	return skipsUnpack(p.Root)
+}
+
+// skipsUnpack is SkipsUnpack of a node.
+func skipsUnpack(n queryplan.Node) bool {
+	va, ok := n.(*queryplan.VectorAgg)
+	if !ok {
+		return false
+	}
+	ra, ok := va.In.(*queryplan.RangeAgg)
+	if !ok || ra.In == nil || ra.Op == logql.RangeAbsentOverTime || !sumReadsNoSeries(va, ra) || unwrapStage(ra.In) != nil {
+		return false
+	}
+	at, err := unpackLowered(ra, "VectorAgg")
+	return at >= 0 && err == nil && !keepsAfterRate(ra, at)
+}
+
+// keepsAfterRate reports a rate with a keep after the stage at. The handlers group a rate behind a keep by the labels
+// it leaves, so the sum keeps the unpack there (the translator's text): written with no unpack, a rate grouped by the
+// stream was up to 1.35x slower than the translator's text on 155k streams, and as one series it answers a point at an
+// instant over a selector with no line, where Loki answers none. A count behind a keep counts every line either way:
+// `stats count()`, the text of the count with no keep.
+func keepsAfterRate(ra *queryplan.RangeAgg, at int) bool {
+	if ra.Op != logql.RangeRate {
+		return false
+	}
+	for _, st := range ra.In.Stages[at+1:] {
+		if _, ok := st.(*queryplan.Keep); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// WritesSkippedUnpack reports a plan with, at any depth, SkipsUnpack's shape: the lowering writes it with no stage from
+// the unpack on wherever it stands. The proxy serves the root (SkipsUnpack) and the operands of binary operations and
+// label_replace calls above it (SkipsUnpackWrapped); the shadows hold every such plan as the case's.
+func WritesSkippedUnpack(p *queryplan.Plan) bool {
+	return writesSkippedUnpack(p.Root)
+}
+
+// writesSkippedUnpack is WritesSkippedUnpack of a node.
+func writesSkippedUnpack(n queryplan.Node) bool {
+	switch n := n.(type) {
+	case *queryplan.VectorAgg:
+		return skipsUnpack(n) || writesSkippedUnpack(n.In)
+	case *queryplan.Rank:
+		return writesSkippedUnpack(n.In)
+	case *queryplan.LabelReplace:
+		return writesSkippedUnpack(n.In)
+	case *queryplan.BinOp:
+		return writesSkippedUnpack(n.L) || writesSkippedUnpack(n.R)
+	}
+	return false
+}
+
+// SkipsUnpackWrapped reports a plan whose root is a binary operation or a label_replace call over SkipsUnpack's shape:
+// every node between the root and each such sum is a binary operation or a label_replace call, and no other operand
+// holds the shape deeper (under a ranking or another aggregation, which the proxy evaluates as layers of their own).
+// Loki evaluates the operand as the query it is, so it needs no label there either; the lowering writes the operand
+// with no stage from the unpack on, and the rest of the text as it writes the root's operands
+// (semantics/ungrouped-sum-skips-unpack).
+func SkipsUnpackWrapped(p *queryplan.Plan) bool {
+	switch p.Root.(type) {
+	case *queryplan.BinOp, *queryplan.LabelReplace:
+	default:
+		return false
+	}
+	skips, clean := wrappedSkip(p.Root)
+	return skips && clean
+}
+
+// wrappedSkip reports whether n holds SkipsUnpack's shape under binary operations and label_replace calls only
+// (skips), and whether no part of n holds it elsewhere (clean).
+func wrappedSkip(n queryplan.Node) (skips, clean bool) {
+	switch n := n.(type) {
+	case *queryplan.BinOp:
+		ls, lc := wrappedSkip(n.L)
+		rs, rc := wrappedSkip(n.R)
+		return ls || rs, lc && rc
+	case *queryplan.LabelReplace:
+		return wrappedSkip(n.In)
+	case *queryplan.VectorAgg:
+		if skipsUnpack(n) {
+			return true, true
+		}
+	}
+	return false, !writesSkippedUnpack(n)
 }

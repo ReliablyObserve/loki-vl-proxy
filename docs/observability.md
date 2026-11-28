@@ -989,8 +989,8 @@ leaves the L2 copy where it was.
 
 | `class` | Cache | TTL |
 |---|---|---|
-| `query_range`, `query` | Loki answer cache | 5m fixed |
-| `labels`, `label_values`, `series`, `detected_fields`, `detected_field_values`, `detected_labels`, `index_stats`, `volume`, `volume_range` | Loki answer cache | fixed per endpoint (5m, 5m, 30s, 90s, 90s, 90s, 10s, 10s, 10s) |
+| `query_range`, `query` | Loki answer cache | 5m, or shorter with `-cache-answer-ttl-query-range` / `-cache-answer-ttl-query` |
+| `labels`, `label_values`, `series`, `detected_fields`, `detected_field_values`, `detected_labels`, `index_stats`, `volume`, `volume_range` | Loki answer cache | per endpoint (5m, 5m, 30s, 90s, 90s, 90s, 10s, 10s, 10s), or shorter with `-cache-answer-ttl-<class>` (class with dashes) |
 | `patterns` | Loki answer cache | kept until replaced (about 100 years) |
 | `labels_handler`, `label_values_handler` | label list and value caches | `-labels-cache-ttl` (5m when 0) |
 | `label_inventory` | label inventory | 5m fixed |
@@ -1002,7 +1002,9 @@ leaves the L2 copy where it was.
 The label list, label value, detected field and detected label handler caches
 scale their base TTL with the request window: x3 up to 6h, x10 up to 24h, x20
 up to 7d, never above 1h, and 1h beyond 7d. The Loki answer cache keeps the
-fixed TTL.
+unscaled TTL. A `-cache-answer-ttl-<class>` setting shortens the class's base
+TTL (the gauge shows it); the detected field and label handler caches scale
+the shortened base.
 
 ### Query-Range Windowing Metrics
 

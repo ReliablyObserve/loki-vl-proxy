@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -253,7 +254,8 @@ func absentPresenceDegraded(h http.Header, body []byte) bool {
 func (p *Proxy) presenceAnswer(w http.ResponseWriter, r *http.Request, spec absentOverTimeCompatSpec, handle func(http.ResponseWriter, *http.Request)) (body []byte, ok bool) {
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: http.StatusOK}
-	handle(sc, cloneMetricQueryRequest(r, spec.presenceQuery()))
+	child := cloneMetricQueryRequest(r, spec.presenceQuery())
+	handle(sc, child.WithContext(context.WithValue(child.Context(), absentPresenceKey{}, true)))
 	if sc.code != http.StatusOK || absentPresenceDegraded(bw.header, bw.body) {
 		copyHeaders(w.Header(), bw.header)
 		w.WriteHeader(sc.code)
@@ -261,6 +263,17 @@ func (p *Proxy) presenceAnswer(w http.ResponseWriter, r *http.Request, spec abse
 		return nil, false
 	}
 	return bw.body, true
+}
+
+// absentPresenceKey marks the presence query of an absent_over_time (presenceAnswer). Its sum over an unpack keeps the
+// translator's unpack_json pipe (lowerMetric): the plan writes no stage from the unpack on only for a client's sum of a
+// count or a rate (semantics/ungrouped-sum-skips-unpack), so an absence check reads what it read before.
+type absentPresenceKey struct{}
+
+// absentPresence reports a request marked with absentPresenceKey.
+func absentPresence(ctx context.Context) bool {
+	marked, _ := ctx.Value(absentPresenceKey{}).(bool)
+	return marked
 }
 
 // presenceSteps returns the timestamps (ns) of the points of a presence answer.

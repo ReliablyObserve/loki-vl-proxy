@@ -493,6 +493,11 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// text, kept apart from the lowering's.
 		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
+	if absentPresence(ctx) {
+		// The presence query of an absent_over_time: the translator's text over an unpack, kept apart from a client's
+		// sum, which the lowering writes with no unpack (absentPresenceKey).
+		cacheKey = "\x00absent-presence\x00" + cacheKey
+	}
 	ahead := !baseIdentity && identityAhead(ctx)
 	if ahead {
 		// A root dynamic identity over a range longer than the step (dynamicIdentityWindows): the lowering's text with
@@ -1605,7 +1610,7 @@ func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[st
 		// an unrelated per-line id into a metric series label.
 		_, metadataFields, parsedFields, _ = p.classifyEntryFieldsWithFlags(entry, desc.rawLabels, true, exposure, exposureCache, smBuf, pfBuf)
 	} else {
-		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.finalLabels(), exposure, true, exposureCache, smBuf, pfBuf)
 	}
 	addParsedSeriesLabels(metric, parsedFields, unwrapField, captureLabels, includeParsed)
 	if includeParsed {
