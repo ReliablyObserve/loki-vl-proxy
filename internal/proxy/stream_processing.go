@@ -630,6 +630,19 @@ type cachedLogQueryStreamDescriptor struct {
 	streamLabels     map[string]string // labels parsed from _stream (shared, read-only)
 	rawLabels        map[string]string
 	translatedLabels map[string]string
+	// collisionLabels are the stream labels a parsed key collides with: the
+	// translated labels, and in -field-mapping-label-mode both every name the
+	// answer gives a mapped field the stream stores (bothCollisionLabels).
+	collisionLabels map[string]string
+}
+
+// finalLabels are the stream labels the entries of the stream are classified
+// against (classifyEntryMetadataFields): collisionLabels when set.
+func (d cachedLogQueryStreamDescriptor) finalLabels() map[string]string {
+	if d.collisionLabels != nil {
+		return d.collisionLabels
+	}
+	return d.translatedLabels
 }
 
 //nolint:gocyclo // line-by-line VL→Loki stream conversion with categorized labels, structured metadata, dup-timestamp handling and optional pattern collection; branching is inherent to the conversion contract.
@@ -758,7 +771,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			var drop bool
-			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.translatedLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.finalLabels(), classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
 			if drop {
 				vlFJParserPool.Put(fjParser)
 				continue
@@ -1200,6 +1213,7 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 		streamLabels:     s.labels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
+		collisionLabels:  p.bothCollisionLabels(rawLabels, translatedLabels),
 	}
 	descriptorCache[string(key)] = desc
 	return desc
@@ -1257,6 +1271,7 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 		streamLabels:     baseLabels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
+		collisionLabels:  p.bothCollisionLabels(rawLabels, translatedLabels),
 	}
 	descriptorCache[cacheKey] = desc
 	return desc
