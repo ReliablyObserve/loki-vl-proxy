@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -283,6 +284,59 @@ func TestFieldMappingLabelMode_StreamNameValuesAndBaseNameCollision(t *testing.T
 			if listed[name] {
 				t.Errorf("%s: detected_fields lists %s: %s", tc.mode, name, body)
 			}
+		}
+	}
+}
+
+// In the both mode a log answer renames a parsed key named like a mapped
+// field's -label-style name to name_extracted beside the stream label of that
+// name, with and without categorized labels (the uncategorized answer merges
+// the parsed labels into the stream labels).
+//
+// conformance: field-mapping-label-names, semantics/field-mapping-label-modes, loki_api_v1_query_range
+func TestFieldMappingLabelMode_BothBaseNameParsedKeyInLogAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			_, _ = w.Write([]byte(`{"_time":"2026-01-01T00:00:01Z","_stream":"{k8s.pod.name=\"pod-a\",service.name=\"svc\"}","_stream_id":"1","_msg":"level=info k8s_pod_name=kl-a","k8s.pod.name":"pod-a","service.name":"svc","k8s_pod_name":"kl-a","level":"info"}` + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	mappings := []FieldMapping{{VLField: "k8s.pod.name", LokiLabel: "pod"}, {VLField: "k8s.pod.name", LokiLabel: "k8s_pod_name"}}
+	for _, categorized := range []bool{true, false} {
+		p := newMappingProxy(t, srv.URL, nil, Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
+			FieldMappingLabelMode: FieldMappingLabelModeBoth, FieldMappings: mappings, EmitStructuredMetadata: true})
+		params := url.Values{"query": {`{service_name="svc"} | logfmt`}, "start": {"1767222000000000000"}, "end": {"1767225601000000000"}, "limit": {"10"}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+		if categorized {
+			req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+		}
+		mux := http.NewServeMux()
+		p.RegisterProxyRoutes(mux)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		var out struct {
+			Data struct {
+				Result []struct {
+					Stream map[string]string   `json:"stream"`
+					Values [][]json.RawMessage `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Data.Result) != 1 {
+			t.Fatalf("categorized %v: %v %s", categorized, err, rec.Body.String())
+		}
+		labels := maps.Clone(out.Data.Result[0].Stream)
+		if categorized {
+			var meta struct {
+				Parsed map[string]string `json:"parsed"`
+			}
+			_ = json.Unmarshal(out.Data.Result[0].Values[0][2], &meta)
+			maps.Copy(labels, meta.Parsed)
+		}
+		if labels["k8s_pod_name"] != "pod-a" || labels["pod"] != "pod-a" || labels["k8s_pod_name_extracted"] != "kl-a" {
+			t.Errorf("categorized %v: labels %v, want k8s_pod_name=pod-a pod=pod-a k8s_pod_name_extracted=kl-a", categorized, labels)
 		}
 	}
 }

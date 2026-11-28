@@ -3479,7 +3479,7 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil, nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
+	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.finalLabels(), row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
 	}
