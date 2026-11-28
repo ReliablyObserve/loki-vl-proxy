@@ -3859,7 +3859,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 148,
+      "explore": 151,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -4000,8 +4000,11 @@
     "explore-topk-sum-without",
     "explore-topk-without-keeps-labels",
     "explore-unpack-sum-absent",
+    "explore-unpack-sum-by-empty",
     "explore-unpack-sum-count",
+    "explore-unpack-sum-label-replace",
     "explore-unpack-sum-rate",
+    "explore-unpack-sum-times-two",
     "explore-unwrap-conversion-error",
     "explore-unwrap-duration-seconds",
     "explore-unwrap-first-last-per-line",
