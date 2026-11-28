@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 )
@@ -40,6 +41,24 @@ func noteReadGrid(ctx context.Context, route string, step, window, bucket time.D
 	n.mu.Unlock()
 }
 
+// readRouteStepIndependent names a failed read whose cost a coarser step does not lower (one step's window, the
+// series of a window): the step layer does not retry it.
+const readRouteStepIndependent = "step-independent"
+
+// noteReadRoute names the route the request's evaluator went on to over the grid it noted (raw: the raw rows of the
+// window, whose cost the step does not change).
+func noteReadRoute(ctx context.Context, route string) {
+	n, _ := ctx.Value(readGridNoteKey{}).(*readGridNote)
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	if n.set {
+		n.route = route
+	}
+	n.mu.Unlock()
+}
+
 // readGridBuckets is the buckets of one series over [start, end] and the window before it.
 func readGridBuckets(start, end time.Time, window, bucket time.Duration) int64 {
 	if bucket <= 0 {
@@ -64,4 +83,252 @@ func readGridAttrs(ctx context.Context, attrs []slog.Attr) []slog.Attr {
 	}
 	return append(attrs, slog.String("read_route", n.route), slog.Duration("query_step", n.step), slog.Duration("range_window", n.window),
 		slog.Duration("read_bucket", n.bucket), slog.Int64("read_buckets_per_series", n.buckets))
+}
+
+// readGrid is a copy of a request's read grid note, kept with a failure the step layer may retry (step_adapt.go).
+type readGrid struct {
+	route                string
+	step, window, bucket time.Duration
+	buckets              int64
+}
+
+// readGridOf is the read grid the request's window evaluator noted, if it noted one.
+func readGridOf(ctx context.Context) (readGrid, bool) {
+	if ctx == nil {
+		return readGrid{}, false
+	}
+	n, _ := ctx.Value(readGridNoteKey{}).(*readGridNote)
+	if n == nil {
+		return readGrid{}, false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if !n.set {
+		return readGrid{}, false
+	}
+	return readGrid{route: n.route, step: n.step, window: n.window, bucket: n.bucket, buckets: n.buckets}, true
+}
+
+// The effective step of a range metric request whose read passed a proxy-internal bound (step_adapt.go).
+//
+// The cost of a read is its buckets per series. The bucket reads (stats_query_range and the listed chunks) read
+// buckets of gcd(step, window) over the window before the range and the range, (range + window) / gcd; a window
+// shorter than the step reads one bucket per step. Past heavyQueryBucketThreshold buckets the evaluators read raw
+// rows instead (range_metric_compat.go), whose cost does not fall with the step: the step that brings every window of
+// the query back under the bound is the one that changes the read. A read that failed within the bound (a bucket
+// read or the window grids of a recurrence over the bytes the proxy buffers) needs fewer buckets of its own kind:
+// at most its buckets times the budget share (-range-metric-step-budget-bytes of -backend-max-buffered-response-bytes,
+// one half by default), so the next read holds the budget with the margin the estimate needs.
+//
+// The rule (owner 2026-11-28, "close to loki": as close to Loki's answer as the limits allow, its point density
+// included):
+//   - the effective step is the smallest whole multiple k*step of the requested step that fits, when it is at most
+//     stepMultipleDensity times the smallest step of any whole number of milliseconds that fits: its times are times
+//     of Loki's answer at the requested step and its values Loki's values at them;
+//   - otherwise (a requested step that shares no large factor with the window, 53 ms over [1h]: the smallest
+//     multiple that fits is 19.08 s, 5 points over 80 s, where 360 ms fits with 223) it is that smallest step: the
+//     answer is Loki's answer to the same query at that step.
+//
+// Times are anchored as Loki anchors a request at the effective step: at its multiples inside the requested range, as
+// Loki's step alignment (align_queries_with_step) does and as its interval splitting (split_queries_by_interval, on by
+// default) floors the start to the step. Each value is Loki's at its time, because the range window of every range
+// aggregation stays what the query says.
+
+// stepMultipleDensity is how many times coarser than the finest fitting step the smallest fitting multiple of the
+// requested step may be and still be chosen.
+const stepMultipleDensity = 2
+
+// stepCandidateInput is what the choice of an effective step reads.
+type stepCandidateInput struct {
+	// step is the requested step (whole milliseconds); prev the step the failed read used (0: the request as sent).
+	step, prev time.Duration
+	// startNs and endNs are the requested bounds; onGrid evaluates the effective request at multiples of its step.
+	startNs, endNs int64
+	onGrid         bool
+	// windows are the range windows of the query's range aggregations.
+	windows []time.Duration
+	// floor and ceiling bound the effective step (0: none).
+	floor, ceiling time.Duration
+	// maxBuckets is the bucket bound of a read (at most heavyQueryBucketThreshold).
+	maxBuckets int64
+	// failed are the read grids noted by the failed reads, and share the budget share of a read that failed within
+	// its bound (0 < share < 1).
+	failed []readGrid
+	share  float64
+	// halve: the failure counted the answer (its samples or bytes), not a read, so a step that holds every window
+	// within the bound still fails it with all its points: the next step holds at most share of them.
+	halve bool
+}
+
+// effectiveBounds are the bounds of the request at the effective step eff.
+func effectiveBounds(in stepCandidateInput, eff time.Duration) (startNs, endNs int64, ok bool) {
+	e := int64(eff)
+	if e <= 0 || in.endNs < in.startNs {
+		return 0, 0, false
+	}
+	if in.onGrid {
+		startNs = ceilDiv(in.startNs, e) * e
+		endNs = floorDiv(in.endNs, e) * e
+	} else {
+		startNs = in.startNs
+		endNs = in.startNs + (in.endNs-in.startNs)/e*e
+	}
+	// Two points at least: a range shorter than its step is a query-split residual to Logs Drilldown
+	// (isQuerySplitResidual), and one point says nothing a coarser grid could not.
+	return startNs, endNs, endNs-startNs >= e
+}
+
+func ceilDiv(a, b int64) int64 { return -floorDiv(-a, b) }
+
+// bucketsAt is the buckets per series of a bucket read of one window at the effective step eff.
+func bucketsAt(in stepCandidateInput, eff, window time.Duration) int64 {
+	startNs, endNs, ok := effectiveBounds(in, eff)
+	if !ok {
+		return 0
+	}
+	span := time.Duration(endNs - startNs)
+	if window < eff {
+		return int64(span/eff) + 1
+	}
+	bucket, ok := slidingStatsBucket(eff, window)
+	if !ok {
+		return math.MaxInt64
+	}
+	return int64((span + window) / bucket)
+}
+
+// pointsAt is the points per series at the effective step eff.
+func pointsAt(in stepCandidateInput, eff time.Duration) int64 {
+	startNs, endNs, ok := effectiveBounds(in, eff)
+	if !ok {
+		return 0
+	}
+	return (endNs-startNs)/int64(eff) + 1
+}
+
+// gridBucketsAt is the buckets per series of the read a failed read noted, at the effective step eff: the window
+// grids of a recurrence read one bucket per step, the bucket reads the gcd grid.
+func gridBucketsAt(in stepCandidateInput, eff time.Duration, g readGrid) int64 {
+	if g.route == "window-grids" {
+		return pointsAt(in, eff)
+	}
+	return bucketsAt(in, eff, g.window)
+}
+
+// stepShrink is a read that failed within the bucket bound, with the buckets the next read of it may hold.
+type stepShrink struct {
+	grid readGrid
+	most int64
+}
+
+// stepShrinks are the noted reads that failed within the bound; ok is false when a noted read is one no coarser step
+// lowers (step-independent, or raw rows read within the bound for another reason than the step: a counter proof, a
+// parser error check). Raw rows read past the bound are not a shrink: the step that brings the windows back within
+// it moves the read to the buckets.
+func stepShrinks(failed []readGrid, share float64) ([]stepShrink, bool) {
+	var out []stepShrink
+	for _, g := range failed {
+		switch {
+		case g.route == readRouteStepIndependent:
+			return nil, false
+		case g.route == "raw":
+			if g.buckets <= heavyQueryBucketThreshold {
+				return nil, false
+			}
+		case g.buckets > 0 && g.buckets <= heavyQueryBucketThreshold:
+			out = append(out, stepShrink{g, int64(math.Ceil(float64(g.buckets) * share))})
+		}
+	}
+	return out, true
+}
+
+// stepFits reports whether a read of in at eff fits: every window within maxBuckets, the floor and the ceiling, at
+// most halveFrom points (when set), and every shrink within its buckets.
+func stepFits(in stepCandidateInput, eff time.Duration, maxBuckets, halveFrom int64, shrinks []stepShrink) bool {
+	if in.floor > 0 && eff < in.floor || in.ceiling > 0 && eff > in.ceiling || !windowsFit(in, eff, maxBuckets) {
+		return false
+	}
+	if halveFrom > 0 && pointsAt(in, eff) > halveFrom {
+		return false
+	}
+	for _, s := range shrinks {
+		if b := gridBucketsAt(in, eff, s.grid); b == 0 || b > s.most {
+			return false
+		}
+	}
+	return true
+}
+
+// windowsFit reports whether every window's bucket read at eff holds at most maxBuckets buckets per series.
+func windowsFit(in stepCandidateInput, eff time.Duration, maxBuckets int64) bool {
+	for _, w := range in.windows {
+		if b := bucketsAt(in, eff, w); b == 0 || b > maxBuckets {
+			return false
+		}
+	}
+	return true
+}
+
+// firstFitting is the first of from, from+inc, ... below limit (at most limit when through) that fits; 0 when none.
+func firstFitting(from, inc, limit time.Duration, through bool, fits func(time.Duration) bool) time.Duration {
+	for eff := from; eff < limit || through && eff == limit; eff += inc {
+		if fits(eff) {
+			return eff
+		}
+	}
+	return 0
+}
+
+// effectiveStep is the step the request is served at (the rule above). ok is false when no step within the floor,
+// the ceiling and the range fits, or none is known to change the failed read.
+func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
+	if in.step < time.Millisecond || in.step%time.Millisecond != 0 || in.endNs <= in.startNs || len(in.windows) == 0 {
+		return 0, false
+	}
+	maxBuckets := in.maxBuckets
+	if maxBuckets <= 0 || maxBuckets > heavyQueryBucketThreshold {
+		maxBuckets = heavyQueryBucketThreshold
+	}
+	share := in.share
+	if share <= 0 || share >= 1 {
+		share = 0.5
+	}
+	shrinks, ok := stepShrinks(in.failed, share)
+	if !ok {
+		return 0, false
+	}
+	prev := max(in.prev, in.step)
+	bucketBound := len(shrinks) == 0 && !windowsFit(in, prev, maxBuckets)
+	halveFrom := int64(0)
+	if len(shrinks) == 0 && !bucketBound {
+		if !in.halve {
+			// A read that failed with every window within the bound and no grid a coarser step shrinks (raw rows
+			// read for another reason, a read the model does not see): no step is known to change it.
+			return 0, false
+		}
+		halveFrom = int64(math.Ceil(float64(pointsAt(in, prev)) * share))
+	}
+	fits := func(eff time.Duration) bool { return stepFits(in, eff, maxBuckets, halveFrom, shrinks) }
+	span := time.Duration(in.endNs - in.startNs)
+	// The multiples of the requested step, or of an earlier effective step off its grid.
+	inc := in.step
+	if prev%in.step != 0 {
+		inc = prev
+	}
+	multiple := firstFitting(prev+inc, inc, span, true, fits)
+	if !bucketBound || prev != in.step {
+		// The bucket bound alone decides how far apart Loki's grid and the finest fitting step are: a read that
+		// shrinks, or a later retry, stays on the multiples.
+		return multiple, multiple > 0
+	}
+	// The finest step of whole milliseconds that fits; no finer than the multiple bound allows is worth the scan.
+	limit := span
+	if multiple > 0 {
+		limit = multiple
+	}
+	finest := firstFitting(prev+time.Millisecond, time.Millisecond, limit, false, fits)
+	if finest > 0 && (multiple == 0 || multiple > stepMultipleDensity*finest) {
+		return finest, true
+	}
+	return multiple, multiple > 0
 }

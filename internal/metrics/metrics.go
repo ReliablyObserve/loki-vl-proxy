@@ -147,11 +147,15 @@ type Metrics struct {
 	loadLatency             cache.LatencyHist
 
 	// Server-side request and connection visibility.
-	activeRequests            atomic.Int64
-	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
-	connectionTransitions     map[string]*atomic.Int64 // "state" -> transition count
-	connectionRotations       map[string]*atomic.Int64 // "reason" -> rotation count
-	parserMetricEvaluators    map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
+	activeRequests         atomic.Int64
+	connectionStates       map[string]*atomic.Int64 // "state" -> current connections
+	connectionTransitions  map[string]*atomic.Int64 // "state" -> transition count
+	connectionRotations    map[string]*atomic.Int64 // "reason" -> rotation count
+	parserMetricEvaluators map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
+	// stepAdjusted counts the answers the proxy gave at a raised step, by "endpoint|mode|reason"; stepFactor is the
+	// histogram of effective step / requested step per endpoint (RecordStepAdjusted).
+	stepAdjusted              map[string]*atomic.Int64
+	stepFactor                map[string]*histogram
 	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
 
@@ -468,6 +472,8 @@ func NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels int, exportS
 		connectionTransitions:      make(map[string]*atomic.Int64),
 		connectionRotations:        make(map[string]*atomic.Int64),
 		parserMetricEvaluators:     make(map[string]*atomic.Int64),
+		stepAdjusted:               make(map[string]*atomic.Int64),
+		stepFactor:                 make(map[string]*histogram),
 		slowRequests:               make(map[string]*atomic.Int64),
 		windowFetch:                newHistogramWithBuckets(durationBuckets),
 		windowMerge:                newHistogramWithBuckets(durationBuckets),
@@ -1444,6 +1450,37 @@ func (m *Metrics) RecordParserMetricEvaluator(evaluator, reason string) {
 	counter.Add(1)
 }
 
+// stepFactorBuckets are the bounds of the step factor histogram: effective step / requested step.
+var stepFactorBuckets = []float64{2, 4, 8, 16, 32, 64, 128, 256, 512, 1024}
+
+// RecordStepAdjusted counts an answer at a raised step; factor is the effective step over the requested one.
+func (m *Metrics) RecordStepAdjusted(endpoint, mode, reason string, factor float64) {
+	if m == nil || endpoint == "" {
+		return
+	}
+	key := joinMetricKey(endpoint, mode, reason)
+	m.mu.RLock()
+	counter, ok := m.stepAdjusted[key]
+	hist := m.stepFactor[endpoint]
+	m.mu.RUnlock()
+	if !ok || hist == nil {
+		m.mu.Lock()
+		if counter, ok = m.stepAdjusted[key]; !ok {
+			counter = &atomic.Int64{}
+			m.stepAdjusted[key] = counter
+		}
+		if hist = m.stepFactor[endpoint]; hist == nil {
+			hist = newHistogramWithBuckets(stepFactorBuckets)
+			m.stepFactor[endpoint] = hist
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+	if factor > 1 {
+		hist.observe(factor)
+	}
+}
+
 // RecordHTTPConnectionRotation records a downstream connection rotation decision.
 func (m *Metrics) RecordHTTPConnectionRotation(reason string) {
 	reason = strings.TrimSpace(reason)
@@ -2289,6 +2326,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_parser_metric_evaluations_total{evaluator=%q,reason=%q} %d\n", parts[0], parts[1], sRangeMetricEvaluators[key].Load())
 	}
 
+	m.writeStepAdjustedMetrics(&sb)
+
 	// Go runtime / GC metrics
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
@@ -2762,4 +2801,38 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	m.renderSize.Store(int64(sb.Len() + sb.Len()/16))
 	_, _ = io.WriteString(w, sb.String())
+}
+
+// writeStepAdjustedMetrics writes the step layer's counters and factor histogram.
+func (m *Metrics) writeStepAdjustedMetrics(sb *strings.Builder) {
+	m.mu.RLock()
+	keys := make([]string, 0, len(m.stepAdjusted))
+	counts := make(map[string]int64, len(m.stepAdjusted))
+	for key, c := range m.stepAdjusted {
+		keys = append(keys, key)
+		counts[key] = c.Load()
+	}
+	endpoints := make([]string, 0, len(m.stepFactor))
+	hists := make(map[string]histogramSnapshot, len(m.stepFactor))
+	for endpoint, h := range m.stepFactor {
+		endpoints = append(endpoints, endpoint)
+		hists[endpoint] = h.snapshot()
+	}
+	m.mu.RUnlock()
+	sort.Strings(keys)
+	sort.Strings(endpoints)
+	sb.WriteString("# HELP loki_vl_proxy_step_adjusted_total Range metric answers the proxy gave at a raised step (-range-metric-step-mode), by endpoint, mode and reason: the flag of the read bound the requested step passed, or range-metric-min-step for the floor.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_step_adjusted_total counter\n")
+	for _, key := range keys {
+		parts := strings.SplitN(key, metricKeySep, 3)
+		if len(parts) != 3 {
+			continue
+		}
+		fmt.Fprintf(sb, "loki_vl_proxy_step_adjusted_total{endpoint=%q,mode=%q,reason=%q} %d\n", parts[0], parts[1], parts[2], counts[key])
+	}
+	sb.WriteString("# HELP loki_vl_proxy_step_adjust_factor Effective step divided by the requested step of the answers given at a raised step.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_step_adjust_factor histogram\n")
+	for _, endpoint := range endpoints {
+		writeHistogramSeries(sb, "loki_vl_proxy_step_adjust_factor", fmt.Sprintf("endpoint=%q", endpoint), hists[endpoint])
+	}
 }

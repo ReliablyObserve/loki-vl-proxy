@@ -84,7 +84,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 4 | proven |
 | resource_control | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | 14 | 0 | proven |
 | semantics | `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | 23 | 11 | unknown |
-| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 7 | partial |
+| limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 13 | 7 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 2 | proven |
 | resource_control | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | 3 | 1 | partial |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |

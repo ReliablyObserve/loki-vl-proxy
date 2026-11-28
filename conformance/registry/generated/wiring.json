@@ -487,6 +487,10 @@
     "limits/queue-rejection-not-a-backend-failure": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "limits/range-metric-step-adapt": [
+      "internal/proxy/step_adapt_test.go",
+      "internal/querycorpus/range_step_adapt_loki_diff_test.go"
+    ],
     "limits/raw-metric-row-precheck": [
       "internal/proxy/backend_heavy_test.go"
     ],
@@ -3403,7 +3407,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 779,
+  "registry_items": 780,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -5528,6 +5532,9 @@
       "semantics/unwrap-extraction-list-series-identity",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/step_adapt_test.go": [
+      "limits/range-metric-step-adapt"
+    ],
     "internal/proxy/step_align_diff_test.go": [
       "loki_api_v1_query_range",
       "semantics/query-range-step-alignment"
@@ -6194,6 +6201,9 @@
     ],
     "internal/querycorpus/range_agg_oracle_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/range_step_adapt_loki_diff_test.go": [
+      "limits/range-metric-step-adapt"
     ],
     "internal/querycorpus/rank_binary_loki_diff_test.go": [
       "semantics/rank-over-binary-operation"
@@ -7630,7 +7640,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 922,
+  "tests_with_markers": 924,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7787,5 +7797,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 511
+  "wired_items": 512
 }
