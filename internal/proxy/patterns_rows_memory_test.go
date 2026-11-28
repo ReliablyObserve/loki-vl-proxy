@@ -170,6 +170,33 @@ func TestPatternRowsMemoryRefusalReadsFewerRows(t *testing.T) {
 	})
 }
 
+// An answer mined from fewer rows than the read asked for is answered and not kept: a repeat reads VictoriaLogs
+// again (the edge cache, the pattern cache and its snapshot hold none of it), where a full answer's repeat reads
+// nothing.
+//
+// conformance: drilldown/patterns-rows-fields, loki_api_v1_patterns
+func TestPatternRowsReducedAnswerIsNotKept(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		allow  int
+		repeat bool
+	}{{"reduced", 5000, true}, {"full", 1 << 30, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &patternRowsBackend{allow: tc.allow, status: http.StatusBadRequest, refusal: vlSortMemoryRefusal}
+			p := newPatternRowsProxy(t, b)
+			first := patternRowsRequest(p)
+			reads := len(b.limits)
+			second := patternRowsRequest(p)
+			if first.Code != http.StatusOK || second.Code != http.StatusOK || first.Body.String() != second.Body.String() {
+				t.Fatalf("answers %d %d differ or fail", first.Code, second.Code)
+			}
+			if again := len(b.limits) > reads; again != tc.repeat {
+				t.Fatalf("repeat read VictoriaLogs %v (reads %v), want %v", again, b.limits, tc.repeat)
+			}
+		})
+	}
+}
+
 func TestIsVLMemoryLimitMessage(t *testing.T) {
 	for raw, want := range map[string]bool{
 		vlSortMemoryRefusal(20000): true,

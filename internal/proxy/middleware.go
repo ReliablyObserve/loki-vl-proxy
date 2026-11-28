@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
@@ -26,6 +27,20 @@ type compatCacheActiveCtxKey struct{}
 func compatCacheIsActive(ctx context.Context) bool {
 	v, _ := ctx.Value(compatCacheActiveCtxKey{}).(bool)
 	return v
+}
+
+// compatNoStoreCtxKey holds the flag a handler sets when its answer must not be
+// stored by the compat cache middleware (skipCompatStore).
+type compatNoStoreCtxKey struct{}
+
+// skipCompatStore keeps the answer of the request ctx belongs to out of the
+// compat cache: it is complete for the client but not the answer a repeat
+// should get (a pattern read VictoriaLogs answered with fewer rows than asked,
+// readPatternRows).
+func skipCompatStore(ctx context.Context) {
+	if flag, _ := ctx.Value(compatNoStoreCtxKey{}).(*atomic.Bool); flag != nil {
+		flag.Store(true)
+	}
 }
 
 func setSecurityHeaders(header http.Header) {
@@ -965,10 +980,11 @@ func (p *Proxy) compatCacheMiss(endpoint string, w http.ResponseWriter, r *http.
 	// A miss that passed validation and limits: the exact bytes of a
 	// metric query are read next to it (query_stats_loki.go).
 	p.startExactMetricBytesFor(w, r)
-	rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
+	noStore := new(atomic.Bool)
+	rWithFlag := r.WithContext(context.WithValue(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true), compatNoStoreCtxKey{}, noStore))
 	next(capture, rWithFlag)
 	p.deriveQueryStatsTotalsFromCapture(r, endpoint, capture)
-	if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
+	if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) && !noStore.Load() {
 		body := capture.CapturedBody()
 		captureBodyLen = len(body)
 		captureAllowed = captureBodyLen > 0

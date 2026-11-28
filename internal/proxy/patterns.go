@@ -31,6 +31,9 @@ type patternFetchDiagnostics struct {
 	minedPreMerge        int
 	minedPostMerge       int
 	lowCoverage          bool
+	// reduced is set when VictoriaLogs answered a read with fewer rows than it asked for (readPatternRows): the
+	// answer is complete for the client but not kept for a repeat.
+	reduced bool
 	// badRequest holds the backend's rejection of the pattern source query.
 	badRequest error
 	// failure holds the backend call that failed (a transport error, an error status, a body that broke off or
@@ -287,7 +290,11 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
 		fetchFromParams := func(queryParams url.Values) ([]patternResultEntry, bool) {
+			askedLimit, _ := strconv.Atoi(strings.TrimSpace(queryParams.Get("limit")))
 			resp, requestedLimit, err := p.readPatternRows(r.Context(), endpoint, queryParams)
+			if err == nil && requestedLimit < askedLimit {
+				diag.reduced = true
+			}
 			if err != nil {
 				if isUpstreamQueryRejected(err) {
 					diag.badRequest = err
@@ -350,6 +357,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 					if windowDiag.lowCoverage {
 						diag.markLowCoverage()
 					}
+					diag.reduced = diag.reduced || windowDiag.reduced
 					if windowDiag.badRequest != nil {
 						diag.badRequest = windowDiag.badRequest
 					}
@@ -450,7 +458,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries. An
 	// answer empty because no pattern holds enough lines is an answer, cached like any other: a quiet service
 	// is not read from VictoriaLogs on every refresh.
-	if len(entries) > 0 || minedBeforeFilter > 0 || exactRead {
+	if diag.reduced {
+		// Mined from fewer rows than the read asked for: answered, not kept for a repeat.
+		skipCompatStore(r.Context())
+	} else if len(entries) > 0 || minedBeforeFilter > 0 || exactRead {
 		now := time.Now().UTC()
 		snapshotPayload := snapshotBody
 		if len(snapshotPayload) == 0 {
@@ -558,7 +569,14 @@ func (p *Proxy) fetchPatternsFromWindows(
 				p.observeInternalOperation(r.Context(), "patterns_window_cache", "miss", time.Since(lookupStart))
 			}
 		}
-		resp, _, err := p.readPatternRows(r.Context(), "/select/logsql/query", params)
+		resp, answeredLimit, err := p.readPatternRows(r.Context(), "/select/logsql/query", params)
+		if err == nil && answeredLimit < limit {
+			// Fewer rows than the window's key names: not kept for a repeat.
+			cacheable = false
+			mu.Lock()
+			diag.reduced = true
+			mu.Unlock()
+		}
 		if err != nil {
 			p.log.Debug(
 				"patterns window fetch failed",
