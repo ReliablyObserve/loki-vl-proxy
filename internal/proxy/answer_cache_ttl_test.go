@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -406,8 +407,8 @@ func TestAnswerCacheTTLKeysFenceThePeerTier(t *testing.T) {
 		}
 		t.Fatalf("the owner never received %q", key)
 	}
-	// A peer serves an entry with at least 5 s left, so the shortened TTL is 8 s.
-	shortened := map[string]time.Duration{"index_stats": 8 * time.Second}
+	// A peer serves an entry with at least 5 s left, so the shortened TTL is 9 s.
+	shortened := map[string]time.Duration{"index_stats": 9 * time.Second}
 	for i, step := range []struct {
 		name      string
 		ttls      map[string]time.Duration
@@ -426,6 +427,29 @@ func TestAnswerCacheTTLKeysFenceThePeerTier(t *testing.T) {
 		}
 		if got := vl.calls.Load(); got != step.wantCalls {
 			t.Fatalf("step %d (%s): %d VictoriaLogs calls, want %d", i, step.name, got, step.wantCalls)
+		}
+	}
+}
+
+// Keys of an unset proxy, as main builds them (recorded from main at
+// ac182f433; the credential digest is keyed per process and masked).
+//
+// conformance: cache-answer-ttl-shorten-only
+func TestAnswerCacheTTLUnsetKeysMatchMain(t *testing.T) {
+	mask := regexp.MustCompile(`auth:[0-9a-f]{64}`)
+	p := newAnswerTTLProxy(t, nil)
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/stats?query=%7Bapp%3D%22api%22%7D&start=1700000000000000000&end=1700003600000000000", nil)
+	mt := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels?start=1700000000000000000&end=1700003600000000000", nil)
+	mt.Header.Set("X-Scope-OrgID", "a|b")
+	mtKey, _ := p.multiTenantCacheKey(mt, "labels")
+	for got, want := range map[string]string{
+		p.canonicalReadCacheKey("index_stats", "0", r): "index_stats:0:@form-v1:auth:*:end=1700003600000000000&query=%7Bapp%3D%22api%22%7D&start=1700000000000000000",
+		mtKey: "mt:labels:a|b:@full-range-form-v3:auth:*:end=1700003700000000000&query=%2A&start=1699999800000000000",
+		p.detectedFieldsCacheKey(context.Background(), `{app="api"}`, "1", "2", 1000): `detect_fields::{app="api"}:1:2:1000`,
+		p.detectedLabelsCacheKey(context.Background(), `{app="api"}`, "1", "2", 1000): `detect_labels::{app="api"}:1:2:1000`,
+	} {
+		if masked := mask.ReplaceAllString(got, "auth:*"); masked != want {
+			t.Fatalf("key %q, main builds %q", masked, want)
 		}
 	}
 }

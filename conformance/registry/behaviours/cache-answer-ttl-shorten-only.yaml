@@ -74,7 +74,7 @@ decisions:
       that a property of every accepted configuration.
     evidence: 'internal/proxy and cmd/proxy (2026-11-28): TestAnswerCacheTTLSettingsOnlyShorten (every class: 0, 1 ns, 1 s and the built-in accepted; negative, built-in + 1 ns and 24 h refused by the validator and by New, the error names the built-in TTL; patterns and the classes with their own flags are no class); TestAnswerCacheTTLFlagsAndEnv (the flag and variable of each class through run: the built-in accepted, a longer value or a negative one refused naming flag, variable and built-in, the flag wins over the variable, an unparsable variable refused)'
     code: [internal/proxy/answer_cache_ttl.go, cmd/proxy/answer_cache_ttl.go]
-    tests: [TestAnswerCacheTTLSettingsOnlyShorten, TestAnswerCacheTTLFlagsAndEnv, TestAnswerCacheTTLUnsetKeepsTTLsAndKeys, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLExpiresAtTheShortenedTTL]
+    tests: [TestAnswerCacheTTLSettingsOnlyShorten, TestAnswerCacheTTLFlagsAndEnv, TestAnswerCacheTTLUnsetKeepsTTLsAndKeys, TestAnswerCacheTTLUnsetKeysMatchMain, TestAnswerCacheTTLShortensEveryCacheOfTheClass, TestAnswerCacheTTLExpiresAtTheShortenedTTL]
     quality: 'Unset, or set to the built-in value, every TTL and every shared-tier key equals that of a proxy without the setting (TestAnswerCacheTTLUnsetKeepsTTLsAndKeys).'
   - id: ttl-in-the-shared-tier-key
     chosen: 'A shortened class appends @ttl=<ttl> to its keys in the shared tiers (canonical read cache keys of the detected, index stats and volume classes, every multi-tenant merge key of the class, the field detection key); unset, keys are unchanged'
