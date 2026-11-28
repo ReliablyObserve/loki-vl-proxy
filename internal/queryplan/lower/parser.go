@@ -38,6 +38,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			read = r
 		}
 	}
+	read = aliasStreamReads(sel, prof, read)
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
 		names.note(defs, i)

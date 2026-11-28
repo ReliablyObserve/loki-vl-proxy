@@ -49,6 +49,45 @@ func (lt *LabelTranslator) addBothNames(labels map[string]string, skip map[strin
 	return added
 }
 
+// bothCollisionLabels returns a stream descriptor's translated labels with
+// every listed name of each mapped field the stream stores (raw, keyed by
+// stored field names), as the stream labels of a log line leave the route in
+// the both mode: a parsed key named like one is renamed name_extracted, as
+// Loki renames a key named like a stream label of a stream storing both
+// names. A stream that stores an alias itself (pod, never renamed) gains no
+// name here: a Loki storing both names holds the alias alone there, so its
+// parsed k8s_pod_name keeps its name. nil when it adds none (every other
+// mode; the descriptor then reads its translated labels).
+func (p *Proxy) bothCollisionLabels(raw, labels map[string]string) map[string]string {
+	if p == nil || !p.labelTranslator.answersBothNames() {
+		return nil
+	}
+	lt := p.labelTranslator
+	var out map[string]string
+	for field, names := range lt.listing {
+		if len(names) < 2 {
+			continue
+		}
+		if _, stored := raw[field]; !stored {
+			continue
+		}
+		value, ok := labels[lt.vlToLoki[field]]
+		if !ok {
+			continue
+		}
+		for _, name := range names {
+			if _, has := labels[name]; has {
+				continue
+			}
+			if out == nil {
+				out = cloneStringMap(labels)
+			}
+			out[name] = value
+		}
+	}
+	return out
+}
+
 // addBothNamesFJ is addBothNames for a label object of a JSON answer.
 func (lt *LabelTranslator) addBothNamesFJ(obj *fj.Object, skip map[string]bool, arena *fj.Arena) bool {
 	added := false

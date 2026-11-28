@@ -128,6 +128,7 @@ var routeUnwrapOps = map[logql.RangeOp]bool{
 // Route decides the route of a plan whose root is a range aggregation, or vector aggregations over one, for req.
 // A plan outside the rule keeps the lowering's own delegation when the lowering does not write it.
 func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, error) {
+	prof = prof.withAliasReads(p.Root)
 	// The kind names a delegation; Construct formats it, so the two kinds the rule routes are spelled out.
 	var kind string
 	switch p.Root.(type) {
@@ -228,6 +229,7 @@ func (q *QueryRoute) Operands() []MetricRoute { return q.operands[:q.n] }
 // operands are lowered once, by the routes of their own; Plan lowers every operation the rule routes
 // (TestRouteQueryIsWhatTheLoweringLowers).
 func RouteQuery(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRoute, error) {
+	prof = prof.withAliasReads(p.Root)
 	var out QueryRoute
 	switch p.Root.(type) {
 	case *queryplan.Rank, *queryplan.LabelReplace:

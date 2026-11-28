@@ -2022,6 +2022,8 @@
     "internal/proxy/field_mapping_both_names_test.go | field-mapping-label-names",
     "internal/proxy/field_mapping_both_names_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/field_mapping_collision_test.go | field-mapping-label-names",
+    "internal/proxy/field_mapping_collision_test.go | loki_api_v1_query_range",
+    "internal/proxy/field_mapping_collision_test.go | loki_api_v1_tail",
     "internal/proxy/field_mapping_collision_test.go | semantics/field-mapping-label-modes",
     "internal/proxy/field_mapping_labels_test.go | field-mapping-label-names",
     "internal/proxy/field_mapping_labels_test.go | loki_api_v1_label_name_values",
@@ -2950,6 +2952,8 @@
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-over-time-range-windows-residual-forms",
     "internal/querycorpus/extraction_list_identity_loki_diff_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/querycorpus/field_mapping_label_mode_loki_diff_test.go | field-mapping-label-names",
+    "internal/querycorpus/field_mapping_label_mode_loki_diff_test.go | semantics/field-mapping-label-modes",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/keep-before-unwrap-series-identity",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/last-over-time-vl149-row-max-wrong-row",
     "internal/querycorpus/first_last_loki_diff_test.go | semantics/unwrap-first-last-range-longer-than-step",
@@ -3856,7 +3860,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 908,
+      "go": 909,
       "playwright": 3
     },
     "page_kinds": {
