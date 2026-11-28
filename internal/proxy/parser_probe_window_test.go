@@ -418,7 +418,7 @@ func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
 // range handler's key and its settled steps' base key all carry it, and an instant answer seeded under the edge key
 // without it is not served (it is, with the fence taken out).
 //
-// conformance: semantics/parser-probe-drop-keeps-range, cache-response-key-versions
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/ungrouped-sum-skips-parsers, cache-response-key-versions
 func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 	const query = `sum(count_over_time({app="x"} | json | logfmt [3h]))`
 	for _, endpoint := range []string{"query", "query_range"} {
@@ -437,14 +437,18 @@ func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 				t.Fatalf("unfenced key: %s", key)
 			}
 			stale := []byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"stale":"true"},"values":[["1795780800000000000","cut"]]}]}}`)
-			p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
-			if endpoint == "query_range" {
-				// The range handler's own answer and its settled steps are keyed from queryRangeCacheKey.
-				for _, inner := range []string{p.queryRangeCacheKey(r, query), p.queryStepsBaseKey(r, query)} {
-					if !strings.Contains(inner, twoParserMetricResponseVersion) {
-						t.Fatalf("unfenced inner key: %s", inner)
+			// The keys an earlier build wrote: with no fence, and with the v1 fence (before the sum ran no parser,
+			// semantics/ungrouped-sum-skips-parsers).
+			for _, old := range []string{"", "@two-parser-metric-v1:"} {
+				p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, twoParserMetricResponseVersion, old, 1), stale, 5*time.Minute)
+				if endpoint == "query_range" {
+					// The range handler's own answer and its settled steps are keyed from queryRangeCacheKey.
+					for _, inner := range []string{p.queryRangeCacheKey(r, query), p.queryStepsBaseKey(r, query)} {
+						if !strings.Contains(inner, twoParserMetricResponseVersion) {
+							t.Fatalf("unfenced inner key: %s", inner)
+						}
+						p.cache.SetLocalOnlyWithTTL(strings.Replace(inner, twoParserMetricResponseVersion, old, 1), stale, 5*time.Minute)
 					}
-					p.cache.SetLocalOnlyWithTTL(strings.Replace(inner, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
 				}
 			}
 			res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"})

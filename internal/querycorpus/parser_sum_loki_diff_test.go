@@ -35,8 +35,46 @@ import (
 const parserSumAnswersPath = "testdata/parser-sum-loki-diff.jsonl.gz"
 
 // parserSumKnown are the control runs that differ from Loki, by query: version and request kind, with the registry
-// case that holds them open. A listed run that matches fails too, so the list only shrinks.
-var parserSumKnown = map[string]unpackSumOpen{}
+// case that holds them open. A listed run that matches fails too, so the list only shrinks. Every one is a control the
+// plan does not skip, answered as on main (recorded on main 640431dfc with this harness: the same runs differ): the
+// parser probe keeps one of the two parsers (semantics/two-parsers-keep-one), so a filter or a grouping after them
+// reads the labels and errors of one parser only.
+var parserSumKnown = func() map[string]unpackSumOpen {
+	const twoParsers = "semantics/two-parsers-keep-one"
+	kinds := func(versions, kinds []string) []string {
+		var out []string
+		for _, v := range versions {
+			for _, k := range kinds {
+				out = append(out, v+" "+k)
+			}
+		}
+		return out
+	}
+	both := []string{"v1.54.0", "v1.49.0"}
+	ranged := kinds(both, []string{"step=range", "step<range", "step>range"})
+	all := kinds(both, []string{"instant", "step=range", "step<range", "step>range"})
+	open := map[string]unpackSumOpen{
+		`count(count_over_time({job="mix"} | json | logfmt | drop __error__, __error_details__ [1m]))`: {twoParsers, ranged},
+		`max(count_over_time({job="mix"} | logfmt [1m]))`:                                              {twoParsers, kinds(both, []string{"step=range", "step<range"})},
+	}
+	for _, q := range []string{
+		`sum(count_over_time({job="mix"} | json | logfmt | a!="" [1m]))`,
+		`sum(count_over_time({job="mix"} | json | logfmt | __error__="" [1m]))`,
+		`sum(count_over_time({job="lf"} | json | logfmt | a!="" [1m]))`,
+		`sum(count_over_time({job="lf"} | json | logfmt | __error__="" [1m]))`,
+	} {
+		open[q] = unpackSumOpen{twoParsers, all}
+	}
+	for _, q := range []string{
+		`sum without () (count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`,
+		`count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m])`,
+		`count(count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`,
+		`max(count_over_time({job="lf"} | logfmt [1m]))`,
+	} {
+		open[q] = unpackSumOpen{twoParsers, ranged}
+	}
+	return open
+}()
 
 // parserSumSkipped are the sums the plan writes with no stage from the first parser on, over a selector S.
 func parserSumSkipped(s string) []string {

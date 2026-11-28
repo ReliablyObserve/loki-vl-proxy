@@ -1223,8 +1223,10 @@ func unpackMetricResponseKeyVersion(query string, other bool) string {
 // twoParserMetricResponseVersion fences the answers to a metric query naming both `| json` and `| logfmt` cached
 // before the parser probe removed the stage it does not keep from the parsed query
 // (semantics/parser-probe-drop-keeps-range): a range query whose removed stage was the last before its range
-// answered log streams with a 200.
-const twoParserMetricResponseVersion = "@two-parser-metric-v1:"
+// answered log streams with a 200 (v1). A sum with no label over both parsers ran the parser the probe kept, whose
+// unpack pipe let a JSON key named `_time` move the line (points missing where Loki counts them), and now runs no
+// parser (semantics/ungrouped-sum-skips-parsers, v2).
+const twoParserMetricResponseVersion = "@two-parser-metric-v2:"
 
 // twoParserMetricResponseKeyVersion is that fence: a text screen on the words the fence chain already read (jsonWord,
 // logfmtWord), so a query that names both parsers and a rate or an _over_time function is fenced whatever its shape
