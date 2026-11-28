@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -93,37 +94,88 @@ func TestRebuildReadahead_LeavesTheSameIndex(t *testing.T) {
 // conformance: cache-restart-handover
 func TestRebuildReadahead_ReadsTheFileAndStops(t *testing.T) {
 	before := runtime.NumGoroutine()
+	var walked atomic.Int64
 	path := filepath.Join(t.TempDir(), "f")
 	size := int64(5*restoreReadaheadBuffer + 123)
 	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	stop := startRebuildReadahead(path)
-	deadline := time.Now().Add(10 * time.Second)
-	// Wait for the producer and readers to finish on their own.
-	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if got := stop(); got != size {
-		t.Fatalf("read %d of %d bytes", got, size)
+	ra := startRebuildReadahead(path, &walked)
+	<-ra.done // ends on its own once the file is read
+	if got, early := ra.stop(); got != size || early {
+		t.Fatalf("read %d of %d bytes, stopped early %t", got, size, early)
 	}
 	big := filepath.Join(t.TempDir(), "big")
 	if err := os.WriteFile(big, make([]byte, 256*restoreReadaheadBuffer), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	stop = startRebuildReadahead(big)
-	// Each reader finishes at most the read it is in when stop is called, so
-	// at most every reader's reads before then plus one each; stopped at once,
-	// far less than the 256 buffers of the file.
-	if got := stop(); got >= 256*restoreReadaheadBuffer {
+	// Each reader finishes at most the read it is in when stop is called;
+	// stopped at once, it reads far less than the file.
+	if got, _ := startRebuildReadahead(big, &walked).stop(); got >= 256*restoreReadaheadBuffer {
 		t.Fatalf("stopped at once but read the whole file (%d bytes)", got)
 	}
-	if got := startRebuildReadahead(filepath.Join(t.TempDir(), "missing"))(); got != 0 {
+	if got, _ := startRebuildReadahead(filepath.Join(t.TempDir(), "missing"), &walked).stop(); got != 0 {
 		t.Fatalf("missing file: read %d bytes", got)
 	}
 	for deadline := time.Now().Add(5 * time.Second); runtime.NumGoroutine() > before; time.Sleep(time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("%d goroutines, %d before the read-ahead", runtime.NumGoroutine(), before)
 		}
+	}
+}
+
+// Once it has read its probe the read-ahead decides once: it goes on to the end
+// of the file while the walk has passed fewer stored bytes than it read, and
+// stops, reading little more than the probe, when the walk is ahead (large
+// records, or pages reclaimed under memory pressure).
+//
+// conformance: cache-restart-handover
+func TestRebuildReadahead_StopsWhenTheWalkIsAhead(t *testing.T) {
+	// A local test file is read within the probe time, which never stops the
+	// read-ahead (TestRebuildReadahead_FastDeviceNeverStops); decide at once.
+	probeTime := rebuildReadaheadProbeTime
+	rebuildReadaheadProbeTime = 0
+	t.Cleanup(func() { rebuildReadaheadProbeTime = probeTime })
+	path := filepath.Join(t.TempDir(), "f")
+	size := int64(3 * rebuildReadaheadProbeMin)
+	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var behind atomic.Int64
+	ra := startRebuildReadahead(path, &behind)
+	<-ra.done
+	if got, early := ra.stop(); got != size || early {
+		t.Fatalf("walk behind: read %d of %d bytes, stopped early %t", got, size, early)
+	}
+	var ahead atomic.Int64
+	ahead.Store(size) // the walk has passed every stored byte already
+	ra = startRebuildReadahead(path, &ahead)
+	<-ra.done
+	got, early := ra.stop()
+	limit := int64(rebuildReadaheadProbeMin) + int64(2*restoreReadaheadReaders+1)*restoreReadaheadBuffer
+	if !early || got < rebuildReadaheadProbeMin || got > limit {
+		t.Fatalf("walk ahead: read %d bytes (probe %d, at most %d), stopped early %t", got, rebuildReadaheadProbeMin, limit, early)
+	}
+}
+
+// A device that reads the whole file within the probe time is never stopped,
+// however far ahead the walk is.
+//
+// conformance: cache-restart-handover
+func TestRebuildReadahead_FastDeviceNeverStops(t *testing.T) {
+	probeTime := rebuildReadaheadProbeTime
+	rebuildReadaheadProbeTime = time.Hour
+	t.Cleanup(func() { rebuildReadaheadProbeTime = probeTime })
+	path := filepath.Join(t.TempDir(), "f")
+	size := int64(3 * rebuildReadaheadProbeMin)
+	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var ahead atomic.Int64
+	ahead.Store(size)
+	ra := startRebuildReadahead(path, &ahead)
+	<-ra.done
+	if got, early := ra.stop(); got != size || early {
+		t.Fatalf("read %d of %d bytes, stopped early %t", got, size, early)
 	}
 }

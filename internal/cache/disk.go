@@ -92,8 +92,12 @@ type DiskCache struct {
 	// The start-up index rebuild, set once before NewDiskCache returns.
 	rebuildDuration time.Duration
 	rebuildEntries  int64
-	// rebuildReadahead is the bytes the rebuild's read-ahead read.
-	rebuildReadahead int64
+	// rebuildWalked is the stored bytes of the records the rebuild has passed,
+	// read by its read-ahead; rebuildReadahead the bytes the read-ahead read
+	// and rebuildReadaheadStopped whether it ended early, the walk being ahead.
+	rebuildWalked           atomic.Int64
+	rebuildReadahead        int64
+	rebuildReadaheadStopped bool
 }
 
 type diskEntry struct {
@@ -176,12 +180,14 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		done: make(chan struct{}), workerDone: make(chan struct{}), flushRequest: make(chan struct{}, 1),
 		log: slog.Default().With("component", "disk_cache"), signals: &diskSignals{}}
 	rebuildStart := time.Now()
-	stopReadahead := func() int64 { return 0 }
+	var readahead *rebuildReadahead
 	if cfg.RebuildReadahead {
-		stopReadahead = startRebuildReadahead(cfg.Path)
+		readahead = startRebuildReadahead(cfg.Path, &dc.rebuildWalked)
 	}
 	err = dc.rebuildIndex()
-	dc.rebuildReadahead = stopReadahead()
+	if readahead != nil {
+		dc.rebuildReadahead, dc.rebuildReadaheadStopped = readahead.stop()
+	}
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize disk cache: %w", err)
@@ -192,6 +198,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		"record_bytes", dc.logicalBytes,
 		"duration_ms", dc.rebuildDuration.Milliseconds(),
 		"readahead_bytes", dc.rebuildReadahead,
+		"readahead_stopped_early", dc.rebuildReadaheadStopped,
 	)
 	go dc.backgroundFlush(cfg.FlushInterval)
 	return dc, nil
