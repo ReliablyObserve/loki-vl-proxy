@@ -3875,7 +3875,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 151,
+      "explore": 153,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -4005,6 +4005,8 @@
     "explore-stddev-parsed-method",
     "explore-stddev-trailing-by",
     "explore-stdvar-without-pod",
+    "explore-step-adapt",
+    "explore-step-adapt-quantile",
     "explore-sum-by-over-binary",
     "explore-sum-over-topk",
     "explore-sum-without-comparison-inside",
