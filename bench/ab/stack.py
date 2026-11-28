@@ -67,6 +67,12 @@ ALIGN_FLAG_ENABLED = f"{ALIGN_FLAG}=true"
 # reuse rows count a request's calls without the proxy's background work (reuse.py). Only builds that know it get it.
 CALLS_HEADER_FLAG = "-debug-vl-calls-header"
 CALLS_HEADER_ENABLED = f"{CALLS_HEADER_FLAG}=true"
+# Loki's series per structured-metadata set (-structured-metadata-series-identity, internal/proxy/metadata_series.go):
+# the generator pushes every row to VictoriaLogs through the Loki push API with disable_message_parsing=1, so every
+# field VictoriaLogs stores beside a row's stream fields is its structured metadata, the declaration the flag makes.
+# Both Loki profiles run it on every build that knows it (probe_sm_series_support); a build without it runs as it is.
+SM_SERIES_FLAG = "-structured-metadata-series-identity"
+SM_SERIES_ENABLED = f"{SM_SERIES_FLAG}=true"
 GENERATOR = "test/e2e-compat/log-generator.py"
 # Data profile of the backfill. Fixed so every run measures the same density:
 # about 75 lines/s across the generator's services (the live generator's rate
@@ -484,6 +490,11 @@ def probe_calls_header_support(binary, timeout=20):
     return probe_flag_support(binary, CALLS_HEADER_ENABLED, timeout)
 
 
+def probe_sm_series_support(binary, timeout=20):
+    """Whether a proxy build knows -structured-metadata-series-identity (probe_flag_support)."""
+    return probe_flag_support(binary, SM_SERIES_ENABLED, timeout)
+
+
 def source_align_default(tree):
     """Whether the proxy built from `tree` defaults to -align-queries-with-step=true (cmd/proxy/main.go).
 
@@ -522,7 +533,7 @@ def like_for_like(profile, align_state):
     return profile_check(profile) != "aligned" or align_state == "on"
 
 
-def start_proxies(specs, out, st, service, proxies, profile="aligned", supported=None, calls_header=None):
+def start_proxies(specs, out, st, service, proxies, profile="aligned", supported=None, calls_header=None, sm_series=None):
     """Start (name, binary, tree, port) builds with their tree's stack flags for `profile`; appends to `proxies` first.
 
     supported maps a build's name to whether its binary knows -align-queries-with-step (probe_align_support);
@@ -531,10 +542,13 @@ def start_proxies(specs, out, st, service, proxies, profile="aligned", supported
     probe_calls_header_support first: an unknown flag makes the process exit), so each of its answers carries the
     request's own VictoriaLogs call count; a build not listed, or all of them when it is not given, runs without
     it and is counted by the process-wide metrics. Only the daily run reads the count, so it alone opts in; each
-    Proxy records what it got.
+    Proxy records what it got. sm_series maps a build's name to whether it knows -structured-metadata-series-identity
+    (probe_sm_series_support when not given): every build that does runs with it in both profiles (SM_SERIES_FLAG), and
+    each Proxy records whether it did.
     """
     supported = supported if supported is not None else {name: probe_align_support(binary) for name, binary, _, _ in specs}
     calls_header = calls_header or {}
+    sm_series = sm_series if sm_series is not None else {name: probe_sm_series_support(binary) for name, binary, _, _ in specs}
     for name, binary, tree, port in specs:
         work = os.path.join(out, f"work-{name}-{profile}")
         os.makedirs(work, exist_ok=True)
@@ -542,8 +556,11 @@ def start_proxies(specs, out, st, service, proxies, profile="aligned", supported
         cmd, state = align_args(cmd, profile, supported[name], source_align_default(tree))
         if calls_header.get(name):
             cmd = [a for a in cmd if a.partition("=")[0] != CALLS_HEADER_FLAG] + [CALLS_HEADER_ENABLED]
+        if sm_series.get(name):
+            cmd = [a for a in cmd if a.partition("=")[0] != SM_SERIES_FLAG] + [SM_SERIES_ENABLED]
         proxy = Proxy(name, binary, cmd, env, port, out, profile, state)
         proxy.calls_header = bool(calls_header.get(name))
+        proxy.sm_series = bool(sm_series.get(name))
         proxies.append(proxy)  # before start(): a start that fails is still stopped
         proxy.start()
 
@@ -587,6 +604,7 @@ class Proxy:
         self.name, self.binary, self.args, self.env, self.port = name, binary, args, env, port
         self.profile, self.align = profile, align  # the Loki profile it runs for, and align_args' state
         self.calls_header = False  # started with -debug-vl-calls-header (start_proxies)
+        self.sm_series = False  # started with -structured-metadata-series-identity (start_proxies)
         self.log_path = os.path.join(log_dir, f"proxy-{name}-{profile}.log")
         self.proc = None
         self.url = f"http://127.0.0.1:{port}"
