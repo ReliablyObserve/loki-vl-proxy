@@ -37,10 +37,14 @@ func TestCoalescerHooksSeeTheCallAndEachWaiter(t *testing.T) {
 			<-release
 			return answer("x")
 		}
-		go func() { _, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "leader"), "k", allow, fn) }()
+		go func() {
+			_, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "leader"), "k", allow, fn)
+		}()
 		<-started
 		for i := 0; i < 3; i++ {
-			go func() { _, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "waiter"), "k", allow, fn) }()
+			go func() {
+				_, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "waiter"), "k", allow, fn)
+			}()
 		}
 		synctest.Wait()
 		close(release)
