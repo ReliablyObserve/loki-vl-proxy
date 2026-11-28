@@ -57,7 +57,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			// No translation cache: every row is translated, not read back.
 			on.translationCache, off.translationCache = nil, nil
 			ctx := context.Background()
-			differs, keep, dynamic, countVariance, spelled, reserved, numeric := 0, 0, 0, 0, 0, 0, 0
+			differs, keep, dynamic, countVariance, spelled, reserved, numeric, skipped := 0, 0, 0, 0, 0, 0, 0, 0
 			for _, row := range corpus {
 				if strings.HasPrefix(strings.TrimSpace(row), "{") {
 					continue
@@ -80,6 +80,19 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					countVariance++
 					if strings.HasPrefix(got, "__binary__") || !strings.HasSuffix(got, "count()") {
 						t.Errorf("%q: served %q, not the count of the series", q, got)
+					}
+					continue
+				}
+				// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on, where
+				// the translator writes unpack_json, held to Loki by TestUnpackSumMatchesLoki (lower.SkipsUnpack,
+				// semantics/ungrouped-sum-skips-unpack).
+				// Also an operand of a binary operation or a label_replace call (lower.SkipsUnpackWrapped): each skipped
+				// sum loses one unpack_json pipe, and the rest of the text is the translator's.
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && (lower.SkipsUnpack(plan) || lower.SkipsUnpackWrapped(plan)) && gotErr == nil {
+					skipped++
+					dropped := strings.Count(want, " | unpack_json") - strings.Count(got, " | unpack_json")
+					if dropped < 1 || strings.Replace(want, " | unpack_json", "", dropped) != got && !strings.Contains(q, "| keep") && !strings.Contains(q, "| drop") {
+						t.Errorf("%q: served %q, the translator writes %q", q, got, want)
 					}
 					continue
 				}
@@ -154,6 +167,7 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 			total["count over stdvar rows"] += countVariance
 			total["reserved field rows"] += reserved
 			total["numeric equality rows"] += numeric
+			total["skipped unpack rows"] += skipped
 			for _, c := range metricFlipCandidates {
 				n := counts["flipped "+c]
 				total[c] += n
@@ -364,6 +378,15 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 			canon := logqlpkg.CanonicalizeLogRanges(normalized)
 			plan, err := loweringPlan(ctx, canon)
 			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
+				continue
+			}
+			if lower.SkipsUnpack(plan) || lower.SkipsUnpackWrapped(plan) {
+				// The skipped unpack has its own path (skipsUnpackConstruct), served under the VectorAgg flip.
+				caps := p.logsqlCapabilities()
+				prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, p.plainStreamLabelNames(ctx, normalized)), p.streamFieldsMap, caps, false)
+				if _, servedNow := p.lowerMetric(ctx, canon, prof); servedNow != slices.Contains(p.flippedConstructs, "VectorAgg") {
+					t.Errorf("%q: the proxy serves it: %v, the VectorAgg flip %v", canon, servedNow, !servedNow)
+				}
 				continue
 			}
 			caps := p.logsqlCapabilities()

@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -573,7 +576,7 @@ func TestLevelWitnessResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}
-			flagged, err := p.levelWitnessResponse(resp)
+			flagged, err := p.levelWitnessResponse(context.Background(), resp)
 			if err != nil || flagged != tc.flagged {
 				t.Fatalf("flagged %v, err %v", flagged, err)
 			}
@@ -590,8 +593,21 @@ func TestLevelWitnessResponse(t *testing.T) {
 	maxStatsBucketResponseBytes = 16
 	t.Cleanup(func() { maxStatsBucketResponseBytes = old })
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 100)))}
-	if flagged, err := p.levelWitnessResponse(resp); err != nil || !flagged {
+	if flagged, err := p.levelWitnessResponse(context.Background(), resp); err != nil || !flagged {
 		t.Fatalf("a body past the limit: flagged %v, err %v", flagged, err)
+	}
+	// a caller that reads the steps again in time chunks gets the overflow: the full chain's answer, the same groups
+	// without the witness, would pass the bound too
+	ctx, meter := withStatsReadMeter(context.Background())
+	meter.chunks = true
+	resp = &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 100)))}
+	if flagged, err := p.levelWitnessResponse(ctx, resp); !errors.Is(err, errBodyTooLarge) || flagged {
+		t.Fatalf("a chunked caller's body past the limit: flagged %v, err %v", flagged, err)
+	}
+	// within the bound the chunked caller's answer is checked as any other
+	resp = &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"__lw":"1"}`))}
+	if flagged, err := p.levelWitnessResponse(ctx, resp); err != nil || !flagged {
+		t.Fatalf("a chunked caller's flagged body: flagged %v, err %v", flagged, err)
 	}
 }
 
@@ -776,5 +792,55 @@ func TestLevelNeedsChainMarkerHonoursTTL(t *testing.T) {
 	p.markLevelNeedsChain(ctx, `app:="other"`)
 	if p.levelNeedsChain(ctx, `app:="other"`) {
 		t.Fatal("marker stored with a 0 TTL")
+	}
+}
+
+// withoutEmptyWitness is the three replacements it stands for, in their order, over random arrangements of the
+// witness label, commas and other text.
+func TestWithoutEmptyWitnessMatchesReplacements(t *testing.T) {
+	empty := `"` + levelWitnessField + `":""`
+	want := func(b []byte) []byte {
+		e := []byte(empty)
+		b = bytes.ReplaceAll(b, append([]byte(","), e...), nil)
+		b = bytes.ReplaceAll(b, append(append([]byte(nil), e...), ','), nil)
+		return bytes.ReplaceAll(b, e, nil)
+	}
+	parts := []string{empty, ",", `"a":"1"`, "{", "}", `"`, `"__lw":"1"`}
+	rng := rand.New(rand.NewSource(1))
+	for i := 0; i < 20000; i++ {
+		var b []byte
+		for n := rng.Intn(8); n >= 0; n-- {
+			b = append(b, parts[rng.Intn(len(parts))]...)
+		}
+		if got, w := withoutEmptyWitness(bytes.Clone(b)), want(bytes.Clone(b)); !bytes.Equal(got, w) {
+			t.Fatalf("%s: got %s, want %s", b, got, w)
+		}
+	}
+}
+
+func BenchmarkWithoutEmptyWitness(b *testing.B) {
+	var body []byte
+	for i := 0; i < 100000; i++ {
+		body = append(body, `{"metric":{"__name__":"c","service_name":"api","_stream":"{app=\"api\",pod=\"p`+strconv.Itoa(i)+`\"}","level":"info","detected_level":"info","__lw":""},"values":[[1795744240,"2"]]},`...)
+	}
+	e := []byte(`"` + levelWitnessField + `":""`)
+	for _, c := range []struct {
+		name  string
+		strip func([]byte) []byte
+	}{
+		{"replacements", func(b []byte) []byte { // the three passes it replaced
+			b = bytes.ReplaceAll(b, append([]byte(","), e...), nil)
+			b = bytes.ReplaceAll(b, append(append([]byte(nil), e...), ','), nil)
+			return bytes.ReplaceAll(b, e, nil)
+		}},
+		{"one-pass", withoutEmptyWitness},
+	} {
+		b.Run(c.name, func(b *testing.B) {
+			b.SetBytes(int64(len(body)))
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = c.strip(body)
+			}
+		})
 	}
 }

@@ -32,7 +32,7 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		// The case of the 2026-11-04 run: one series, count 1.
 		{`count(rate({service_name="api-gateway"} | json | keep foo [5m]))`,
-			`count (sum by (foo) (rate({service_name="api-gateway"} | json | keep foo[5m])))`},
+			`count(sum by (foo) (rate({service_name="api-gateway"} | json | keep foo[5m])))`},
 		{`rate({app="x"} | keep namespace [5m])`, `sum by (namespace) (rate({app="x"} | keep namespace[5m]))`},
 		{`count_over_time({app="x"} | logfmt | keep level, msg [1m])`, `sum by (level, msg) (count_over_time({app="x"} | logfmt | keep level, msg[1m]))`},
 		{`bytes_over_time({app="x"} | keep a [1m])`, `sum by (a) (bytes_over_time({app="x"} | keep a[1m]))`},
@@ -45,6 +45,11 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		// Both sides of a binary operation.
 		{`rate({app="x"} | keep a [1m]) / rate({app="y"} | keep a [1m])`,
 			`sum by (a) (rate({app="x"} | keep a[1m])) / sum by (a) (rate({app="y"} | keep a[1m]))`},
+		// A ranking around it: handed on in the request's canonical spelling, which the translation reads (the tree
+		// prints `sort (`, which it read as a phrase).
+		{`sort(rate({app="x"} | json | keep a [1m]))`, `sort(sum by (a) (rate({app="x"} | json | keep a[1m])))`},
+		{`topk(2, sum by (a) (rate({app="x"} | json | keep a, b [1m])))`,
+			`topk(2,sum by (a) (sum by (a, b) (rate({app="x"} | json | keep a, b[1m]))))`},
 	} {
 		got, changed := keepSeriesGrouping(tc.in)
 		if !changed || got != tc.want {
@@ -74,6 +79,11 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		`rate({app="x"} | json | keep foo | __error__!="" [5m])`,
 		`rate({app="x"} | json | keep foo | drop __preserve_error__ [5m])`,
 		`not a query (`,
+		// A sum with no label of a count or a rate over an unpack adds up every series, at any depth.
+		`sum(rate({app="x"} | unpack | keep a [1m]))`,
+		`sort(sum(rate({app="x"} | unpack | keep a [1m])))`,
+		`topk(1, sum by () (count_over_time({app="x"} | unpack | keep a [1m])))`,
+		`sum(rate({app="x"} | unpack | keep a [1m])) * 2`,
 	} {
 		if got, changed := keepSeriesGrouping(q); changed || got != q {
 			t.Errorf("%s: rewritten to %s", q, got)
