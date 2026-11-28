@@ -353,7 +353,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
 	if invalid := spec.invalid(); invalid != nil {
 		status := p.fail(w, r, invalid)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	body, ok := p.presenceAnswer(w, r, spec, p.handleQueryRange)
@@ -366,7 +366,7 @@ func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Req
 	step, okStep := parsePositiveStepDuration(r.FormValue("step"))
 	if !okS || !okE || !okStep {
 		status := p.fail(w, r, rangeParamsError(r, okS, okE))
-		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 		return
 	}
 	p.finishAbsent(w, "query_range", originalQuery, start, buildAbsentOverTimeMatrix(spec, presenceSteps(body, spec.unwrapped()), startNs, endNs, step.Nanoseconds()))

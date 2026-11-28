@@ -29,12 +29,19 @@ proxy: |
   -manual-range-metric-row-limit rather than buffering rows it cannot hold.
   Every one of these bounds is an operator flag that can be raised as well as
   lowered.
+  When a range metric query_range fails one of these read bounds where Loki
+  would answer, the step layer (step_adapt.go, decision range-metric-step-adapt)
+  serves it again at the smallest whole multiple of its step whose reads fit,
+  on Loki's grid and with Loki's warnings field. It never raises a bound: every
+  effective read is held to the same limits.
 
 implementation:
   - internal/proxy/sliding_window_stats.go
   - internal/proxy/manual_metric_budget.go
   - internal/proxy/range_metric_compat.go
   - internal/proxy/metric_agg.go
+  - internal/proxy/step_adapt.go
+  - internal/proxy/read_budget.go
 
 cases:
   - limits/raw-metric-row-precheck
@@ -43,3 +50,27 @@ cases:
   - semantics/sliding-window-recurrence-exact
   - semantics/tumbling-window-single-grid
   - limits/drilldown-7d-breakdown-response-limit
+  - limits/range-metric-step-adapt
+
+decisions:
+  - id: range-metric-step-adapt
+    chosen: 'Serve a range metric query_range as sent; only when its answer is the limit error of a read the proxy bounds itself (and that the step sizes), serve it again at the smallest whole multiple of its step whose reads fit, on Loki''s grid, with Loki''s warning; remember the multiple per replica; adaptive is the default mode'
+    over: ['estimating the read before it runs and coarsening a request that fits (changes answers and VictoriaLogs calls of requests that work today)', 'a VictoriaLogs cardinality probe before every fine-step read (an extra call per request)', 'steps that divide the window but are not multiples of the requested step (more points, but times off Loki''s grid: 53 ms over [1h] answers at 360 ms instead of 19.08 s)', 'raising a bound', 'answering at the coarser step without a warning']
+    why: |
+      Owner 2026-11-27/28 (#1795): "we need adaptive"; every range metric
+      query is adjusted automatically, a user sets nothing, adaptive is the
+      default, off and floor stay operator options; queries that fit today
+      change nothing; adjusted answers carry Loki's warning, are visible in
+      metrics and logs, and are never cached as such; Loki's own limits and
+      errors are never adjusted. A multiple of the requested step keeps
+      every returned time a time of Loki's answer and every value Loki's
+      value at it; only the number of points falls.
+    evidence: 'TestRangeStepAdaptMatchesLoki (recorded Loki engine and VictoriaLogs v1.49.0/v1.54.0): see the PR body for the measured runs'
+    code: [internal/proxy/step_adapt.go, internal/proxy/read_budget.go, internal/proxy/http_utils.go, internal/proxy/middleware.go, internal/proxy/proxy.go]
+    tests: [TestEffectiveStepMultiple, FuzzEffectiveStepMultiple, TestStepLayer_FittingRequestIsServedAsSent, TestStepLayer_RetriesAtTheSmallestMultipleThatFits, TestStepLayer_LokiErrorsAreAnsweredAsBefore, TestStepLayer_FloorAndCeiling, TestStepLayer_WarningJoinsTheAnswersWarnings, TestStepLayer_HeldFailureIsCountedOnce, TestStepLayer_Metrics, TestRangeWindows, TestRangeStepAdaptMatchesLoki]
+    quality: |
+      Every adjusted point equals Loki's at its time and every point of
+      Loki's answer on the effective grid is present (differential, both grid
+      modes, both VictoriaLogs versions); a request that fits is the mode-off
+      answer byte for byte from the same VictoriaLogs requests.
+    performance: 'A fitting request pays one writer allocation and two telemetry lock round trips (benchstat in the PR body); an adjusted request pays its failed read once per replica per 10 minutes, then reads the effective request''s cached answer'

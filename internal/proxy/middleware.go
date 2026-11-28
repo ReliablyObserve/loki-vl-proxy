@@ -763,6 +763,10 @@ func compatCacheCaptureAllowed(code int, flushed bool, header http.Header) bool 
 	if header.Get(staleResponseHeader) != "" {
 		return false
 	}
+	// An answer at a step the proxy raised carries a warning: the effective request's own answer is cached instead.
+	if header.Get(stepAdjustedHeader) != "" {
+		return false
+	}
 	// Drilldown's 200 partial reply represents an upstream failure, not a
 	// reusable answer. Caching it hides a later successful query for five minutes.
 	if header.Get(drilldownPartialUpstreamStatusHeader) != "" {

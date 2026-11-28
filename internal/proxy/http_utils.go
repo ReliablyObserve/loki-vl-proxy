@@ -556,8 +556,12 @@ func (p *Proxy) writeFailure(w http.ResponseWriter, ctx context.Context, err err
 		// 504 whatever error it ended with, typed or not.
 		status, _, text = lokiClientError(ctx, err)
 	}
-	p.logRequestError(ctx, status, text, err, typed)
-	recordFlightFailure(ctx, err, status, typed)
+	// A failure the step layer may answer at a coarser step is logged and held by it when it answers it after all
+	// (step_adapt.go).
+	if !holdStepFixable(ctx, err, typed, status, text) {
+		p.logRequestError(ctx, status, text, err, typed)
+		recordFlightFailure(ctx, err, status, typed)
+	}
 	shape(w, status, text)
 	if rec, ok := w.(failureRecorder); ok {
 		rec.recordFailure(err)

@@ -399,6 +399,11 @@ extraArgs:
   # patterns-autodetect-from-queries: "false"         # warm /patterns from successful query/query_range responses
   # exact-parser-series-identity: "false"             # name | json / | logfmt metric series with the parsed labels (Loki parity, evaluated from rows)
   # align-queries-with-step: "true"                   # default true: move metric query_range start/end down to the step grid, like Loki's query_range.align_queries_with_step; "false" keeps the client's start
+  # range-metric-step-mode: "adaptive"               # adaptive (default): a range metric query whose read at the requested step passes a proxy read bound is answered at the smallest whole multiple of its step that fits, with Loki's warning; floor: raise a step below range-metric-min-step; off: the step as sent
+  # range-metric-min-step: "0s"                       # floor/adaptive: smallest step of a range metric query (raised to a multiple of the requested step at or above it); 0 = none
+  # range-metric-max-step: "0s"                       # adaptive: largest step a request is raised to; 0 = up to the request's range
+  # range-metric-step-budget-bytes: "0"               # adaptive: target bytes of a read after one failed within its bucket bound; 0 = half of backend-max-buffered-response-bytes
+  # range-metric-max-points-per-series: "0"           # adaptive: buckets per series a read is aimed at after a read past the bucket bound; 0 = 11000
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
   # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
   # System metrics scope (the chart auto-injects host-proc-root=/host/proc only when

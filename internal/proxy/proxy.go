@@ -361,6 +361,16 @@ type Config struct {
 	// under query_range.align_queries_with_step (alignToStepMiddleware). The
 	// -align-queries-with-step flag defaults to true.
 	AlignQueriesWithStep bool
+	// RangeMetricStepMode is -range-metric-step-mode: adaptive (the default, also ""), floor or off
+	// (step_adapt.go). RangeMetricMinStep and RangeMetricMaxStep are -range-metric-min-step and
+	// -range-metric-max-step (0: none); RangeMetricStepBudgetBytes is -range-metric-step-budget-bytes (0: half of
+	// -backend-max-buffered-response-bytes); RangeMetricMaxPointsPerSeries is -range-metric-max-points-per-series
+	// (0: 11,000, the bucket bound of a read).
+	RangeMetricStepMode           string
+	RangeMetricMinStep            time.Duration
+	RangeMetricMaxStep            time.Duration
+	RangeMetricStepBudgetBytes    int64
+	RangeMetricMaxPointsPerSeries int
 	// PatternsCustom is a static list of patterns always prepended to
 	// /loki/api/v1/patterns responses.
 	PatternsCustom []string
@@ -917,6 +927,13 @@ type Proxy struct {
 	patternsSelectorScope                 bool
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
+	// The step layer's settings (step_adapt.go) and the steps it learned.
+	stepMode        stepMode
+	stepFloor       time.Duration
+	stepCeiling     time.Duration
+	stepBudgetBytes int64
+	stepMaxPoints   int
+	stepVerdicts    *stepVerdicts
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
@@ -1254,6 +1271,17 @@ func New(cfg Config) (*Proxy, error) {
 
 	if err := validateDeleteAPIConfig(cfg.DeleteAPIEnabled, cfg.DeleteAPIAuthToken); err != nil {
 		return nil, err
+	}
+	stepMode, stepModeOK := parseStepMode(cfg.RangeMetricStepMode)
+	if !stepModeOK {
+		return nil, ValidateRangeMetricStepMode(cfg.RangeMetricStepMode)
+	}
+	if cfg.RangeMetricMinStep < 0 || cfg.RangeMetricMaxStep < 0 || cfg.RangeMetricStepBudgetBytes < 0 || cfg.RangeMetricMaxPointsPerSeries < 0 {
+		return nil, fmt.Errorf("invalid -range-metric-min-step=%s / -range-metric-max-step=%s / -range-metric-step-budget-bytes=%d / -range-metric-max-points-per-series=%d (must be >= 0)",
+			cfg.RangeMetricMinStep, cfg.RangeMetricMaxStep, cfg.RangeMetricStepBudgetBytes, cfg.RangeMetricMaxPointsPerSeries)
+	}
+	if cfg.RangeMetricMaxStep > 0 && cfg.RangeMetricMinStep > cfg.RangeMetricMaxStep {
+		return nil, fmt.Errorf("invalid -range-metric-min-step=%s above -range-metric-max-step=%s", cfg.RangeMetricMinStep, cfg.RangeMetricMaxStep)
 	}
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
@@ -1702,6 +1730,12 @@ func New(cfg Config) (*Proxy, error) {
 		patternsSelectorScope:                 cfg.PatternsSelectorScope,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
+		stepMode:                              stepMode,
+		stepFloor:                             cfg.RangeMetricMinStep,
+		stepCeiling:                           cfg.RangeMetricMaxStep,
+		stepBudgetBytes:                       cfg.RangeMetricStepBudgetBytes,
+		stepMaxPoints:                         cfg.RangeMetricMaxPointsPerSeries,
+		stepVerdicts:                          newStepVerdicts(),
 		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,
@@ -2343,6 +2377,11 @@ func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker 
 // headers → tenant auth → rate limiter → request logger → query stats →
 // compat cache.
 func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Handler {
+	inner := p.requestTimeBounds(endpoint, h)
+	if endpoint == "query_range" {
+		// The step layer (step_adapt.go) serves an effective request through the compatibility cache of its own key.
+		inner = p.rangeStepLayer(inner, p.compatCacheMiddleware(endpoint, route, inner))
+	}
 	return p.routeGate(endpoint, route, querycorpus.Handler(securityHeaders(
 		p.tenantMiddleware(
 			p.limiter.Middleware(
@@ -2351,7 +2390,7 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 						p.tenantLimitsMiddleware(endpoint,
 							p.alignToStepMiddleware(endpoint,
 								p.bothNamesLayer(endpoint, p.compatCacheMiddleware(endpoint, route,
-									p.requestTimeBounds(endpoint, h))))))))), p.rejectAdmission)))))
+									inner)))))))), p.rejectAdmission)))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2883,7 +2922,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// before it was moved (alignToStepMiddleware).
 	if !requestStepAligned(r) && exceedsLokiRangeResolution(r, start) {
 		status := p.fail(w, r, lokierr.TooManyPoints())
-		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 		return
 	}
 	// Loki evaluates a range query on its step in whole milliseconds, after the
@@ -2893,7 +2932,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if wholeMs, subMs := lokiWholeMillisecondStep(r); subMs {
 		if wholeMs == 0 {
 			p.writeError(w, http.StatusInternalServerError, errLokiStepBelowMillisecond)
-			p.metrics.RecordRequest("query_range", http.StatusInternalServerError, time.Since(start))
+			p.recordRangeRequest(r.Context(), "query_range", http.StatusInternalServerError, time.Since(start))
 			return
 		}
 		r = withLokiStep(r, wholeMs)
@@ -2933,7 +2972,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
 				_, _ = w.Write(emptyLokiMatrix)
-				p.metrics.RecordRequest("query_range", http.StatusOK, time.Since(start))
+				p.recordRangeRequest(r.Context(), "query_range", http.StatusOK, time.Since(start))
 				return
 			}
 		}
@@ -2959,7 +2998,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(cached)
 				elapsed := time.Since(start)
-				p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+				p.recordRangeRequest(r.Context(), "query_range", http.StatusOK, elapsed)
 				p.metrics.RecordTupleMode(tupleMode)
 				p.metrics.RecordCacheHit()
 				p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
@@ -3022,7 +3061,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			}
 			if !isMixedOffset || !isBinaryForOffset {
 				status := p.fail(w, r, offsetRefusal(offsetErr))
-				p.metrics.RecordRequest("query_range", status, time.Since(start))
+				p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 				return
 			}
 			// Mixed-offset binary: proceed without time-shifting; binary routing handles it.
@@ -3070,7 +3109,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end")); okE {
 			if errMsg := p.checkQueryRangeLength(r.Context(), startNs, endNs); errMsg != "" {
 				p.writeError(w, http.StatusBadRequest, errMsg)
-				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+				p.recordRangeRequest(r.Context(), "query_range", http.StatusBadRequest, time.Since(start))
 				return
 			}
 		}
@@ -3121,7 +3160,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
 			status := p.fail(w, r, unplacedSyntaxError(errors.New("unresolved range selector "+strconv.Quote(spec.rangeWindowExpr))))
-			p.metrics.RecordRequest("query_range", status, time.Since(start))
+			p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 			return
 		}
 		p.proxyBareParserMetricQueryRange(w, r, start, logqlQuery, resolvedSpec)
@@ -3146,7 +3185,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	logsqlQuery, err := p.translateLogResponseQuery(r.Context(), logqlQuery)
 	if err != nil {
 		status := p.fail(w, r, queryRefusal(err))
-		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 		return
 	}
 	// Extract without() labels and label_replace markers for post-processing.
@@ -3159,7 +3198,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			status := p.fail(w, r, labelReplaceRegexError(err))
-			p.metrics.RecordRequest("query_range", status, time.Since(start))
+			p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 			return
 		}
 	}
@@ -3191,7 +3230,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if bareMetricRefused {
 		// A bare metric function carries no label transform, so the routed query is the query itself.
 		status := p.fail(w, r, bareMetricRefusal(parsedForRouting))
-		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", status, time.Since(start))
 		return
 	}
 	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
@@ -3314,7 +3353,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if stepsRun != nil && stepsRun.inner {
 		return // serveQueryRangeSteps records the request
 	}
-	p.metrics.RecordRequest("query_range", code, elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", code, elapsed)
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, code >= 400)
 }
 

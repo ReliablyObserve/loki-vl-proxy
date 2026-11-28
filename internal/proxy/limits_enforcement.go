@@ -321,6 +321,9 @@ func (p *Proxy) publishEnforcedLimits(published map[string]any, orgID string) {
 	}
 	// Enforced, but not a Loki limit: never published.
 	delete(published, limitLabelValuesMaxResponseBytes)
+	delete(published, limitRangeMetricStepMode)
+	delete(published, limitRangeMetricMinStep)
+	delete(published, limitRangeMetricMaxStep)
 }
 
 // tenantLimitInt reads an integer limit from a JSON override.
@@ -416,6 +419,15 @@ func validateTenantLimitOverrides(defaults map[string]any, tenants map[string]ma
 				}
 				if backendTimeout > 0 && d > backendTimeout {
 					return fmt.Errorf("%s %s: %s is above -backend-timeout (%s), which bounds every VictoriaLogs call; raise -backend-timeout to at least %s", scope, key, formatLokiDuration(d), formatLokiDuration(backendTimeout), formatLokiDuration(d))
+				}
+			case limitRangeMetricStepMode:
+				mode, isString := value.(string)
+				if _, known := parseStepMode(mode); !isString || !known {
+					return fmt.Errorf("%s %s: must be \"off\", \"floor\" or \"adaptive\", got %v", scope, key, value)
+				}
+			case limitRangeMetricMinStep, limitRangeMetricMaxStep:
+				if _, err := tenantLimitDuration(value); err != nil {
+					return fmt.Errorf("%s %s: %v", scope, key, err)
 				}
 			default:
 				want, unenforced := unenforcedTenantLimits[key]

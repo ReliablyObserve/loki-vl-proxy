@@ -2114,7 +2114,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		status := p.fail(w, r, timestampParamError("start", r.FormValue("start")))
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	endNanos, ok := parseFlexibleUnixNanos(r.FormValue("end"))
@@ -2126,13 +2126,13 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 			err = lokierr.EndBeforeStart()
 		}
 		status := p.fail(w, r, err)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
 		status := p.fail(w, r, stepParamError(r.FormValue("step")))
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 
@@ -2168,7 +2168,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, fetchStart, r.FormValue("end"))
 	if err != nil {
 		status := p.writeErr(w, r.Context(), err)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
 		return
 	}
@@ -2228,7 +2228,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 	}
 	status := p.writeHitsRangeMetricMatrix(w, spec.funcName, series, time.Unix(0, startNanos), time.Unix(0, endNanos), time.Duration(stepNanos), spec.rangeWindow)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, status != http.StatusOK)
 	return true
 }
@@ -2239,7 +2239,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 func (p *Proxy) writeBareParserSeriesLimitError(w http.ResponseWriter, start time.Time, originalQuery string, err error) {
 	p.writeError(w, http.StatusBadRequest, err.Error())
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusBadRequest, elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", http.StatusBadRequest, elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, true)
 }
 
@@ -2301,7 +2301,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	return true
 }

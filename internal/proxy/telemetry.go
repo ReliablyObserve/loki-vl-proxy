@@ -44,6 +44,8 @@ type requestTelemetry struct {
 	// failure is the failure the request answered through the error layer,
 	// for the error cache (error_flights.go).
 	failure flightFailure
+	// stepAdapt is the step layer's view of the request's current attempt (step_adapt.go).
+	stepAdapt stepAttempt
 	// predictedRefusal: a call of the request was answered by a predicted
 	// VictoriaLogs refusal instead of being sent (vl_refusal.go).
 	predictedRefusal bool
