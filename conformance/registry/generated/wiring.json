@@ -905,7 +905,8 @@
     "metric-identity/structured-metadata-splits-series": [
       "internal/logsql/series_metadata_test.go",
       "internal/proxy/metadata_series_oracle_test.go",
-      "internal/proxy/metadata_series_test.go"
+      "internal/proxy/metadata_series_test.go",
+      "internal/proxy/series_fold_stream_test.go"
     ],
     "metric-series-identity": [
       "internal/proxy/absent_over_time_differential_test.go",
@@ -5342,6 +5343,9 @@
       "semantics/unwrap-identity-nan-partials",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
+    "internal/proxy/series_fold_stream_test.go": [
+      "metric-identity/structured-metadata-splits-series"
+    ],
     "internal/proxy/series_limit_loki_cut_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/drilldown-series-limit-range-cut-at-trip-step",
@@ -7562,7 +7566,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 913,
+  "tests_with_markers": 914,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
