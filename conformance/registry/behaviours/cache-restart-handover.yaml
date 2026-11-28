@@ -197,6 +197,7 @@ implementation:
   - internal/cache/restore.go
   - internal/cache/disk_restore.go
   - internal/cache/disk_restore_readahead.go
+  - internal/cache/disk_rebuild_readahead.go
   - internal/proxy/cache_handover.go
   - cmd/proxy/cache_handover_scope.go
   - internal/cache/restore_peer.go
@@ -270,4 +271,63 @@ decisions:
     code: [internal/metrics/metrics.go, internal/cache/restore.go]
     tests: [TestRestore_StopsAtAFullMemoryTier, TestPeerRestore_NeverOverwritesFresherLocalData, TestMetrics_Handler_EmitsCacheRestartMetrics, TestOTLPPusher_RestoredEntriesAndBytesBySource]
     pending: true
-
+  - id: index-rebuild-read-ahead
+    chosen: 'While the start-up index rebuild walks the records, read the cache file in file order into the page cache with eight positioned reads of 512 KiB at a time, stopped and joined when the walk ends (before the listener opens); -disk-cache-rebuild-readahead, default true'
+    over: ['the walk alone (one read of about 4 KiB per record, one at a time, on a cold page cache)', 'one record per query for the metric buckets (issue #1802 item 2: 33-40% fewer records, but a format change, slower post-restart reads of batched records and whole-record rewrites; see disk-reads-one-record-per-piece)', 'reading only the pages the walk needs (their offsets are known only by walking the tree)']
+    why: 'Owner decision 2026-11-28 on issue #1802: test a sequential read-ahead before the index rebuild instead of a record format change. The walk waits on one scattered device read per record; a read in file order turns that into throughput, and the warm-up that follows (with the restart hand-over) then finds its values in memory.'
+    evidence: |
+      2026-11-28. BenchmarkRestoreIndexRebuild, Apple M5 Pro SSD, GOMAXPROCS=4,
+      cold page cache (F_NOCACHE copy), n=6, host loaded by other builds:
+      26,000 records / 200 MiB 1.08 s -> 59 ms, 10,000 / 128 MiB 403 -> 24 ms,
+      2,000 / 512 MiB 152 -> 46 ms; warm page cache 26,000 records 18.2 vs
+      19.5 ms (~), 2,000 records 2.0 vs 4.4 ms (+2.4 ms), +4 MiB of buffers.
+      Real proxy starts on the same machine (5 each, interleaved): 26,000
+      records 1.10 s -> 0.05 s rebuild, 2,000 records 0.16 -> 0.04 s.
+      Emulated volumes (a local Linux VM, data disk throttled per container,
+      no latency added, not EBS; two runs per cell; rebuild, then ready with
+      the hand-over warm-up), s2: 50,000 records of 8 KiB (252 MB) at 125 MiB/s
+      and 3,000 IOPS 12.1 -> 1.9 s, ready 20.4 -> 2.1 s; at 375 MiB/s and 6,500
+      IOPS 5.6 -> 0.6 s, ready 9.4 -> 0.8 s; 19,000 records of the 2 GiB mix
+      (794 MB) at 125 MiB/s 5.9 -> 6.1 s (+3%: the walk reads 9% of the file),
+      ready 11.4 -> 6.7 s; at 375 MiB/s 2.7 -> 2.0 s, ready 4.6 -> 2.6 s. Bytes
+      read during the rebuild rise to the file size (73 -> 794 MB, 150 -> 252
+      MB), the container's memory.peak after the rebuild rises by that page
+      cache (103 -> 825 MB) and its peak over the restart stays the same (3.0
+      GB) with no memory events. With read latency (not emulated) the walk
+      alone waits it per read: 17,900 reads at 1 ms is about 18 s against
+      about 6.3 s for the file at 125 MiB/s (computed).
+    code: [internal/cache/disk_rebuild_readahead.go, internal/cache/disk.go, cmd/proxy/main.go]
+    tests: [TestRebuildReadahead_LeavesTheSameIndex, TestRebuildReadahead_ReadsTheFileAndStops, TestDiskFlagsPassStorageBudgets]
+    quality: 'The rebuild keeps, drops and orders exactly the records it does without the read-ahead (same index, bytes, evictions and stored records from identical copies); the read-ahead only reads, ends with the walk and joins its goroutines; a file it cannot open means no read-ahead.'
+    performance: 'BenchmarkRestoreIndexRebuild/readahead=false|true (internal/cache/restore_bench_test.go, LVP_RESTORE_COLD=1, LVP_RESTORE_REBUILD_ENTRIES, LVP_RESTORE_BENCH_MB), which reports readahead-share (bytes read over file size).'
+    pending: true
+  - id: disk-reads-one-record-per-piece
+    chosen: 'Keep one disk record per cached piece (one metric bucket range, one patterns window, one answer), looked up side by side by the request that needs them; no record or read that batches the buckets of a query'
+    over: ['one record per query holding its buckets (issue #1802 item 2, a disk format change)', 'one read transaction for all buckets of a query (GetMany)']
+    why: 'Owner decision 2026-11-28 on issue #1802 item 2: closed with this record. The measured gain is under 0.2% of request time, because the buckets of a query are already read at the same time, and a batched record is slower to read after a restart.'
+    evidence: |
+      2026-11-28, main 640431dfc, macOS arm64 SSD, GOMAXPROCS=4, host loaded
+      by other builds (load average about 11); the proxy as a host process with
+      the disk cache, an in-process VictoriaLogs v1.54.0 with 540,000 JSON rows
+      over 25 h, Grafana-shaped Drilldown and Explore page loads (27 requests
+      per range at 1h, 6h, 24h), traced per lookup and per disk read. Disk hits
+      only after a restart without the hand-over (3-8 per request) or with a 2
+      MiB memory cache (3-9); none in repeats and refreshes; with the hand-over
+      1 request in 81 read the disk. Record read p50 10-15 us; disk time on a
+      request's critical path p50 0.1 ms, p90 0.2-2.5 ms. Batching the buckets
+      of a query (simulated on the traces): 36% fewer disk reads, at most
+      1.4-6.9 ms of 5-6 s of request time; with every read taking 1 or 3 ms,
+      about 2% less disk time. Prototype, 24 buckets of 8 KiB per query,
+      macOS (16 KiB bbolt pages): warm 172 us batched vs 199 us separate vs
+      349 us side by side; after a cold restart 384 us batched vs 131 us
+      separate and 106 us with one read transaction (GetMany), because the
+      index rebuild has already read the pages of the small records.
+    code: [internal/proxy/stats_extent_cache.go, internal/cache/disk.go]
+    pending: true
+  - id: no-neighbour-prefetch-on-disk-hit
+    chosen: 'A disk hit promotes the entry it read and nothing else: no read of the neighbouring buckets of the same query or of the other Drilldown panels of the same selector'
+    over: ['prefetching the next and previous buckets and the other panels of a Drilldown page on a disk hit (issue #1802 item 1)']
+    why: 'Owner decision 2026-11-28 on issue #1802 item 1: closed with this record. The next bucket of a refreshed window is inside -query-range-freshness and was never stored; the previous one was hit by an earlier lookup 0 to 8 times in 81 requests, each a single read of 10-15 us done alongside the others; the other panels are queries the client builds per label and field, which the cache cannot derive from the selector, and they arrive in the same burst; the restart hand-over already removes the after-restart disk reads.'
+    evidence: 'The runs of disk-reads-one-record-per-piece (2026-11-28, same conditions). The largest disk cost measured is the 24h Drilldown patterns request (11 window records of about 800 KB: 32 ms with a warm page cache, 139 ms with a cold one), a separate follow-up.'
+    code: [internal/cache/cache.go]
+    pending: true
