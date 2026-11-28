@@ -66,5 +66,4 @@ gap:
   planned_test: Expand existing registry-driven Loki/VictoriaLogs and API/Grafana comparisons for the recorded query
     facets; retain complete answers and evaluation-grid evidence.
   clusters:
-    - 770dd6ce
     - 64c6e7ba

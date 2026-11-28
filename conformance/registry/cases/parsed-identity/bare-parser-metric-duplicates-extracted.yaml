@@ -35,28 +35,4 @@ gap:
   loki: 'a parsed key gets the _extracted suffix only on a label collision (TestCompat_BareParserMetricLabels)'
   proxy: 'complete scalar body projections corrected; equal-valued all-body metadata collisions and partial projections remain ambiguous'
   planned_test: 'TestCompat_BareParserMetricLabels and TestHardeningLive_ParserErrorStructuredMetadata (test/e2e-compat); add an all-body equal-metadata fixture when provenance is available'
-  clusters:
-    - "1173e4c5"
-    - "5262a574"
-    - "635d0d3b"
-    - "793ffed2"
-    - "907c7acb"
-    - "9148c234"
-    - "9be22235"
-    - "9f2d98ad"
-    - "a46deaa7"
-    - "a6de275a"
-    - "a73df887"
-    - "a83225d3"
-    - "ac8e75c3"
-    - "b6078924"
-    - "bbbf8e64"
-    - "cab142d9"
-    - "cfff8628"
-    - "d088f040"
-    - "d8dc7dd1"
-    - "df222120"
-    - "eb1010a3"
-    - "f34b07a8"
-    - "fcfc2054"
-    - "fd91e575"
+  clusters: []

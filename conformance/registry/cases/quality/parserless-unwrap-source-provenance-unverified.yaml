@@ -46,45 +46,4 @@ gap:
   proxy: The linked recorded facets differ; the observations are not declared equivalent
   planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
     exact source-controlled facets; no separate catalog.
-  clusters:
-    - 04e50ea4
-    - 0dc89e27
-    - 191a013a
-    - 19485fde
-    - 2872a06d
-    - '321884e3'
-    - 38f32821
-    - '42889312'
-    - 447535c9
-    - 4888bb57
-    - 4a2bb60b
-    - 5453db65
-    - 571087d4
-    - 609d5a42
-    - '63673761'
-    - 66877b58
-    - 69eb297e
-    - 6dacf9d7
-    - 6e77b90d
-    - 7b80aae2
-    - 7b9426cb
-    - 7c0e9fff
-    - 86a439c4
-    - 87a63e1a
-    - 8b1241d1
-    - 8d56b649
-    - 92271bff
-    - 92a30f4e
-    - 9e95665f
-    - aadcd0f8
-    - b30ec28f
-    - b761ca97
-    - c6c44dd9
-    - c9330257
-    - d0971fba
-    - de481374
-    - e1c9626d
-    - e29d0526
-    - f2a53f69
-    - fd6df443
-    - fdb045f4
+  clusters: []

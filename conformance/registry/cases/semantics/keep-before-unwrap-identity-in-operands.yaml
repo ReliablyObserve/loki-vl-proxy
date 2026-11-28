@@ -56,6 +56,4 @@ gap:
   loki: 'the operand series are the kept labels less the unwrapped one'
   proxy: 'the labels the keep leaves as the operand series, relabelled by the calls'
   planned_test: 'TestKeepUnwrapIdentityMatchLoki (internal/querycorpus); TestKeepUnwrapIdentity (internal/queryplan/lower); TestKeepIdentityServedFromPlan, TestKeepIdentityCacheKeysFenced (internal/proxy)'
-  clusters:
-    - "581a8dcf"
-    - "88dbab17"
+  clusters: []

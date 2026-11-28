@@ -75,6 +75,4 @@ gap:
   loki: 'no capture label for a non-matching line (measured against live Loki, in this case)'
   proxy: 'about 3x Loki''s series'
   planned_test: 'TestCompat_RegexpPartialMatchSeries (test/e2e-compat, group semantics)'
-  clusters:
-    - 7ba35380
-    - 952bbb24
+  clusters: []

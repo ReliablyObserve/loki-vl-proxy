@@ -58,7 +58,5 @@ gap:
   proxy: 'the stored field, the line value'
   planned_test: 'TestStreamLabelShadowedAfterJSONParser (internal/proxy) and TestCompat_StreamLabelShadowedAfterJSONParser (test/e2e-compat, group core)'
   clusters:
-    - b9202c3b
-    - d2261efa
     - '6b0124a8'
     - '91deb392'
