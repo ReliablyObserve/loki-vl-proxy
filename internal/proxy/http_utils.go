@@ -1009,6 +1009,9 @@ type upstreamStatusError struct {
 	// does every time on the same release (isVLRefusalMessage); windowFree:
 	// the refusal does not depend on the request's window either.
 	refusal, windowFree bool
+	// memory: VictoriaLogs refused a pipe for the memory it would need
+	// (isVLMemoryLimitMessage).
+	memory bool
 }
 
 // vlErrorClass tells apart the failures VictoriaLogs reports with the same
@@ -1085,6 +1088,21 @@ var vlResourceLimitMarkers = []string{
 	"-search.max",
 	"cannot execute query [", // logsql.go:194, 302, 1011, 1147: any failure after parsing
 	"cannot obtain ",         // logsql.go:445, 493, 527, 575, 613, 651, 1466
+}
+
+// isVLMemoryLimitMessage reports VictoriaLogs' refusal of a pipe for the memory it would need: "cannot calculate
+// [sort ...], since it requires more than 1146MB of memory" (lib/logstorage pipe_sort.go and the other pipes listed
+// in vlResourceLimitMarkers). A cluster's vlselect passes it on under another status (502 through vmauth), so the
+// status is not read.
+func isVLMemoryLimitMessage(raw string) bool {
+	i := strings.Index(raw, "since it requires more than")
+	return i >= 0 && strings.Contains(raw[i:], "of memory")
+}
+
+// isVLMemoryLimit reports an upstream error that is isVLMemoryLimitMessage.
+func isVLMemoryLimit(err error) bool {
+	var statusErr *upstreamStatusError
+	return errors.As(err, &statusErr) && statusErr.memory
 }
 
 // classifyVLError classifies a raw (unredacted) VictoriaLogs error message.
@@ -1403,7 +1421,8 @@ func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byt
 	}
 	raw := extractVLErrorMsg(body)
 	statusErr := &upstreamStatusError{status: status, msg: msg, class: classifyVLError(status, raw),
-		refusal: isVLRefusalMessage(status, raw), windowFree: isWindowFreeRefusalMessage(status, raw)}
+		refusal: isVLRefusalMessage(status, raw), windowFree: isWindowFreeRefusalMessage(status, raw),
+		memory: isVLMemoryLimitMessage(raw)}
 	if statusErr.refusal {
 		p.noteVLRefusalMessage(raw)
 	}
