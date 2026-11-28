@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
@@ -36,6 +37,16 @@ func ipFenceUnknownNameQueries() []string {
 				}
 			}
 		}
+		// The tree read walks every node that holds a log query: a binary operation, a ranking, a label_replace
+		// call (typed once a Grafana range variable is resolved), and a pipeline with an ip() line filter too.
+		metric := `sum(count_over_time({a="b"} | json | A="x" ` + name + `=ip("10.0.0.0/8") [5m]))`
+		out = append(out,
+			metric+` / sum(count_over_time({a="b"}[5m]))`,
+			`topk(1, `+metric+`)`,
+			`label_replace(`+metric+`, "d", "$1", "A", "(.*)")`,
+			`label_replace(sum(count_over_time({a="b"} | json | A="x" `+name+`=ip("10.0.0.0/8") [$__interval])), "d", "$1", "A", "(.*)")`,
+			`{a="b"} |= "x" | json | A="x" `+name+`=ip("10.0.0.0/8")`,
+		)
 	}
 	return out
 }
@@ -52,7 +63,8 @@ func TestIPFenceReadsALabelNamedByAnUnknownCharacter(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	for _, q := range ipFenceUnknownNameQueries() {
 		for _, text := range []string{q, RequestQueryText(q)} {
-			f, _, ok := factsOf(text)
+			// A Grafana range variable leaves label_replace untyped until the handlers resolve it.
+			f, _, ok := factsOf(fenceVariablesResolved(text))
 			if !ok || !f.ip {
 				t.Fatalf("%+q: the validation must accept it with an ip() filter in its tree (ok=%v ip=%v)", text, ok, f.ip)
 			}
@@ -72,6 +84,7 @@ func TestIPFenceReadsALabelNamedByAnUnknownCharacter(t *testing.T) {
 			`{a="b"} | json | A="x" ` + name + `="10.0.0.1"`,
 			`{a="b"} | json | A="x" or ` + name + `!="ip"`,
 			`sum by (A) (count_over_time({a="b"} | json | A="x", ` + name + `="zip" [5m]))`,
+			`sum(count_over_time({a="b"} | json | A="x" ` + name + `="10.0.0.1" [5m])) / sum(count_over_time({a="b"}[5m]))`,
 		} {
 			if _, _, ok := factsOf(q); !ok {
 				t.Fatalf("%+q: the validation must accept it", q)
@@ -80,6 +93,38 @@ func TestIPFenceReadsALabelNamedByAnUnknownCharacter(t *testing.T) {
 				t.Errorf("%+q: no ip() call, yet the fence %q fires", q, got)
 			}
 		}
+	}
+}
+
+// TestExprHoldsIPFilter reads the ip() filters of a parsed tree: a line filter, an alternative of a line filter
+// chain, a label filter leaf under and and or, through every node that holds a log query; and none where the tree
+// holds no ip() call (an alternative the parser discards is none).
+//
+// conformance: cache-response-key-versions
+func TestExprHoldsIPFilter(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for q, want := range map[string]bool{
+		`{a="b"} |= ip("10.0.0.1")`:                                                   true,
+		`{a="b"} != "x" or ip("10.0.0.1")`:                                            true,
+		`{a="b"} | json | (A="x" or B=ip("10.0.0.0/8"))`:                              true,
+		`sum(rate({a="b"} | json | B!=ip("10.0.0.0/8") [5m])) * 2`:                    true,
+		`2 * sum(rate({a="b"} | json | B!=ip("10.0.0.0/8") [5m]))`:                    true,
+		`label_replace(rate({a="b"} |= ip("10.0.0.1") [5m]), "d", "$1", "a", "(.*)")`: true,
+		`{a="b"} |= "a" or ip("10.0.0.1") or "b"`:                                     false,
+		`{a="b"} | json | A="ip(10.0.0.1)"`:                                           false,
+		`sum(rate({a="b"}[5m])) / sum(rate({a="b"} |= "ip" [5m]))`:                    false,
+		`vector(1)`: false,
+	} {
+		expr, err := logqlpkg.Parse(q)
+		if err != nil {
+			t.Fatalf("%q: %v", q, err)
+		}
+		if got := exprHoldsIPFilter(expr); got != want {
+			t.Errorf("%q: exprHoldsIPFilter = %v, want %v", q, got, want)
+		}
+	}
+	if labelFilterHoldsIP(nil) {
+		t.Error("a stage with no filter holds no ip() call")
 	}
 }
 
