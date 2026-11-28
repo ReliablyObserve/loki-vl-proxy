@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -391,12 +392,94 @@ func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesId
 	hist, ok := memo.histogram(filter, from, to)
 	if !ok {
 		var err error
-		if hist, err = p.seriesMetadataRowHistogram(ctx, read, from, to); err != nil {
+		if hist, err = p.seriesMetadataRowsCached(ctx, read, from, to); err != nil {
 			return 0, err
 		}
 		memo.addHistogram(filter, hist)
 	}
 	return hist.rows(from, to), nil
+}
+
+// seriesMetadataRowsCached is the minute row counts of [from, to] (seriesMetadataRowHistogram), kept per hour across
+// requests: an hour older than -query-range-freshness for an hour, a younger one for the freshness window. A request
+// whose window moves reads only the hours no request read before, in one read.
+func (p *Proxy) seriesMetadataRowsCached(ctx context.Context, read logsql.SeriesIdentityRead, from, to int64) (rowHistogram, error) {
+	hour, minute := metadataSeriesDiscoveryAlign.Nanoseconds(), metadataSeriesRowBucket.Nanoseconds()
+	lo, hi := from/hour*hour, (to/hour+1)*hour
+	out := rowHistogram{lo: from / minute * minute, hi: (to/minute + 1) * minute}
+	out.hours = make([]int64, (out.hi-out.lo)/minute)
+	key := func(h int64) string {
+		return "smrows:" + p.contextScopeFingerprint(ctx) + ":" + read.Filter() + ":" + strconv.FormatInt(h, 10)
+	}
+	put := func(h int64, counts []int64) {
+		for i, c := range counts {
+			if j := (h + int64(i)*minute - out.lo) / minute; j >= 0 && j < int64(len(out.hours)) {
+				out.hours[j] = c
+			}
+		}
+	}
+	missLo, missHi := int64(-1), int64(-1)
+	for h := lo; h < hi; h += hour {
+		if raw, ok := p.cacheGet(ctx, p.streamFieldNamesCache, key(h)); ok {
+			if counts, ok := decodeMinuteCounts(raw); ok {
+				put(h, counts)
+				continue
+			}
+		}
+		if missLo < 0 {
+			missLo = h
+		}
+		missHi = h + hour
+	}
+	if missLo < 0 {
+		return out, nil
+	}
+	fetched, err := p.seriesMetadataRowHistogram(ctx, read, missLo, missHi-1)
+	if err != nil {
+		return rowHistogram{}, err
+	}
+	settled := time.Now().Add(-p.queryRangeFreshness).UnixNano()
+	for h := missLo; h < missHi; h += hour {
+		counts := make([]int64, hour/minute)
+		for i := range counts {
+			if j := (h + int64(i)*minute - fetched.lo) / minute; j >= 0 && j < int64(len(fetched.hours)) {
+				counts[i] = fetched.hours[j]
+			}
+		}
+		put(h, counts)
+		ttl := p.queryRangeFreshness
+		if h+hour <= settled {
+			ttl = time.Hour
+		}
+		if ttl > 0 {
+			p.streamFieldNamesCache.SetWithTTL(key(h), encodeMinuteCounts(counts), ttl)
+		}
+	}
+	return out, nil
+}
+
+func encodeMinuteCounts(counts []int64) []byte {
+	b := make([]byte, 0, len(counts)*4)
+	for i, c := range counts {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = strconv.AppendInt(b, c, 10)
+	}
+	return b
+}
+
+func decodeMinuteCounts(raw []byte) ([]int64, bool) {
+	parts := strings.Split(string(raw), ",")
+	counts := make([]int64, len(parts))
+	for i, part := range parts {
+		n, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return nil, false
+		}
+		counts[i] = n
+	}
+	return counts, true
 }
 
 // metadataSeriesRowBucket is the grain of a request's row counts: a read's rows are those of every minute it touches,
