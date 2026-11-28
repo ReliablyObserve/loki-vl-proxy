@@ -176,6 +176,7 @@
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "internal/proxy/rank_binary_range_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
       "internal/proxy/reserved_field_test.go",
@@ -2738,6 +2739,7 @@
       "internal/querycorpus/grammar_sweep_test.go"
     ],
     "semantics/ungrouped-sum-skips-parsers": [
+      "internal/proxy/parser_probe_window_test.go",
       "internal/proxy/parser_sum_probe_test.go",
       "internal/querycorpus/parser_sum_loki_diff_test.go",
       "internal/queryplan/lower/parser_skip_test.go",
@@ -4995,9 +4997,11 @@
       "semantics/instant-parser-probe-window",
       "semantics/log-range-default-window",
       "semantics/parser-probe-drop-keeps-range",
-      "semantics/two-parsers-keep-one"
+      "semantics/two-parsers-keep-one",
+      "semantics/ungrouped-sum-skips-parsers"
     ],
     "internal/proxy/parser_sum_probe_test.go": [
+      "cache-response-key-versions",
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/instant-parser-probe-window",

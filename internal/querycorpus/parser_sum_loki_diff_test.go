@@ -20,7 +20,8 @@ import (
 // real query and query_range handlers, as the metric differential runs them.
 //
 //   - Data (parserSumFixture): job=js holds JSON objects (keys named like VictoriaLogs' fields and like Loki's error
-//     labels among them), job=lf logfmt lines (an unterminated value among them), job=mix both kinds, plain text,
+//     labels among them), job=lf logfmt lines (an unterminated value and keys named like VictoriaLogs' fields among
+//     them), job=mix both kinds, plain text,
 //     broken JSON and a line of blanks, so each parser fails on some lines of it. job=none selects no line.
 //   - A sum with no clause (or an empty by clause) of a count or a rate over bare json and logfmt parsers needs no
 //     label: Loki runs no parser for it and answers the number of lines. The plan writes no stage from the first
@@ -36,44 +37,30 @@ const parserSumAnswersPath = "testdata/parser-sum-loki-diff.jsonl.gz"
 
 // parserSumKnown are the control runs that differ from Loki, by query: version and request kind, with the registry
 // case that holds them open. A listed run that matches fails too, so the list only shrinks. Every one is a control the
-// plan does not skip, answered as on main (recorded on main 640431dfc with this harness: the same runs differ): the
-// parser probe keeps one of the two parsers (semantics/two-parsers-keep-one), so a filter or a grouping after them
-// reads the labels and errors of one parser only.
+// plan does not skip, answered as on main (recorded on main 640431dfc with this harness: these runs differ there too):
+// the parser probe keeps one of the two parsers and the unpack pipe it writes lets a key named like a VictoriaLogs
+// field replace the line's own (semantics/two-parsers-keep-one), so a filter, a grouping, the bytes or a rate behind a
+// keep after them reads what one parser made.
 var parserSumKnown = func() map[string]unpackSumOpen {
 	const twoParsers = "semantics/two-parsers-keep-one"
-	kinds := func(versions, kinds []string) []string {
-		var out []string
-		for _, v := range versions {
-			for _, k := range kinds {
-				out = append(out, v+" "+k)
-			}
-		}
-		return out
+	return map[string]unpackSumOpen{
+		`sum without () (count_over_time({job="mix"} | json | logfmt | drop __error__, __error_details__ [1m]))`: {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`count_over_time({job="mix"} | json | logfmt | drop __error__, __error_details__ [1m])`:                  {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`count(count_over_time({job="mix"} | json | logfmt | drop __error__, __error_details__ [1m]))`:           {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`max(count_over_time({job="mix"} | logfmt [1m]))`:                                                        {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(rate({job="mix"} | json | logfmt | keep a [1m]))`:                                                   {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(count_over_time({job="mix"} | json | logfmt | a!="" [1m]))`:                                         {twoParsers, []string{"v1.54.0 instant", "v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 instant", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(count_over_time({job="mix"} | json | logfmt | __error__="" [1m]))`:                                  {twoParsers, []string{"v1.54.0 instant", "v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 instant", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(bytes_over_time({job="mix"} | json | logfmt [1m]))`:                                                 {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum without () (count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`:  {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m])`:                   {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`count(count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`:            {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`max(count_over_time({job="lf"} | logfmt [1m]))`:                                                         {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(rate({job="lf"} | json | logfmt | keep a [1m]))`:                                                    {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(count_over_time({job="lf"} | json | logfmt | a!="" [1m]))`:                                          {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(count_over_time({job="lf"} | json | logfmt | __error__="" [1m]))`:                                   {twoParsers, []string{"v1.54.0 instant", "v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 instant", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
+		`sum(bytes_over_time({job="lf"} | json | logfmt [1m]))`:                                                  {twoParsers, []string{"v1.54.0 step=range", "v1.54.0 step<range", "v1.54.0 step>range", "v1.49.0 step=range", "v1.49.0 step<range", "v1.49.0 step>range"}},
 	}
-	both := []string{"v1.54.0", "v1.49.0"}
-	ranged := kinds(both, []string{"step=range", "step<range", "step>range"})
-	all := kinds(both, []string{"instant", "step=range", "step<range", "step>range"})
-	open := map[string]unpackSumOpen{
-		`count(count_over_time({job="mix"} | json | logfmt | drop __error__, __error_details__ [1m]))`: {twoParsers, ranged},
-		`max(count_over_time({job="mix"} | logfmt [1m]))`:                                              {twoParsers, kinds(both, []string{"step=range", "step<range"})},
-	}
-	for _, q := range []string{
-		`sum(count_over_time({job="mix"} | json | logfmt | a!="" [1m]))`,
-		`sum(count_over_time({job="mix"} | json | logfmt | __error__="" [1m]))`,
-		`sum(count_over_time({job="lf"} | json | logfmt | a!="" [1m]))`,
-		`sum(count_over_time({job="lf"} | json | logfmt | __error__="" [1m]))`,
-	} {
-		open[q] = unpackSumOpen{twoParsers, all}
-	}
-	for _, q := range []string{
-		`sum without () (count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`,
-		`count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m])`,
-		`count(count_over_time({job="lf"} | json | logfmt | drop __error__, __error_details__ [1m]))`,
-		`max(count_over_time({job="lf"} | logfmt [1m]))`,
-	} {
-		open[q] = unpackSumOpen{twoParsers, ranged}
-	}
-	return open
 }()
 
 // parserSumSkipped are the sums the plan writes with no stage from the first parser on, over a selector S.
@@ -171,6 +158,8 @@ func parserSumFixture() metricFixture {
 			`=novalue a=3`,
 			`level=info msg=hi`,
 			`__error__=x a=4`,
+			`_time=2020-01-01T00:00:00Z a=5`,
+			`_msg=m _stream=x _stream_id=0 a=6`,
 		},
 		"mix": {
 			`{"a":"1","msg":"k"}`,
@@ -181,6 +170,7 @@ func parserSumFixture() metricFixture {
 			`a="unterminated`,
 			`   `,
 			`{"a":"4","level":"warn"}`,
+			`_time=later b=z`,
 		},
 	}
 	span := metricWindow + 20*time.Minute

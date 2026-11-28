@@ -753,8 +753,9 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}
-	if p.planSkipsParsers(logql) {
-		// The plan writes no parser for the query: neither parser is run, so there is nothing to choose.
+	if p.planSkipsParsers(logql) && p.translationRunsNoParser(ctx, logql) {
+		// The plan writes no parser for the query and the request's translation is that text: neither parser is
+		// run, so there is nothing to choose.
 		p.observeInternalOperation(ctx, "prefer_working_parser", "parsers_unread", time.Since(opStart))
 		return logql
 	}
@@ -817,6 +818,40 @@ func (p *Proxy) planSkipsParsers(query string) bool {
 		plan = &queryplan.Plan{Root: rank.In}
 	}
 	return (lower.SkipsParsers(plan) || lower.SkipsParsersWrapped(plan)) && writesTranslatorText(plan, lower.Profile{})
+}
+
+// translationRunsNoParser reports a query whose translation for this request, under its own profile (label mode,
+// stream fields, capabilities, aliases), holds no unpack_json or unpack_logfmt pipe, read from the parsed LogsQL:
+// the lowering served the sum with no parser. Where it did not (a profile the lowering turns away, a text it leaves
+// to the string translator), the query keeps today's probe, so the probe is skipped only where no parser runs. The
+// translation is cached, so the handler's own translation of the same text that follows is a cache hit.
+func (p *Proxy) translationRunsNoParser(ctx context.Context, query string) bool {
+	// Under rankings and label_replace calls the handlers translate the sum as a query of its own: its text is
+	// the one to read.
+	if expr, ok := sharedLogQLExpr(strings.TrimSpace(query)); ok {
+		inner := underRankings(expr)
+		if _, sum := inner.(*logqlpkg.VectorAggregation); !sum {
+			return false
+		}
+		if inner != expr {
+			query = logqlpkg.CanonicalSpelling(inner.String())
+		}
+	}
+	text, err := p.translateQueryWithContext(ctx, query)
+	if err != nil {
+		return false
+	}
+	parsed, err := logsql.Parse(text)
+	if err != nil {
+		return false
+	}
+	for _, pipe := range parsed.Pipes {
+		switch pipe.(type) {
+		case logsql.PipeUnpackJSON, *logsql.PipeUnpackJSON, logsql.PipeUnpackLogfmt, *logsql.PipeUnpackLogfmt:
+			return false
+		}
+	}
+	return true
 }
 
 // preferWorkingParserAt is preferWorkingParser for an instant query evaluated

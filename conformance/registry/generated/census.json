@@ -2376,6 +2376,8 @@
     "internal/proxy/parser_probe_window_test.go | semantics/log-range-default-window",
     "internal/proxy/parser_probe_window_test.go | semantics/parser-probe-drop-keeps-range",
     "internal/proxy/parser_probe_window_test.go | semantics/two-parsers-keep-one",
+    "internal/proxy/parser_probe_window_test.go | semantics/ungrouped-sum-skips-parsers",
+    "internal/proxy/parser_sum_probe_test.go | cache-response-key-versions",
     "internal/proxy/parser_sum_probe_test.go | loki_api_v1_query",
     "internal/proxy/parser_sum_probe_test.go | loki_api_v1_query_range",
     "internal/proxy/parser_sum_probe_test.go | semantics/instant-parser-probe-window",

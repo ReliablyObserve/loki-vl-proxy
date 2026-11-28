@@ -154,3 +154,108 @@ func BenchmarkUngroupedParserSumRequest(b *testing.B) {
 		}
 	}
 }
+
+// The probe is skipped only where the request's own translation runs no parser, under every label, field and tenant
+// profile: a profile the lowering turns away keeps today's probe and pipes, never both parsers without the probe
+// (which the handlers would read as a mixed-parser metric and answer from raw rows). The issue's selector names
+// dotted stream fields through field mappings.
+//
+// conformance: semantics/ungrouped-sum-skips-parsers, semantics/two-parsers-keep-one
+func TestUngroupedParserSumProbeSkipFollowsTheTranslation(t *testing.T) {
+	mappings := []FieldMapping{{VLField: "k8s.cluster.name", LokiLabel: "cluster"}, {VLField: "k8s.namespace.name", LokiLabel: "namespace"}}
+	profiles := []struct {
+		name string
+		cfg  func(*Config)
+	}{
+		{"default", func(*Config) {}},
+		{"underscores translated", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeTranslated }},
+		{"passthrough native", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStylePassthrough, MetadataFieldModeNative }},
+		{"hybrid", func(c *Config) { c.LabelStyle, c.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeHybrid }},
+		{"field mappings original", func(c *Config) { c.FieldMappings = mappings }},
+		{"field mappings alias", func(c *Config) { c.FieldMappings, c.FieldMappingLabelMode = mappings, FieldMappingLabelModeAlias }},
+		{"field mappings both", func(c *Config) { c.FieldMappings, c.FieldMappingLabelMode = mappings, FieldMappingLabelModeBoth }},
+		{"stream fields", func(c *Config) { c.StreamFields = []string{"cluster", "namespace", "container"} }},
+		{"tenant label", func(c *Config) { c.TenantLabel = "tenant" }},
+	}
+	const pipe = `{cluster="c1", namespace="ns1", container="ingress"} | json | logfmt | drop __error__, __error_details__`
+	queries := []string{
+		`sum(count_over_time(` + pipe + ` [3h]))`,
+		`sum(rate(` + pipe + ` [3h]))`,
+		`sort(sum(count_over_time(` + pipe + ` [3h])))`,
+	}
+	skipped := 0
+	for _, prof := range profiles {
+		for _, q := range queries {
+			for _, instant := range []bool{true, false} {
+				b := &parserProbeBackend{lines: func(string, string) []string { return []string{"level=info msg=hi"} }}
+				backend := httptest.NewServer(http.HandlerFunc(b.handler))
+				cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second}
+				prof.cfg(&cfg)
+				p, err := New(cfg)
+				if err != nil {
+					backend.Close()
+					t.Fatalf("%s: %v", prof.name, err)
+				}
+				if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				tenant := "0"
+				if cfg.TenantLabel != "" {
+					tenant = "team-a"
+				}
+				res := doCompatProxyRequest(p, parserSumRequest(q, instant), map[string]string{"X-Scope-OrgID": tenant})
+				_ = p.Shutdown(context.Background())
+				backend.Close()
+				if res.Code != http.StatusOK {
+					t.Errorf("%s instant %v %s: %d %s", prof.name, instant, q, res.Code, res.Body)
+					continue
+				}
+				if len(b.probes) != 0 {
+					t.Logf("%s instant %v %s: probed (today's path)", prof.name, instant, q)
+					continue // today's path: the probe and the parser it keeps
+				}
+				skipped++
+				for _, read := range b.reads {
+					if strings.Contains(read, "unpack_") || strings.HasPrefix(read, "/select/logsql/query ") {
+						t.Errorf("%s instant %v %s: no probe, but read %q", prof.name, instant, q, read)
+					}
+				}
+			}
+		}
+	}
+	if skipped < len(queries)*2 {
+		t.Errorf("only %d runs skipped the probe", skipped)
+	}
+}
+
+// Answers cached before the sum ran no parser are fenced, for every spelling of the shape and for no other query: the
+// count over one parser answered other values on main when a key was named like a VictoriaLogs field
+// (TestParserSumMatchesLoki), and the key now carries skippedParsersResponseVersion.
+//
+// conformance: semantics/ungrouped-sum-skips-parsers, cache-response-key-versions
+func TestSkippedParsersResponseFence(t *testing.T) {
+	for _, q := range []string{
+		`sum(count_over_time({app="x"} | logfmt [5m]))`,
+		`SUM(count_over_time({app="x"} | LOGFMT [5m]))`,
+		`sum(count_over_time({app="x"} # a comment
+			| json [5m]))`,
+		`sum by () (rate({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))`,
+		`sum(count_over_time({app="x"} | logfmt [5m])) * 2`,
+		`sort(sum(count_over_time({app="x"} | logfmt [5m])))`,
+	} {
+		if got := responseKeyFences(httptest.NewRequest(http.MethodGet, parserSumRequest(q, false), nil), q, responseKeyInnerQueryRange); !strings.Contains(got, skippedParsersResponseVersion) {
+			t.Errorf("%q: fences %q, want %s", q, got, skippedParsersResponseVersion)
+		}
+	}
+	for _, q := range []string{
+		`sum by (a) (count_over_time({app="x"} | logfmt [5m]))`,
+		`sum(count_over_time({app="x"} | logfmt | a="b" [5m]))`,
+		`sum(count_over_time({app="x"} | unpack [5m]))`,
+		`sum(count_over_time({app="x"} [5m]))`,
+		`count_over_time({app="x"} | json [5m])`,
+	} {
+		if got := responseKeyFences(httptest.NewRequest(http.MethodGet, parserSumRequest(q, false), nil), q, responseKeyInnerQueryRange); strings.Contains(got, skippedParsersResponseVersion) {
+			t.Errorf("%q: fences %q, want no %s", q, got, skippedParsersResponseVersion)
+		}
+	}
+}

@@ -29,7 +29,19 @@ why: |
   operand of a binary operation or a label_replace call, and where a ranking
   translates it as its operand, and sends no parser probe for it
   (planSkipsParsers, internal/proxy/query_translation.go). With
-  -query-plan-lowering=false both the probe and the pipes come back.
+  -query-plan-lowering=false both the probe and the pipes come back. The probe
+  is skipped only where the request's own translation holds no unpack pipe
+  (translationRunsNoParser, under every label, field and tenant profile:
+  TestUngroupedParserSumProbeSkipFollowsTheTranslation).
+
+  Main answered some of these sums otherwise than Loki: VictoriaLogs'
+  `unpack_json` and `unpack_logfmt` let a key named `_time`, `_msg` or
+  `_stream` replace the line's own field, so the count missed lines Loki
+  counts (236 of the 416 runs of the skipped sums in TestParserSumMatchesLoki
+  differ on main 640431dfc, none on this rule). Answers cached before are
+  fenced: the response keys of the shape carry `@parser-sum-skip-v1:`, read
+  from the plan (skippedParsersResponseKeyVersion), and the two-parser fence is
+  `@two-parser-metric-v2:` (one cache miss per such query after the upgrade).
 
   The shape: only line filters before the first parser; from it on only bare
   json and logfmt parsers (no extraction list, no flag), in any order and
