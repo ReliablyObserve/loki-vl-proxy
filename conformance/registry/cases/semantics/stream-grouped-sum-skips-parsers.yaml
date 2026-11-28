@@ -93,7 +93,7 @@ corpus:
       - query: 'topk(2, sum by (level) (count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m])))'
 gap:
   status: fixed
-  fixed_by: 'this PR'
+  fixed_by: '#1860'
   impact: explore-visible
   effort: M
   area: 'internal/queryplan/lower/stream_grouping.go StreamGroupedParsersAt; internal/proxy/stream_grouped_parsers.go serveStreamGroupedParsers, streamGroupedValuesStored'
