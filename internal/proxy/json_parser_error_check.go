@@ -764,7 +764,7 @@ func (p *Proxy) orderedJSONRowPipelineError(ctx context.Context, plan *orderedJS
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
+	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.finalLabels(), row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil
 	}

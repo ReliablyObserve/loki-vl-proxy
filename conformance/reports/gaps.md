@@ -70,10 +70,11 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 11 | proven |
 | semantics | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | 6 | 1 | unknown |
 | semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
+| resource_control | `cache-answer-ttl-shorten-only` — An operator can shorten the cache TTL of each Loki answer class, never lengthen it, and replicas or restarts with other settings never serve each other's entries | 11 | 2 | partial |
 | observability | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | 8 | 4 | partial |
 | semantics | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | 13 | 5 | unknown |
-| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 13 | unknown |
-| resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 11 | 17 | partial |
+| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 14 | unknown |
+| resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 11 | 18 | partial |
 | performance | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | 7 | 3 | partial |
 | observability | `cache-sizing-signals` — The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class | 7 | 3 | partial |
 | semantics | `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | 11 | 5 | unknown |
@@ -82,7 +83,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 12 | 3 | gap |
 | semantics | `delete-api-requires-token` — The delete API is closed unless the caller presents its own delete token | 5 | 4 | proven |
 | resource_control | `error-coalescing-and-error-cache` — Identical requests share one run, and failed answers are held for their class's TTL | 14 | 0 | proven |
-| semantics | `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | 23 | 10 | unknown |
+| semantics | `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | 23 | 11 | unknown |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 7 | partial |
 | semantics | `instrumentation-reveals-no-secrets` — /metrics and /config reveal no secret and no more than Loki's | 2 | 2 | proven |
 | resource_control | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | 3 | 1 | partial |
@@ -91,7 +92,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 53 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
 | observability | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | 7 | 4 | unknown |
-| observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 7 | 7 | unknown |
+| observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 7 | 8 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 5 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 5 | partial |

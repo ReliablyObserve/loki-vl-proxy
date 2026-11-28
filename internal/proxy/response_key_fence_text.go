@@ -190,20 +190,28 @@ func isReBlank(c byte) bool { return isLexerBlank(c) || c == '\f' }
 
 // ipFilterIn reports an ip( function: `label = ip(`, `label != ip(`, `|= ip(` or `!= ip(`, with ip in any case and
 // blanks or comments between the operator and the word and blanks between the word and its parenthesis. A query
-// without the word ip in any case is turned away before the scan.
+// without the word ip in any case is turned away before the scan. The text screens keep every key they wrote; a
+// query they miss is read from its parsed tree (ipFilterInTree), when a screen met an ip( it did not fence: every
+// ip() call of a tree is written after an `=` (a label filter, `|=`, `!=`) or an `or` of a line filter chain.
 func ipFilterIn(query string, other bool) bool {
 	if !containsWord(query, "ip", other) {
 		return false
 	}
-	return ipOperatorIn(query) || ipLineAlternativeIn(query, other)
+	fired, opCall := ipOperatorIn(query)
+	if fired {
+		return true
+	}
+	fired, orCall := ipLineAlternativeIn(query, other)
+	return fired || (opCall || orCall) && ipFilterInTree(query)
 }
 
-// ipOperatorIn is the operator screen: an ip( after = or a line filter operator.
-func ipOperatorIn(query string) bool {
+// ipOperatorIn is the operator screen: an ip( after = or a line filter operator. call reports an ip( after an `=`
+// that the screen does not fence (the name before the operator is no name it reads).
+func ipOperatorIn(query string) (fired, call bool) {
 	for i := 0; ; i++ {
 		p := indexByteFrom(query, i, '=')
 		if p < 0 {
-			return false
+			return false, call
 		}
 		i = p
 		j := skipLexerBlanks(query, p+1)
@@ -215,8 +223,11 @@ func ipOperatorIn(query string) bool {
 		for j < len(query) && isReBlank(query[j]) {
 			j++
 		}
-		if j < len(query) && query[j] == '(' && ipOperatorEndingAt(query, p) {
-			return true
+		if j < len(query) && query[j] == '(' {
+			if ipOperatorEndingAt(query, p) {
+				return true, true
+			}
+			call = true
 		}
 	}
 }
@@ -225,10 +236,11 @@ func ipOperatorIn(query string) bool {
 // alternative. It skips quoted text and comments, and retains only the IP
 // alternatives the parser retains: in a positive chain an IP followed by
 // another alternative is discarded (logql.lastOrGroup); negative chains keep
-// every alternative. The old screen above still preserves every older key.
-func ipLineAlternativeIn(query string, other bool) bool {
+// every alternative. The old screen above still preserves every older key. call reports an `or ip(` of a line
+// filter chain, fenced or not.
+func ipLineAlternativeIn(query string, other bool) (fired, call bool) {
 	if !containsWord(query, "or", other) {
-		return false
+		return false, false
 	}
 	line, negative := false, false
 	for i := 0; i < len(query); {
@@ -264,6 +276,7 @@ func ipLineAlternativeIn(query string, other bool) bool {
 			if j >= len(query) || query[j] != '(' {
 				continue
 			}
+			call = true
 			j = skipLexerBlanks(query, j+1)
 			if j >= len(query) || query[j] != '"' && query[j] != '`' {
 				continue
@@ -276,13 +289,13 @@ func ipLineAlternativeIn(query string, other bool) bool {
 			j = skipLexerBlanks(query, i)
 			n, nextOr := matchFoldAt(query[j:], "or")
 			if negative || !nextOr || j+n != identEnd(query, j) {
-				return true
+				return true, true
 			}
 		default:
 			i++
 		}
 	}
-	return false
+	return false, call
 }
 
 // ipOperatorEndingAt reports that the `=` at query[p] ends the operator of an ip filter: `|=` or `!=` of a line

@@ -1507,6 +1507,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				}
 				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
 					rowAliases = addRowAlias(rowAliases, alias)
+					if base, ok := p.labelTranslator.bothBaseName(key); ok {
+						rowAliases = addRowAlias(rowAliases, base)
+					}
 				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
 					rowAliases = addRowAlias(rowAliases, lokiLabel) // a stored field named like the alias
 				}
@@ -2315,6 +2318,12 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 // VL-indexed (inside JSON or logfmt _msg). Used as a last-resort fallback
 // when neither native field_values nor log-line scanning produced values.
 func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
+	// A stream label of a mapped field in the alias and both modes (an alias, and in both the -label-style name) is
+	// a detected field only as the parsed key of a line whose stream lacks the field, which the field scan reads with
+	// Loki's collision rule: Loki lists no stream label, so neither fallback answers for it.
+	if p.labelTranslator.isAliasLabel(field) {
+		return nil, nil
+	}
 	logsqlQuery, err := p.translateQueryWithContext(ctx, defaultQuery(query))
 	if err != nil {
 		return nil, err
@@ -2693,7 +2702,7 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 	} else {
 		query = defaultFieldDetectionQuery(query)
 	}
-	key := prefix + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := prefix + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit) + p.answerTTLKeyFence("detected_fields")
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -2703,7 +2712,7 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 }
 
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit) + p.detectLabelsTTLKeyFence()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -2752,7 +2761,7 @@ func (p *Proxy) setCachedDetectedFields(ctx context.Context, query, start, end s
 	if err != nil {
 		return
 	}
-	p.cache.SetWithTTL(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit), body, CacheTTLs["detected_fields"])
+	p.cache.SetWithTTL(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit), body, p.endpointTTL("detected_fields"))
 }
 
 func (p *Proxy) getCachedDetectedLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, bool) {
@@ -2801,7 +2810,7 @@ func (p *Proxy) setCachedDetectedLabels(ctx context.Context, query, start, end s
 	if err != nil {
 		return
 	}
-	p.cache.SetWithTTL(p.detectedLabelsCacheKey(ctx, query, start, end, lineLimit), body, 30*time.Second)
+	p.cache.SetWithTTL(p.detectedLabelsCacheKey(ctx, query, start, end, lineLimit), body, p.shortenedTTL("detected_labels", detectedLabelsDetectionTTL))
 }
 
 func formatDetectedValue(value interface{}) string {

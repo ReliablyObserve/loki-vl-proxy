@@ -135,3 +135,26 @@ decisions:
     quality: 'A query whose label_replace call holds a Grafana range variable carries the fences its resolved spelling carries; every query without a variable keeps its key.'
     performance:
       - 'internal/proxy BenchmarkResponseKeyFences and BenchmarkRankOverBinaryFence (2026-11-18, Apple M5 Pro, GOMAXPROCS=4, count 6 and 10): no allocation or byte change on any shape without a variable; the shapes that hold a variable and pass a fence screen resolve it (a ranking over a binary label_replace: 0.42 to 1.06 microseconds, 2 to 11 allocations; an unwrap identity under label_replace: 4.2 to 4.9 microseconds, 18 to 29 allocations), work the fence did not do before and needs for the key'
+  - id: ip-fence-reads-unknown-character-names-from-the-tree
+    chosen: 'The ip() label filter fence keeps its text screens and, when a screen meets an ip( it does not fence (after an `=` whose name it does not read, or an `or` of a line filter chain), reads the memoised parsed tree (sharedLogQLExpr of the variable-resolved text) for an ip() label filter leaf, line filter or alternative; the fence version stays v5'
+    over:
+      - 'widening the text look-behind to every character that starts no token (another text screen that copies the lexer, where the tree is in hand)'
+      - 'reading the tree for every query with the letters ip (zipkin, client_ip: a parse on the first key of each such query, 6 allocations)'
+      - 'bumping the fence to v6 (every ip() query the screens already fenced would miss every cache tier once; the newly fenced keys never existed, so nothing is cached under them)'
+    why: |
+      Loki's lexer and the LogQL parser read one character that starts no
+      token (a control character, one of $ & ; ? \ ~, a char literal, a
+      non-ASCII character that is no letter) as a label name, so
+      `| json | A="x" ;=ip("10.0.0.0/8")` holds an ip() label filter. The
+      operator screen accepted only a name that ends in a letter, digit, `_`
+      or `.`, so these queries built their keys without the fence, and an
+      answer an older binary cached for them (memory, disk, peers) stayed
+      reachable after an ip() fix. FuzzResponseKeyFencesMatchParsedTree found
+      it. Same tenant and credential scope only: those enter the key outside
+      the fence chain.
+    evidence: 'internal/proxy (2026-11-28): TestIPFenceReadsALabelNamedByAnUnknownCharacter (15 character classes x 6 joins x = != and spaced = x ip and IP x log, grouped and metric queries, and under a binary operation, topk and label_replace with and without a Grafana range variable, as sent and as RequestQueryText; 1,191 distinct query texts carry no fence on main); TestExprHoldsIPFilter (the tree walk); TestIPFenceNeverServesAnAnswerCachedUnderTheUnfencedKey (main serves an answer seeded under its key with 0 VictoriaLogs calls, the branch answers again); fuzz seed ip-label-named-by-unknown-character; recorded Loki answers accept `A=1 and <char>=1` for every class (internal/logql/testdata/label_filter_number_literals_loki.jsonl.gz); local disk-cache restart main -> branch with VictoriaLogs v1.54.0 (the new spellings miss main''s entries, the controls hit them)'
+    code: [internal/proxy/response_key_fence_text.go, internal/proxy/response_key_fences.go]
+    tests: [TestIPFenceReadsALabelNamedByAnUnknownCharacter, TestExprHoldsIPFilter, TestIPFenceNeverServesAnAnswerCachedUnderTheUnfencedKey, FuzzResponseKeyFencesMatchParsedTree, TestResponseKeyFencesKeepTheirOldKeys, TestResponseKeyFenceScreensDoNotAllocate]
+    quality: 'A query whose parsed tree holds an ip() filter carries the ip() fence whatever single character names its label; every key the screens wrote before is unchanged.'
+    performance:
+      - 'internal/proxy BenchmarkResponseKeyFences and BenchmarkResponseKeyFencesColdMemo (2026-11-28, Apple M5 Pro, GOMAXPROCS=4, base and branch test binaries interleaved, count 8): no allocation or byte change on any shape, warm or with a cold plan memo; no ns/op change beyond noise (the cold no-parser query with the letters ip 249 -> 263 ns, p=0.05); a query with the letters ip and no ip() call never parses for the key'

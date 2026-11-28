@@ -3479,7 +3479,7 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil, nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.translatedLabels, row)
+	labels, keep, err := plan.processWithContext(ctx, p.placeholderRowLine(row, desc.rawLabels), base, desc.finalLabels(), row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
 	}
@@ -4116,6 +4116,9 @@ func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
+		// The both mode's stream labels carry every name of a mapped field, which a parsed key named like one
+		// collides with; the series keep one name per field until the answer leaves the route.
+		desc.translatedLabels = desc.finalLabels()
 		labels, keep, err := plan.processMetricRow(ctx, p.placeholderRowLine(row, desc.rawLabels), row, base, desc, &reader.levels)
 		if err != nil {
 			return err

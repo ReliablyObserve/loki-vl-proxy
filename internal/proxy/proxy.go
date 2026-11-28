@@ -421,6 +421,12 @@ type Config struct {
 	// cache entries. Defaults to 5 minutes when unset. Keep-warm interval and skip
 	// threshold are derived automatically from this value.
 	LabelCacheTTL time.Duration
+	// AnswerCacheTTLs shortens the built-in TTL of Loki answer classes
+	// (AnswerCacheTTLClasses, keyed by class): 0 or a missing class keeps the
+	// built-in TTL; a value longer than the built-in TTL, a negative value or
+	// an unknown class makes New fail. A shortened class's shared-tier keys
+	// carry its TTL (answerTTLKeyFence).
+	AnswerCacheTTLs map[string]time.Duration
 	// WarmupMaxJitter is the upper bound of the random delay added before the
 	// startup label cache warmup begins. Spreading the delay across a fleet of
 	// proxies (all restarting at once) prevents a thundering-herd of concurrent
@@ -1074,6 +1080,7 @@ type Proxy struct {
 	labelValuesIndexPersistDigestReady bool
 	readCacheKeyMemoMu                 sync.RWMutex
 	readCacheKeyMemo                   map[canonicalReadCacheMemoKey]string
+	answerCacheTTLs                    map[string]time.Duration
 	logSampleN                         uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                     atomic.Uint64
 	requestSampler                     *observability.RequestSampler
@@ -1557,6 +1564,10 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, fmt.Errorf("patterns persistence path %q is not writable: %w", patternsPersistPath, err)
 	}
 
+	answerCacheTTLs, err := newAnswerCacheTTLs(cfg.AnswerCacheTTLs)
+	if err != nil {
+		return nil, err
+	}
 	labelCacheTTL := CacheTTLs["labels"]
 	if cfg.LabelCacheTTL > 0 {
 		labelCacheTTL = cfg.LabelCacheTTL
@@ -1785,6 +1796,7 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+		answerCacheTTLs:                       answerCacheTTLs,
 		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		debugVLCallsHeader:                    cfg.DebugVLCallsHeader,

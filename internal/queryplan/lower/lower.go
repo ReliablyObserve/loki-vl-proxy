@@ -44,6 +44,9 @@ type Profile struct {
 	// is read as Loki reads a stream label a parsed key collides with. Nil (the default mode) writes the text the
 	// lowering wrote before.
 	AliasField, FieldAlias func(string) string
+	// aliasReads are the aliases (AliasField) the plan's groupings name (withAliasReads): a metric query keeps the
+	// value a stream stores under such a name itself, which a parser overwrites, as it keeps a stream label's.
+	aliasReads []string
 	// metric says the log query is the one of a metric row (metricLogQuery).
 	metric bool
 	// ServiceNameStreamLabelOnly writes a positive service_name selector matcher with the stream filter of the
@@ -87,6 +90,7 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	if prof.spent() {
 		return nil, ErrBudgetExhausted
 	}
+	prof = prof.withAliasReads(p.Root)
 	switch n := p.Root.(type) {
 	case *queryplan.LogSelect:
 		if keepsSpelling(n, prof) {
