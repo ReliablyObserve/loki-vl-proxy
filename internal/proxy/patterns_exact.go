@@ -188,13 +188,12 @@ var patternRowFields = func() []string {
 }()
 
 // patternRowsQuery is the LogsQL query of a sampled pattern read (the plain and the windowed reads of /patterns):
-// the translated query with a fields pipe of patternRowFields after its own pipes, built on the parsed query. A
-// query the LogsQL parser does not read back is sent as it is.
-func patternRowsQuery(logsqlQuery string) string {
-	q, err := logsql.Parse(logsqlQuery)
-	if err != nil || q == nil {
+// the stream selector's filter, as the translator writes it (patternSelectorFilter), and a fields pipe of
+// patternRowFields. A query that is not a bare stream selector is read as translated, with every field.
+func (p *Proxy) patternRowsQuery(query, logsqlQuery string) string {
+	filter, ok := p.patternSelectorFilter(query)
+	if !ok {
 		return logsqlQuery
 	}
-	q.Pipes = append(q.Pipes, logsql.PipeFields{Labels: patternRowFields})
-	return q.String()
+	return logsql.NewQuery(filter, logsql.PipeFields{Labels: patternRowFields}).String()
 }

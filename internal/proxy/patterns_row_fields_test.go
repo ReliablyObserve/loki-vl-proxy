@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -149,15 +148,16 @@ func TestPatternRowFieldsMissingMessageLevel(t *testing.T) {
 	}
 }
 
-// patternRowsQuery appends the fields pipe to the parsed query and keeps its filter: the filter VictoriaLogs reads
-// is the translated query's, node for node, under every profile the translator writes.
+// The read's query is the stream selector's filter as the translator writes it, byte for byte, then the fields
+// pipe, under every label profile; a query that is not a bare stream selector is read as translated.
 //
 // conformance: drilldown/patterns-rows-fields, loki_api_v1_patterns
 func TestPatternRowsQueryKeepsTheFilter(t *testing.T) {
 	queries := []string{
 		`{service_name="ingress"}`, `{cluster="c1", namespace="ns1", container="ingress"}`, `{app=~"a|b", env!="dev"}`,
-		`{app="x"} |= "error"`, `{a!~"b.*"}`, `{service_name="x", detected_level="error"}`, `{k8s_pod_name="p"}`,
+		`{a!~"b.*"}`, `{service_name="x", detected_level="error"}`, `{k8s_pod_name="p"}`,
 	}
+	pipe := " | fields " + strings.Join(patternRowFields, ", ")
 	for _, labelStyle := range []string{"passthrough", "underscores"} {
 		p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 100), LogLevel: "error", LabelStyle: LabelStyle(labelStyle)})
 		if err != nil {
@@ -168,28 +168,19 @@ func TestPatternRowsQueryKeepsTheFilter(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: %v", query, err)
 			}
-			want, err := logsql.Parse(text)
-			if err != nil {
-				t.Fatalf("%s: the translated query %q does not parse: %v", query, text, err)
+			if got := p.patternRowsQuery(query, text); got != text+pipe {
+				t.Fatalf("%s %s: read %q, want the translated %q and the fields pipe", labelStyle, query, got, text)
 			}
-			got, err := logsql.Parse(patternRowsQuery(text))
-			if err != nil {
+			if _, err := logsql.Parse(p.patternRowsQuery(query, text)); err != nil {
 				t.Fatalf("%s: %v", query, err)
 			}
-			if !reflect.DeepEqual(got.Filter, want.Filter) || len(got.Pipes) != len(want.Pipes)+1 {
-				t.Fatalf("%s: %q read back as %q", query, text, patternRowsQuery(text))
-			}
-			if last, ok := got.Pipes[len(got.Pipes)-1].(logsql.PipeFields); !ok || !reflect.DeepEqual(last.Labels, patternRowFields) {
-				t.Fatalf("%s: last pipe %#v", query, got.Pipes[len(got.Pipes)-1])
+		}
+		for _, query := range []string{"*", `app:="x"`} {
+			if got := p.patternRowsQuery(query, query); got != query {
+				t.Fatalf("%q read as %q, want it as translated", query, got)
 			}
 		}
 		_ = p.Shutdown(context.Background())
-	}
-	if got := patternRowsQuery("*"); !strings.HasPrefix(got, "* | fields _time, _msg, _stream, _stream_id") {
-		t.Fatalf("* read as %q", got)
-	}
-	if got := patternRowsQuery(`a:="b" |`); got != `a:="b" |` {
-		t.Fatalf("an unparsable query is sent as it is, got %q", got)
 	}
 }
 
@@ -215,12 +206,18 @@ func BenchmarkPatternRowsDecode(b *testing.B) {
 	}
 }
 
-// BenchmarkPatternRowsQuery is the cost of building the read's query: the translated selector parsed and printed
-// with the fields pipe.
+// BenchmarkPatternRowsQuery is the cost of building the read's query: the selector's filter from its parsed tree
+// (memoised) with the fields pipe.
 func BenchmarkPatternRowsQuery(b *testing.B) {
-	const text = `service_name:="ingress" OR service_name:="" "service.name":="ingress" OR service_name:="" "service.name":="" service:="ingress"`
+	p, err := New(Config{BackendURL: "http://127.0.0.1:1", Cache: cache.New(time.Minute, 100), LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	const query = `{service_name="ingress"}`
+	text, _ := p.translatePatternQuery(context.Background(), query)
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = patternRowsQuery(text)
+		_ = p.patternRowsQuery(query, text)
 	}
 }

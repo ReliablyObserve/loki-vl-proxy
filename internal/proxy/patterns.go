@@ -270,7 +270,8 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := url.Values{}
-	params.Set("query", patternRowsQuery(logsqlQuery))
+	readQuery := p.patternRowsQuery(query, logsqlQuery)
+	params.Set("query", readQuery)
 	if s := startParam; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
@@ -345,7 +346,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if ok {
 				windows := splitQueryRangeWindowsWithOptions(startNs, endNs, splitInterval, "backward", true)
 				if len(windows) > 1 {
-					windowEntries, windowSuccesses, windowDiag := p.fetchPatternsFromWindows(r, logsqlQuery, sourceLimit, perWindowLimit, secondPassCap, windows, stepParam, patternLimit)
+					windowEntries, windowSuccesses, windowDiag := p.fetchPatternsFromWindows(r, logsqlQuery, readQuery, sourceLimit, perWindowLimit, secondPassCap, windows, stepParam, patternLimit)
 					diag.sourceLinesRequested += windowDiag.sourceLinesRequested
 					diag.sourceLinesScanned += windowDiag.sourceLinesScanned
 					diag.sourceLinesObserved += windowDiag.sourceLinesObserved
@@ -482,7 +483,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 //nolint:gocyclo // iterates windows with first/second-pass logic, per-window limits, error fan-in and diagnostic accumulation; branching is inherent to windowed mining.
 func (p *Proxy) fetchPatternsFromWindows(
 	r *http.Request,
-	logsqlQuery string,
+	logsqlQuery, readQuery string,
 	sourceLimit int,
 	perWindowLimit int,
 	maxSecondPassWindows int,
@@ -514,7 +515,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 	var wg sync.WaitGroup
 
 	baseParams := url.Values{}
-	baseParams.Set("query", patternRowsQuery(logsqlQuery))
+	baseParams.Set("query", readQuery)
 	// Bucketization for patterns is proxy-side. Forwarding step to VictoriaLogs
 	// raw log queries makes split subrequests align backward to prior step
 	// boundaries, which duplicates adjacent window buckets on deterministic data.

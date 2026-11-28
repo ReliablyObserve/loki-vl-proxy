@@ -27,7 +27,7 @@ request:
   method: GET
   path: /loki/api/v1/patterns
   params:
-    query: '{service_name="ingress"}'
+    query: '{service_name="api-gateway"}'
     start: 'now-15m'
     end: 'now'
     step: '2s'
