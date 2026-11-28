@@ -613,6 +613,9 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		})
 	}
 	if err := group.Wait(); err != nil {
+		// A listing that fails (most often a 429 or a timeout) still logs the
+		// pieces it answered before the failure.
+		recordInventoryPlan(ctx, false, reused, revalidated, scanned, edges)
 		if errors.Is(err, errInventoryBucketTooLarge) && ctx.Err() == nil {
 			// Remembered for an hour, so later listings of the same kind go
 			// straight to one call.

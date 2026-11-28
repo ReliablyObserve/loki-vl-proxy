@@ -67,7 +67,7 @@ func inventoryPlanCounts(t *testing.T, line map[string]any) (counts map[string]i
 // The request line of /labels carries the bucket plan of its metadata inventory listing (issue #1821 item 3): how
 // many listings the inventory planned, whether one was answered from memory, and how many of its buckets came from
 // the cache, were confirmed by a row count or were read from VictoriaLogs, and how many unaligned edges it read. A
-// cold window reads every piece from VictoriaLogs, a window moved inside it reuses its cached buckets, and a window
+// cold window reads every piece from VictoriaLogs, a window moved inside it reuses its cached buckets, a listing that fails logs the pieces it read, and a window
 // the memory inventory answers says so; the pieces read are the VictoriaLogs listing calls the request made.
 //
 // conformance: observability-query-flow, semantics/label-browser-cold-first-listing, loki_api_v1_labels
@@ -125,6 +125,37 @@ func TestLabelsRequestLineCarriesTheInventoryBucketPlan(t *testing.T) {
 		}
 		if num(mem, "buckets_scanned")+num(mem, "edges")+num(mem, "buckets_cached")+num(mem, "buckets_revalidated") != 0 {
 			t.Fatalf("a memory answer reads no piece: %v", mem)
+		}
+	})
+
+	t.Run("failed listing logs the pieces it read", func(t *testing.T) {
+		// VictoriaLogs refuses every hour bucket: the finer pieces answer, the listing fails.
+		failing := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			a, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			b, _ := strconv.ParseInt(r.Form.Get("end"), 10, 64)
+			if r.URL.Path == listing && time.Duration(b-a) >= time.Hour {
+				http.Error(w, "refused", http.StatusInternalServerError)
+				return
+			}
+			vl.ServeHTTP(w, r)
+		})
+		srv := httptest.NewServer(failing)
+		t.Cleanup(srv.Close)
+		p := newInventoryTestProxyAt(t, srv.URL, 1)
+		p.metadataCacheFreshness = time.Since(now) + 24*time.Hour
+		h, buf := inventoryPlanLogProxy(t, p)
+		q := url.Values{"start": {strconv.FormatInt(end0.Add(-6*time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(end0.UnixNano(), 10)}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels?"+q.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Fatalf("/labels answered 200 with every hour bucket refused: %s", rec.Body.String())
+		}
+		failed, ok := inventoryPlanCounts(t, lastRequestLine(t, buf))
+		if !ok || num(failed, "listings") < 1 || num(failed, "buckets_scanned")+num(failed, "edges") == 0 {
+			t.Fatalf("a failed listing logged no bucket plan or no piece it read: %v", failed)
 		}
 	})
 
