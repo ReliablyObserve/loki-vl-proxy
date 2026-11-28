@@ -287,22 +287,15 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
 		fetchFromParams := func(queryParams url.Values) ([]patternResultEntry, bool) {
-			requestedLimit, _ := strconv.Atoi(strings.TrimSpace(queryParams.Get("limit")))
-			resp, err := p.vlPost(r.Context(), endpoint, queryParams)
+			resp, requestedLimit, err := p.readPatternRows(r.Context(), endpoint, queryParams)
 			if err != nil {
+				if isUpstreamQueryRejected(err) {
+					diag.badRequest = err
+				}
 				diag.fail(err)
 				return nil, false
 			}
 			defer resp.Body.Close()
-			if resp.StatusCode >= http.StatusBadRequest {
-				body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-				statusErr := p.redactedBackendStatusError("", resp.StatusCode, body)
-				if isUpstreamQueryRejected(statusErr) {
-					diag.badRequest = statusErr
-				}
-				diag.fail(statusErr)
-				return nil, false
-			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
 			extracted, stats, readErr := extractLogPatternsStreamFilled(resp.Body, stepParam, patternLimit, p.newLogRowLevels(), true, rangeStartNs, rangeEndNs)
 			diag.recordExtraction(requestedLimit, stats, false)
@@ -565,7 +558,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 				p.observeInternalOperation(r.Context(), "patterns_window_cache", "miss", time.Since(lookupStart))
 			}
 		}
-		resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
+		resp, _, err := p.readPatternRows(r.Context(), "/select/logsql/query", params)
 		if err != nil {
 			p.log.Debug(
 				"patterns window fetch failed",
@@ -574,28 +567,14 @@ func (p *Proxy) fetchPatternsFromWindows(
 				"error", err,
 			)
 			mu.Lock()
+			if isUpstreamQueryRejected(err) {
+				diag.badRequest = err
+			}
 			diag.fail(err)
 			mu.Unlock()
 			return nil, patternExtractionStats{}, false, false
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode >= http.StatusBadRequest {
-			p.log.Debug(
-				"patterns window fetch non-success status",
-				"start_ns", window.startNs,
-				"end_ns", window.endNs,
-				"status_code", resp.StatusCode,
-			)
-			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			statusErr := p.redactedBackendStatusError("", resp.StatusCode, body)
-			mu.Lock()
-			if isUpstreamQueryRejected(statusErr) {
-				diag.badRequest = statusErr
-			}
-			diag.fail(statusErr)
-			mu.Unlock()
-			return nil, patternExtractionStats{}, false, false
-		}
 		extracted, stats, readErr := extractLogPatternsStreamWithStatus(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
 		if readErr == nil && stats.badLines > 0 {
 			readErr = errPatternsBodyNotJSON
@@ -1665,4 +1644,50 @@ func formatQueryError(query string) string {
 		return ""
 	}
 	return msg
+}
+
+// patternRowsMemoryRetries is how many times a sampled pattern read VictoriaLogs refused for memory is sent again,
+// each time with half the rows, and patternRowsMinRetryLimit the fewest rows such a read asks for: the floor
+// patternBackendQueryLimit keeps a read at.
+const (
+	patternRowsMemoryRetries = 3
+	patternRowsMinRetryLimit = 1000
+)
+
+// readPatternRows posts a sampled pattern read (the plain and the windowed reads of /patterns) and answers its
+// response when VictoriaLogs answered it, with the row limit the answered read asked for. VictoriaLogs answers the
+// limit with its newest rows, a sort that it refuses when the rows it would hold need more memory than it allows
+// (#1821): such a read is sent again with half the rows, at most patternRowsMemoryRetries times and not below
+// patternRowsMinRetryLimit rows, each refusal counted as the internal operation patterns_rows, outcome
+// backend_memory_limit (outcome reduced when a smaller read is answered). A read of fewer rows mines fewer, newer
+// lines. Any other failure, and a refusal past the last retry, is answered as the error it is (an
+// *upstreamStatusError for an answer with a failure status).
+func (p *Proxy) readPatternRows(ctx context.Context, endpoint string, params url.Values) (*http.Response, int, error) {
+	limit, _ := strconv.Atoi(strings.TrimSpace(params.Get("limit")))
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		resp, err := p.vlPost(ctx, endpoint, params)
+		if err != nil {
+			return nil, limit, err
+		}
+		if resp.StatusCode < http.StatusBadRequest {
+			if attempt > 0 {
+				p.observeInternalOperation(ctx, "patterns_rows", "reduced", time.Since(start))
+			}
+			return resp, limit, nil
+		}
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		_ = resp.Body.Close()
+		statusErr := p.redactedBackendStatusError("", resp.StatusCode, body)
+		if !isVLMemoryLimit(statusErr) {
+			return nil, limit, statusErr
+		}
+		p.observeInternalOperation(ctx, "patterns_rows", "backend_memory_limit", time.Since(start))
+		if attempt >= patternRowsMemoryRetries || limit <= patternRowsMinRetryLimit || ctx.Err() != nil {
+			return nil, limit, statusErr
+		}
+		limit = max(limit/2, patternRowsMinRetryLimit)
+		params = cloneURLValues(params)
+		params.Set("limit", strconv.Itoa(limit))
+	}
 }
