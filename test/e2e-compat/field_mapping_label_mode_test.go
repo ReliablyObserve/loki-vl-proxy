@@ -164,12 +164,14 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 		svc, parser string
 		mapped      bool
 		i           int
+		// native stores pod itself as a stream field (a stream never renamed).
+		native bool
 	}
 	var streams []stream
 	for _, parser := range []string{"logfmt", "json"} {
 		svc := fmt.Sprintf("fmlc-%s-%d", parser, n)
-		for i := 0; i < 4; i++ {
-			streams = append(streams, stream{svc, parser, i < 2, i})
+		for i := 0; i < 5; i++ {
+			streams = append(streams, stream{svc, parser, i < 2, i, i == 4})
 		}
 	}
 	var lokiStreams []map[string]any
@@ -188,6 +190,9 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 			if s.mapped {
 				row["k8s.pod.name"], row["k8s.namespace.name"] = fmt.Sprintf("pod-%d", s.i), "ns-a"
 			}
+			if s.native {
+				row["pod"] = fmt.Sprintf("npod-%d", s.i)
+			}
 			b, _ := json.Marshal(row)
 			vlRows.Write(b)
 			vlRows.WriteByte('\n')
@@ -196,13 +201,16 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 		if s.mapped {
 			labels["pod"], labels["namespace"] = fmt.Sprintf("pod-%d", s.i), "ns-a"
 		}
+		if s.native {
+			labels["pod"] = fmt.Sprintf("npod-%d", s.i)
+		}
 		lokiStreams = append(lokiStreams, map[string]any{"stream": labels, "values": values})
 	}
 	body, _ := json.Marshal(map[string]any{"streams": lokiStreams})
 	if status, out := hardeningRequest(t, "POST", lokiURL+"/loki/api/v1/push", string(body), map[string]string{"Content-Type": "application/json"}); status >= 300 {
 		t.Fatalf("Loki push %d: %s", status, out)
 	}
-	target := vlURL + "/insert/jsonline?_stream_fields=service.name,shard,k8s.pod.name,k8s.namespace.name&_msg_field=_msg&_time_field=_time"
+	target := vlURL + "/insert/jsonline?_stream_fields=service.name,shard,k8s.pod.name,k8s.namespace.name,pod&_msg_field=_msg&_time_field=_time"
 	if status, out := hardeningRequest(t, "POST", target, vlRows.String(), map[string]string{"AccountID": account, "ProjectID": "0", "Content-Type": "application/stream+json"}); status >= 300 {
 		t.Fatalf("VictoriaLogs ingest %d: %s", status, out)
 	}
@@ -237,8 +245,12 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 		for _, f := range []string{"pod_extracted", "namespace_extracted", "pod"} {
 			reqs = append(reqs, request{"values " + f + " " + parser, "/loki/api/v1/detected_field/" + f + "/values", with(window, "query", sel, "limit", "1000"), collisionValuesNorm})
 		}
+		// Every stream of this selector holds the mapped field: Loki lists no pod field there.
+		mappedOnly := fmt.Sprintf(`{service_name="fmlc-%s-%d", shard=~"0|1"}`, parser, n)
+		reqs = append(reqs, request{"values pod mapped streams " + parser, "/loki/api/v1/detected_field/pod/values", with(window, "query", mappedOnly, "limit", "1000"), collisionValuesNorm})
 		q := sel + " | " + parser
-		for _, filter := range []string{`pod_extracted=~".+-1"`, `pod="pod-0"`, `pod=~"(pod-1|.*-2-0)"`, `namespace_extracted!=""`} {
+		// The last filter reads the pod a stream stores itself (npod-4), which the parser overwrites in VictoriaLogs.
+		for _, filter := range []string{`pod_extracted=~".+-1"`, `pod="pod-0"`, `pod=~"(pod-1|.*-2-0)"`, `namespace_extracted!=""`, `pod=~"npod-4|line-3-.*"`} {
 			reqs = append(reqs, request{"logs " + filter + " " + parser, "/loki/api/v1/query_range", with(window, "query", q+" | "+filter, "limit", "1000"), collisionStreamsNorm})
 		}
 		for _, by := range []string{"pod_extracted", "pod", "namespace, namespace_extracted"} {
@@ -276,7 +288,7 @@ func TestCompat_FieldMappingAliasCollisionsMatchLoki(t *testing.T) {
 			t.Fatalf("Loki %s: %d %s", r.name, status, out)
 		}
 		want[r.name] = r.norm(t, string(out))
-		if want[r.name] == "" {
+		if want[r.name] == "" && !strings.Contains(r.name, "mapped streams") {
 			t.Fatalf("Loki answers %s with nothing: no comparison", r.name)
 		}
 	}

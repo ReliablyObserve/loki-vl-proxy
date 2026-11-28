@@ -630,6 +630,19 @@ type cachedLogQueryStreamDescriptor struct {
 	streamLabels     map[string]string // labels parsed from _stream (shared, read-only)
 	rawLabels        map[string]string
 	translatedLabels map[string]string
+	// collisionLabels are the stream labels a parsed key collides with: the
+	// translated labels, and in -field-mapping-label-mode both every name the
+	// answer gives a mapped field (withBothStreamNames).
+	collisionLabels map[string]string
+}
+
+// finalLabels are the stream labels the entries of the stream are classified
+// against (classifyEntryMetadataFields): collisionLabels when set.
+func (d cachedLogQueryStreamDescriptor) finalLabels() map[string]string {
+	if d.collisionLabels != nil {
+		return d.collisionLabels
+	}
+	return d.translatedLabels
 }
 
 //nolint:gocyclo // line-by-line VL→Loki stream conversion with categorized labels, structured metadata, dup-timestamp handling and optional pattern collection; branching is inherent to the conversion contract.
@@ -758,7 +771,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			var drop bool
-			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.translatedLabels, classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
+			structuredMetadata, parsedFields, drop = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, desc.streamLabels, desc.finalLabels(), classifyAsParsed, exposure, exposureCache, smBuf, pfBuf)
 			if drop {
 				vlFJParserPool.Put(fjParser)
 				continue
@@ -1200,6 +1213,7 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 		streamLabels:     s.labels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
+		collisionLabels:  p.bothCollisionLabels(translatedLabels),
 	}
 	descriptorCache[string(key)] = desc
 	return desc
@@ -1257,6 +1271,7 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 		streamLabels:     baseLabels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
+		collisionLabels:  p.bothCollisionLabels(translatedLabels),
 	}
 	descriptorCache[cacheKey] = desc
 	return desc
@@ -1279,10 +1294,6 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 // (lineFieldExposure.entryLabelName); streamOnly and finalLabels are the
 // labels of _stream and the stream labels the entry carries.
 func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels, streamOnly, finalLabels map[string]string, exposure *lineFieldExposure, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
-	if exposure != nil {
-		// The both mode's stream labels carry every name of a mapped field: a parsed key named like one is renamed.
-		finalLabels = p.labelTranslator.withBothStreamNames(finalLabels)
-	}
 	for k := range smBuf {
 		delete(smBuf, k)
 	}
@@ -1390,10 +1401,6 @@ func (e *lineFieldExposure) resolveStreamKeyFields(pending []pendingField, defer
 // This matches Loki's behavior: Loki stores structured metadata separately and only
 // JSON/logfmt parser stages produce parsed fields, regardless of the query parser stage.
 func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, streamOnly, finalLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, bool) {
-	if exposure != nil {
-		// The both mode's stream labels carry every name of a mapped field: a parsed key named like one is renamed.
-		finalLabels = p.labelTranslator.withBothStreamNames(finalLabels)
-	}
 	for k := range smBuf {
 		delete(smBuf, k)
 	}

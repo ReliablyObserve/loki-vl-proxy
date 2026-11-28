@@ -74,6 +74,18 @@ func (lt *LabelTranslator) withBothStreamNames(labels map[string]string) map[str
 	return labels
 }
 
+// bothCollisionLabels is withBothStreamNames of a stream descriptor's labels,
+// nil when it adds none (the descriptor then reads its translated labels).
+func (p *Proxy) bothCollisionLabels(labels map[string]string) map[string]string {
+	if p == nil {
+		return nil
+	}
+	if named := p.labelTranslator.withBothStreamNames(labels); len(named) != len(labels) {
+		return named
+	}
+	return nil
+}
+
 // addBothNamesFJ is addBothNames for a label object of a JSON answer.
 func (lt *LabelTranslator) addBothNamesFJ(obj *fj.Object, skip map[string]bool, arena *fj.Arena) bool {
 	added := false

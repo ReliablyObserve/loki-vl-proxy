@@ -4068,10 +4068,6 @@ func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSON
 	scanner.Buffer(make([]byte, 64<<10), 8<<20)
 	const maxReusableRowFields = 16
 	var row map[string]string
-	var bothStreams map[string]map[string]string // the both mode's stream labels per stream (withBothStreamNames)
-	if p.labelTranslator.answersBothNames() {
-		bothStreams = map[string]map[string]string{}
-	}
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -4120,17 +4116,9 @@ func (p *Proxy) readOrderedJSONMetricSpan(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
-		if p.labelTranslator.answersBothNames() {
-			// The both mode's stream labels carry every name of a mapped field, which a parsed key named like one
-			// collides with; the series keep one name per field until the answer leaves the route.
-			key := row["_stream"] + "\x00" + row["level"]
-			named, ok := bothStreams[key]
-			if !ok {
-				named = p.labelTranslator.withBothStreamNames(desc.translatedLabels)
-				bothStreams[key] = named
-			}
-			desc.translatedLabels = named
-		}
+		// The both mode's stream labels carry every name of a mapped field, which a parsed key named like one
+		// collides with; the series keep one name per field until the answer leaves the route.
+		desc.translatedLabels = desc.finalLabels()
 		labels, keep, err := plan.processMetricRow(ctx, p.placeholderRowLine(row, desc.rawLabels), row, base, desc, &reader.levels)
 		if err != nil {
 			return err

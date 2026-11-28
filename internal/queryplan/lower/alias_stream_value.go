@@ -58,10 +58,10 @@ func (prof Profile) withAliasReads(root queryplan.Node) Profile {
 	return prof
 }
 
-// aliasStreamReads adds to read the aliases the query reads after a parser: those its label filters after the first
+// aliasStreamReads adds to read the aliases a query with a parser reads after it: those its label filters after the first
 // parser name, and for a metric query those its groupings name.
 func aliasStreamReads(sel *queryplan.LogSelect, prof Profile, read []string) []string {
-	if prof.AliasField == nil {
+	if prof.AliasField == nil || !hasParser(sel) {
 		return read
 	}
 	add := func(name string) {
