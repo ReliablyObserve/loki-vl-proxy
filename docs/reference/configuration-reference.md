@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (329), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (330), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -49,6 +49,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-disk-cache-max-index-bytes` | int64 | `16777216` | `extraArgs.disk-cache-max-index-bytes` | Maximum estimated L2 recency-index bytes (128 plus key length per entry) |
 | `-disk-cache-min-ttl` | duration | `30s` | `extraArgs.disk-cache-min-ttl` | Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies |
 | `-disk-cache-path` | string | (empty) | `persistence.* (chart-managed)` | Path to L2 disk cache (bbolt). Empty disables. |
+| `-disk-cache-rebuild-readahead` | bool | `true` | `extraArgs.disk-cache-rebuild-readahead` | While the start-up index rebuild runs, read the disk cache file in file order into the page cache (eight 512 KiB positioned reads at a time, stopped when the rebuild ends, before the listener opens), so a cold disk serves large sequential reads instead of one random read per record |
 | `-error-cache-data-ttl` | duration | `5s` | `extraArgs.error-cache-data-ttl` | How long a failure read from the data in the request's window (Loki's series limit, a line or response size limit, a JSON parser or unwrap conversion error under a metric) is held per request; 0 holds none. The same window fails the same way until new lines arrive |
 | `-error-cache-enabled` | bool | `true` | `extraArgs.error-cache-enabled` | Hold failed read answers for a short, class-dependent time so identical requests (refresh loops, dashboards, retries) answer the held failure byte for byte instead of asking VictoriaLogs again; failures caused by the client (its cancellation or deadline), by the proxy's own queue or load shedding, by credentials, or by a proxy defect are never held, except VictoriaLogs' refusal of the query the proxy wrote, which the same release always gives (see -error-cache-vl-refusal-ttl). Identical requests in flight share one run either way (see -coalescer-disabled) |
 | `-error-cache-max-bytes` | int | `8388608` | `extraArgs.error-cache-max-bytes` | Most bytes of failed answers held per replica (oldest evicted first; a single answer above 64 KiB is never held); 0 uses the default |

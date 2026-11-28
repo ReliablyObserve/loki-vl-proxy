@@ -167,3 +167,33 @@ func patternLineConsumer(miner *patternMiner, mine func(stream, level, msg strin
 func readPatternLines(r io.Reader, miner *patternMiner, levels logRowLevels, maxLines int) error {
 	return scanPatternLineRows(r, maxLines, levels, 0, patternLineConsumer(miner, patternLineSink(miner, nil)))
 }
+
+// patternRowFields are the fields a sampled pattern read keeps of each row: what the row decoder reads of a
+// VictoriaLogs row (extractLogPatternsStreamFilled): _time, _msg, the stream (_stream_id, and _stream, whose labels
+// also give a stream-stored level) and the fields a level is read from (patternCountsLevelFields). VictoriaLogs
+// answers every row with a _time and a non-empty _msg (its -defaultMsgValue for a row stored without one), so the
+// decoder's fallback time and message fields are never read from its rows. VictoriaLogs answers the read's limit
+// with its newest rows, a sort that holds every field of every row it keeps, each field costing it memory even
+// when empty: a row with dozens of fields made the sort refuse a request ("requires more than N MB of memory",
+// #1821). Kept to these, its memory follows the messages, not the rows.
+var patternRowFields = func() []string {
+	fields := []string{"_time", "_msg", "_stream", patternExactStreamField}
+	for _, field := range patternCountsLevelFields {
+		if strings.Contains(field, ".") {
+			field = logsql.QuoteValue(field)
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}()
+
+// patternRowsQuery is the LogsQL query of a sampled pattern read (the plain and the windowed reads of /patterns):
+// the stream selector's filter, as the translator writes it (patternSelectorFilter), and a fields pipe of
+// patternRowFields. A query that is not a bare stream selector is read as translated, with every field.
+func (p *Proxy) patternRowsQuery(query, logsqlQuery string) string {
+	filter, ok := p.patternSelectorFilter(query)
+	if !ok {
+		return logsqlQuery
+	}
+	return logsql.NewQuery(filter, logsql.PipeFields{Labels: patternRowFields}).String()
+}
