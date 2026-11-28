@@ -272,6 +272,14 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 		return nil, true, err
 	}
 	limit := int64(p.seriesMetadataMaxReadRows)
+	bound := int64(p.limits().BufferedBackendBodyBytes)
+	if path == statsQueryRangePath && matrixFoldFrom(ctx) != nil && bound > 0 && rows > bound/metadataSeriesRowBytes {
+		// A read the window evaluator folds in time chunks once it passes the stats body bound
+		// (rereadOverflowedInChunks): with a series per row about metadataSeriesRowBytes each, this one would pass it,
+		// so it is not sent; the chunks are read instead, each counted the same way.
+		p.observeInternalOperation(ctx, "metadata_series_identity", "predicted_over_body", time.Since(started))
+		return nil, true, newBackendBodyTooLarge(bound)
+	}
 	if rows <= limit {
 		return nil, false, nil
 	}
@@ -286,7 +294,6 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	}
 	gaps := metadataSeriesSlices(req.first, req.last, rows, limit)
 	fetchCtx := context.WithValue(context.WithValue(ctx, statsExtentFetchKey{}, true), statsExtentHeavyKey{}, true)
-	bound := int64(p.limits().BufferedBackendBodyBytes)
 	if bound <= 0 {
 		bound = math.MaxInt64
 	}
@@ -390,6 +397,11 @@ func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesId
 	memo.setRows(key, rows)
 	return rows, nil
 }
+
+// metadataSeriesRowBytes is the fewest bytes a series of one row takes in a rebuilt read's answer (its _stream with
+// the stream labels and the metadata, the bucket and value): a read of more rows than the stats body bound divided by
+// it passes the bound when its rows are series of their own.
+const metadataSeriesRowBytes = 200
 
 // defaultSeriesMetadataMaxReadRows is -structured-metadata-series-max-read-rows' default: a read of 6 h of the bench
 // generator (about 700,000 groups) fit VictoriaLogs' 4 GiB, a day of it did not; a quarter of a million rows per read
