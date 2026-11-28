@@ -2190,7 +2190,8 @@
       "test/e2e-compat/keyword_label_names_test.go"
     ],
     "semantics/loki-pipeline-error-rules": [
-      "internal/proxy/pipeline_error_rules_loki_test.go"
+      "internal/proxy/pipeline_error_rules_loki_test.go",
+      "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go"
     ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
@@ -2541,6 +2542,11 @@
     "semantics/step-nonpositive-or-unparsable-is-400": [
       "internal/proxy/step_grammar_loki_test.go"
     ],
+    "semantics/stream-grouped-sum-skips-parsers": [
+      "internal/proxy/stream_grouped_parsers_test.go",
+      "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go",
+      "internal/queryplan/lower/stream_grouping_test.go"
+    ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
       "internal/translator/stream_tag_restore_test.go",
@@ -2733,6 +2739,7 @@
       "internal/proxy/parser_probe_drop_loki_test.go",
       "internal/proxy/parser_probe_window_test.go",
       "internal/proxy/reprint_translation_test.go",
+      "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/instant_parser_probe_window_test.go"
     ],
@@ -3396,7 +3403,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 778,
+  "registry_items": 779,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -5528,6 +5535,9 @@
     "internal/proxy/stored_level_series_limit_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
+    "internal/proxy/stream_grouped_parsers_test.go": [
+      "semantics/stream-grouped-sum-skips-parsers"
+    ],
     "internal/proxy/stream_metadata_test.go": [
       "loki_api_v1_query_range",
       "profiles/keep-removes-derived-service-name",
@@ -6221,6 +6231,11 @@
       "semantics/unwrap-over-time-range-windows-residual-forms",
       "semantics/unwrap-per-series-identity-raw-rows"
     ],
+    "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go": [
+      "semantics/loki-pipeline-error-rules",
+      "semantics/stream-grouped-sum-skips-parsers",
+      "semantics/two-parsers-keep-one"
+    ],
     "internal/querycorpus/typed_pair_blank_test.go": [
       "semantics/blank-before-call-parenthesis-read-unlike-loki",
       "semantics/translator-reads-only-space-between-tokens"
@@ -6413,6 +6428,9 @@
     ],
     "internal/queryplan/lower/spelling_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/stream_grouping_test.go": [
+      "semantics/stream-grouped-sum-skips-parsers"
     ],
     "internal/queryplan/lower/unpack_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json",
@@ -7610,7 +7628,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 918,
+  "tests_with_markers": 921,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7767,5 +7785,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 510
+  "wired_items": 511
 }

@@ -171,6 +171,7 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_exact.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/stream_grouped_parsers.go",
         "internal/translate/parser.go",
         "internal/translator/translator.go"
       ]
@@ -310,6 +311,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/service_name_route.go",
+        "internal/proxy/stream_grouped_parsers.go",
         "internal/proxy/unwrap_conversion_error.go"
       ]
     },

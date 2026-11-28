@@ -329,6 +329,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/stddev-stdvar-over-time-range-window` — stddev and stdvar over time with unwrap and a range that is not the step answer Loki's window (fixed) | this change | 0 | 0 |
 | `semantics/stddev-stdvar-over-time-step-bucket` — stddev and stdvar over time with unwrap and range == step are the window ending at T, like Loki (fixed) | this change | 0 | 0 |
 | `semantics/stdvar-grouped-binary-marker` — stdvar_over_time under a grouping, a ranking or without a parser answers 200, and with its own by() has Loki's values (fixed) | this change | 0 | 0 |
+| `semantics/stream-grouped-sum-skips-parsers` — A sum grouped by stream labels over `\| json` and `\| logfmt` with the errors dropped is counted by VictoriaLogs stats with no parser, li... | this PR | 0 | 0 |
 | `semantics/sub-second-step-grid` — a query_range step under a second answers a point every step at Loki's millisecond times, a step under a millisecond is Loki's 500 (fixed) | #1004 | 0 | 0 |
 | `semantics/tail-delivers-rows-visible-out-of-order` — A live tail delivers every line of a stream, also when VictoriaLogs makes them searchable out of order (fixed) | TBD-PR | 0 | 0 |
 | `semantics/tail-survives-backend-outage` — A live tail rides out a short VictoriaLogs restart and carries on without repeating or skipping a line (fixed) | TBD-PR | 0 | 0 |
