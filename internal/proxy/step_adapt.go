@@ -380,7 +380,7 @@ func (hw *stepHoldWriter) WriteHeader(code int) {
 		hw.held = true
 		return
 	}
-	plainIfUntyped(hw.ResponseWriter.Header())
+	plainIfUntyped(hw.Header())
 	hw.ResponseWriter.WriteHeader(code)
 }
 
@@ -408,7 +408,7 @@ func (hw *stepHoldWriter) Write(b []byte) (int, error) {
 		}
 		return len(b), nil
 	}
-	if h := hw.ResponseWriter.Header(); h.Get("Content-Type") == "" {
+	if h := hw.Header(); h.Get("Content-Type") == "" {
 		h.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	return hw.ResponseWriter.Write(b)
@@ -427,7 +427,7 @@ func (hw *stepHoldWriter) Unwrap() http.ResponseWriter { return hw.ResponseWrite
 
 // restoreHeaders puts back the headers the response had when the layer started.
 func (hw *stepHoldWriter) restoreHeaders() {
-	h := hw.ResponseWriter.Header()
+	h := hw.Header()
 	clear(h)
 	if hw.clone != nil {
 		for k, v := range hw.clone {
@@ -445,7 +445,7 @@ func (hw *stepHoldWriter) flushHeld() {
 	if !hw.held {
 		return
 	}
-	if hw.ResponseWriter.Header().Get("Content-Type") == "" {
+	if hw.Header().Get("Content-Type") == "" {
 		setReplayContentType(hw.ResponseWriter, hw.code)
 	}
 	hw.ResponseWriter.WriteHeader(hw.code)

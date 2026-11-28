@@ -215,6 +215,70 @@ func gridBucketsAt(in stepCandidateInput, eff time.Duration, g readGrid) int64 {
 	return bucketsAt(in, eff, g.window)
 }
 
+// stepShrink is a read that failed within the bucket bound, with the buckets the next read of it may hold.
+type stepShrink struct {
+	grid readGrid
+	most int64
+}
+
+// stepShrinks are the noted reads that failed within the bound; ok is false when a noted read is one no coarser step
+// lowers (step-independent, or raw rows read within the bound for another reason than the step: a counter proof, a
+// parser error check). Raw rows read past the bound are not a shrink: the step that brings the windows back within
+// it moves the read to the buckets.
+func stepShrinks(failed []readGrid, share float64) ([]stepShrink, bool) {
+	var out []stepShrink
+	for _, g := range failed {
+		switch {
+		case g.route == readRouteStepIndependent:
+			return nil, false
+		case g.route == "raw":
+			if g.buckets <= heavyQueryBucketThreshold {
+				return nil, false
+			}
+		case g.buckets > 0 && g.buckets <= heavyQueryBucketThreshold:
+			out = append(out, stepShrink{g, int64(math.Ceil(float64(g.buckets) * share))})
+		}
+	}
+	return out, true
+}
+
+// stepFits reports whether a read of in at eff fits: every window within maxBuckets, the floor and the ceiling, at
+// most halveFrom points (when set), and every shrink within its buckets.
+func stepFits(in stepCandidateInput, eff time.Duration, maxBuckets, halveFrom int64, shrinks []stepShrink) bool {
+	if in.floor > 0 && eff < in.floor || in.ceiling > 0 && eff > in.ceiling || !windowsFit(in, eff, maxBuckets) {
+		return false
+	}
+	if halveFrom > 0 && pointsAt(in, eff) > halveFrom {
+		return false
+	}
+	for _, s := range shrinks {
+		if b := gridBucketsAt(in, eff, s.grid); b == 0 || b > s.most {
+			return false
+		}
+	}
+	return true
+}
+
+// windowsFit reports whether every window's bucket read at eff holds at most maxBuckets buckets per series.
+func windowsFit(in stepCandidateInput, eff time.Duration, maxBuckets int64) bool {
+	for _, w := range in.windows {
+		if b := bucketsAt(in, eff, w); b == 0 || b > maxBuckets {
+			return false
+		}
+	}
+	return true
+}
+
+// firstFitting is the first of from, from+inc, ... below limit (at most limit when through) that fits; 0 when none.
+func firstFitting(from, inc, limit time.Duration, through bool, fits func(time.Duration) bool) time.Duration {
+	for eff := from; eff < limit || through && eff == limit; eff += inc {
+		if fits(eff) {
+			return eff
+		}
+	}
+	return 0
+}
+
 // effectiveStep is the step the request is served at (the rule above). ok is false when no step within the floor,
 // the ceiling and the range fits, or none is known to change the failed read.
 func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
@@ -229,42 +293,12 @@ func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
 	if share <= 0 || share >= 1 {
 		share = 0.5
 	}
-	// The noted reads that failed within the bound, with the buckets the next one may hold.
-	type shrink struct {
-		grid readGrid
-		most int64
+	shrinks, ok := stepShrinks(in.failed, share)
+	if !ok {
+		return 0, false
 	}
-	var shrinks []shrink
-	for _, g := range in.failed {
-		if g.route == readRouteStepIndependent {
-			return 0, false
-		}
-		if g.route == "raw" {
-			// Raw rows read within the bucket bound were read for another reason than the step (a counter
-			// proof, a parser error check): no coarser step changes them. Past the bound, the step that brings the
-			// windows back within it moves the read to the buckets.
-			if g.buckets <= heavyQueryBucketThreshold {
-				return 0, false
-			}
-			continue
-		}
-		if g.buckets > 0 && g.buckets <= heavyQueryBucketThreshold {
-			shrinks = append(shrinks, shrink{g, int64(math.Ceil(float64(g.buckets) * share))})
-		}
-	}
-	prev := in.prev
-	if prev < in.step {
-		prev = in.step
-	}
-	fitsAt := func(eff time.Duration) bool {
-		for _, w := range in.windows {
-			if b := bucketsAt(in, eff, w); b == 0 || b > maxBuckets {
-				return false
-			}
-		}
-		return true
-	}
-	bucketBound := len(shrinks) == 0 && !fitsAt(prev)
+	prev := max(in.prev, in.step)
+	bucketBound := len(shrinks) == 0 && !windowsFit(in, prev, maxBuckets)
 	halveFrom := int64(0)
 	if len(shrinks) == 0 && !bucketBound {
 		if !in.halve {
@@ -274,33 +308,14 @@ func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
 		}
 		halveFrom = int64(math.Ceil(float64(pointsAt(in, prev)) * share))
 	}
-	fits := func(eff time.Duration) bool {
-		if in.floor > 0 && eff < in.floor || in.ceiling > 0 && eff > in.ceiling || !fitsAt(eff) {
-			return false
-		}
-		if halveFrom > 0 && pointsAt(in, eff) > halveFrom {
-			return false
-		}
-		for _, s := range shrinks {
-			if b := gridBucketsAt(in, eff, s.grid); b == 0 || b > s.most {
-				return false
-			}
-		}
-		return true
-	}
+	fits := func(eff time.Duration) bool { return stepFits(in, eff, maxBuckets, halveFrom, shrinks) }
 	span := time.Duration(in.endNs - in.startNs)
 	// The multiples of the requested step, or of an earlier effective step off its grid.
 	inc := in.step
 	if prev%in.step != 0 {
 		inc = prev
 	}
-	multiple := time.Duration(0)
-	for eff := prev + inc; eff <= span; eff += inc {
-		if fits(eff) {
-			multiple = eff
-			break
-		}
-	}
+	multiple := firstFitting(prev+inc, inc, span, true, fits)
 	if !bucketBound || prev != in.step {
 		// The bucket bound alone decides how far apart Loki's grid and the finest fitting step are: a read that
 		// shrinks, or a later retry, stays on the multiples.
@@ -311,13 +326,9 @@ func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
 	if multiple > 0 {
 		limit = multiple
 	}
-	for eff := prev + time.Millisecond; eff < limit; eff += time.Millisecond {
-		if fits(eff) {
-			if multiple > 0 && multiple <= stepMultipleDensity*eff {
-				return multiple, true
-			}
-			return eff, true
-		}
+	finest := firstFitting(prev+time.Millisecond, time.Millisecond, limit, false, fits)
+	if finest > 0 && (multiple == 0 || multiple > stepMultipleDensity*finest) {
+		return finest, true
 	}
 	return multiple, multiple > 0
 }
