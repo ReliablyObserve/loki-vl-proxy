@@ -821,7 +821,7 @@ func (p *Proxy) planSkipsParsers(query string) bool {
 }
 
 // translationRunsNoParser reports a query whose translation for this request, under its own profile (label mode,
-// stream fields, capabilities, aliases), holds no unpack_json or unpack_logfmt pipe, read from the parsed LogsQL:
+// stream fields, capabilities, aliases), holds no unpack_json or unpack_logfmt pipe:
 // the lowering served the sum with no parser. Where it did not (a profile the lowering turns away, a text it leaves
 // to the string translator), the query keeps today's probe, so the probe is skipped only where no parser runs. The
 // translation is cached, so the handler's own translation of the same text that follows is a cache hit.
@@ -841,17 +841,9 @@ func (p *Proxy) translationRunsNoParser(ctx context.Context, query string) bool 
 	if err != nil {
 		return false
 	}
-	parsed, err := logsql.Parse(text)
-	if err != nil {
-		return false
-	}
-	for _, pipe := range parsed.Pipes {
-		switch pipe.(type) {
-		case logsql.PipeUnpackJSON, *logsql.PipeUnpackJSON, logsql.PipeUnpackLogfmt, *logsql.PipeUnpackLogfmt:
-			return false
-		}
-	}
-	return true
+	// The LogsQL the proxy is about to send, not the client's query: a pipe is always printed by its name, so a text
+	// without either name holds no unpack pipe. A quoted value that holds a name only keeps the probe, today's path.
+	return !strings.Contains(text, "unpack_json") && !strings.Contains(text, "unpack_logfmt")
 }
 
 // preferWorkingParserAt is preferWorkingParser for an instant query evaluated

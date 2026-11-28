@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.54 identity": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.54 no body scan": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.54 no body scan, stream fields, keepLine": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.54 stream fields": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.54 stream fields and labels": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.54 stream labels": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.54 stream labels keepLine": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.54 underscores": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.54 underscores keepLine": {
-      "rows": 2812,
-      "keys": 2757,
+      "rows": 2811,
+      "keys": 2756,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -350,7 +350,7 @@
       "the plan does not route it: VectorAgg route evaluated level": 173,
       "the plan does not route it: VectorAgg route level filter": 12,
       "the plan does not route it: VectorAgg route operand": 8,
-      "the plan does not route it: VectorAgg route pipeline": 259,
+      "the plan does not route it: VectorAgg route pipeline": 258,
       "the plan does not route it: VectorAgg route rewrite": 2,
       "the plan does not route it: VectorAgg route unwrap filter": 1,
       "the plan does not route it: VectorAgg route unwrap pipeline": 120,
@@ -560,8 +560,8 @@
     }
   },
   "route_parity": {
-    "rows": 2771,
-    "runs": 27710,
+    "rows": 2770,
+    "runs": 27700,
     "profiles": [
       "instant",
       "step=range",
@@ -654,7 +654,7 @@
       "VectorAgg route level filter": 120,
       "VectorAgg route no bucket grid": 8,
       "VectorAgg route operand": 80,
-      "VectorAgg route pipeline": 2600,
+      "VectorAgg route pipeline": 2590,
       "VectorAgg route unwrap filter": 10,
       "VectorAgg route unwrap pipeline": 1200,
       "VectorAgg route unwrap quantile": 80,
@@ -666,7 +666,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 27032,
+      "200": 27022,
       "400": 648,
       "500": 30
     },
@@ -677,7 +677,7 @@
       "24h chunk/RangeAgg": "dce166660885a913",
       "24h chunk/Rank": "06a119c1a8d112c6",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "4f9e493b49210fca",
+      "24h chunk/VectorAgg": "eda386477c32f7e8",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "4d51123a649b9fb5",
       "instant/LabelReplace": "e5147fb2eeb20423",
@@ -685,7 +685,7 @@
       "instant/RangeAgg": "b493eabef830baad",
       "instant/Rank": "f3365860b738618a",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "02dd18f78fb5aae0",
+      "instant/VectorAgg": "29724b37238aa529",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "9b196c65c83b3d46",
       "step\u003crange/LabelReplace": "09bdb3a4778b35db",
@@ -693,7 +693,7 @@
       "step\u003crange/RangeAgg": "0e4ec9af6f79ecfb",
       "step\u003crange/Rank": "0fad95398b20b6c2",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "a9ea49a9f344bf34",
+      "step\u003crange/VectorAgg": "7142a250899e3ca5",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "532db91a73181078",
       "step=range/LabelReplace": "f31e194d26db4d73",
@@ -701,7 +701,7 @@
       "step=range/RangeAgg": "ff484fcad9b21a44",
       "step=range/Rank": "46a4ae98d1eaba1a",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "b7499a8af6b55830",
+      "step=range/VectorAgg": "cb019c57c6e54807",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "3ed369012c9b6a31",
       "step\u003erange/LabelReplace": "99466b385c5b623c",
@@ -709,7 +709,7 @@
       "step\u003erange/RangeAgg": "962ccad8e4af3168",
       "step\u003erange/Rank": "16676e6264b8e4cf",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "66784934fa8282bc",
+      "step\u003erange/VectorAgg": "675c341fe5802340",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
@@ -719,7 +719,7 @@
       "24h chunk/RangeAgg": "c798ea9f519d610a",
       "24h chunk/Rank": "fdcabf1c261b076b",
       "24h chunk/Scalar": "2c7012c3274c662d",
-      "24h chunk/VectorAgg": "93d96afc6b349d32",
+      "24h chunk/VectorAgg": "c06cfc4026d970d1",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
       "instant/BinOp": "f2e2beb267ca5a6c",
       "instant/LabelReplace": "7d2d905e760a4bb2",
@@ -727,7 +727,7 @@
       "instant/RangeAgg": "df04a6492cae8ba7",
       "instant/Rank": "38e35b7b68896719",
       "instant/Scalar": "4989874b8a3c42dc",
-      "instant/VectorAgg": "60a94e48b0b1a186",
+      "instant/VectorAgg": "3067629b7517d002",
       "instant/VectorLit": "0dc325c3d1510308",
       "step\u003crange/BinOp": "8d3768a48853b8ab",
       "step\u003crange/LabelReplace": "a2f978a62541e4dd",
@@ -735,7 +735,7 @@
       "step\u003crange/RangeAgg": "826300c82c2b2fc4",
       "step\u003crange/Rank": "adbdfac51a8553f4",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
-      "step\u003crange/VectorAgg": "8a0f933368121bd3",
+      "step\u003crange/VectorAgg": "4b2ee31ebea88ad9",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
       "step=range/BinOp": "a8eabd297ef363b6",
       "step=range/LabelReplace": "c5c17c50ec1f8b7c",
@@ -743,7 +743,7 @@
       "step=range/RangeAgg": "b4595a62d0dc0643",
       "step=range/Rank": "184352dede4e84e4",
       "step=range/Scalar": "6db69b6718a0b07a",
-      "step=range/VectorAgg": "0ce899892cb895d3",
+      "step=range/VectorAgg": "9c87912d861f7771",
       "step=range/VectorLit": "58ad28055f0b3615",
       "step\u003erange/BinOp": "a2ceb48f5befcc73",
       "step\u003erange/LabelReplace": "6c9829577ca7b129",
@@ -751,7 +751,7 @@
       "step\u003erange/RangeAgg": "132bc2d84d63dde4",
       "step\u003erange/Rank": "8e27b8b2f878e06c",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
-      "step\u003erange/VectorAgg": "a3410ff64134b2ab",
+      "step\u003erange/VectorAgg": "547227d03abbcc0e",
       "step\u003erange/VectorLit": "58ad28055f0b3615"
     },
     "vl_calls": {
@@ -792,8 +792,8 @@
         "repeat_runs": 0
       },
       "24h chunk/VectorAgg": {
-        "runs": 2378,
-        "cold": 3698,
+        "runs": 2376,
+        "cold": 3696,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -840,8 +840,8 @@
         "repeat_runs": 0
       },
       "instant/VectorAgg": {
-        "runs": 2378,
-        "cold": 2639,
+        "runs": 2376,
+        "cold": 2637,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -888,8 +888,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/VectorAgg": {
-        "runs": 2378,
-        "cold": 3694,
+        "runs": 2376,
+        "cold": 3692,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -936,8 +936,8 @@
         "repeat_runs": 0
       },
       "step=range/VectorAgg": {
-        "runs": 2378,
-        "cold": 3681,
+        "runs": 2376,
+        "cold": 3679,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -984,8 +984,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/VectorAgg": {
-        "runs": 2378,
-        "cold": 3683,
+        "runs": 2376,
+        "cold": 3681,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -998,9 +998,9 @@
     }
   },
   "shadow": {
-    "rows": 25752,
+    "rows": 25743,
     "profiles": 12,
-    "native": 23413,
+    "native": 23404,
     "native_proxy_evaluated": 4635,
     "native_loki_held": 1050,
     "mismatches": 0,
