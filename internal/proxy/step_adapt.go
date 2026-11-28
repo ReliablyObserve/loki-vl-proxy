@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
 // The step of a range metric query (issue #1795): the proxy answers a query_range whose read passes a proxy-internal
@@ -506,35 +506,34 @@ func (p *Proxy) verdictKey(r *http.Request, query, step string, span int64) uint
 	return h.Sum64()
 }
 
-// rangeWindows are the range windows of a metric query's range aggregations; ok is false for a query that is not a
-// metric query, a window the query does not state as a duration (a Grafana token such as $__auto, which follows the
-// step) or a call whose operand the parser does not type.
-func rangeWindows(expr logqlpkg.Expr) ([]time.Duration, bool) {
+// rangeWindows are the range windows of a metric query's range aggregations, read from its resolved plan; ok is false
+// for a query that is not a metric query, a window the query does not state as a duration (a Grafana token such as
+// $__auto, which follows the step) or a call the plan keeps as text.
+func rangeWindows(root queryplan.Node) ([]time.Duration, bool) {
 	var out []time.Duration
-	var walk func(logqlpkg.Expr) bool
-	walk = func(e logqlpkg.Expr) bool {
-		switch x := e.(type) {
-		case *logqlpkg.RangeAggregation:
-			if x.RangeDuration <= 0 {
+	var walk func(queryplan.Node) bool
+	walk = func(n queryplan.Node) bool {
+		switch x := n.(type) {
+		case *queryplan.RangeAgg:
+			if x.Range <= 0 {
 				return false
 			}
-			out = append(out, x.RangeDuration)
+			out = append(out, x.Range)
 			return true
-		case *logqlpkg.VectorAggregation:
-			return walk(x.Inner)
-		case *logqlpkg.BinOpExpr:
-			return walk(x.Left) && walk(x.Right)
-		case *logqlpkg.LiteralExpr:
+		case *queryplan.VectorAgg:
+			return walk(x.In)
+		case *queryplan.Rank:
+			return walk(x.In)
+		case *queryplan.LabelReplace:
+			return walk(x.In)
+		case *queryplan.BinOp:
+			return walk(x.L) && walk(x.R)
+		case *queryplan.Scalar, *queryplan.VectorLit:
 			return true
-		case *logqlpkg.OpaqueMetricExpr:
-			if !x.Typed || x.Inner == nil {
-				return x.Typed && x.Func == "vector"
-			}
-			return walk(x.Inner)
 		}
 		return false
 	}
-	if expr == nil || !walk(expr) || len(out) == 0 {
+	if root == nil || !walk(root) || len(out) == 0 {
 		return nil, false
 	}
 	return out, true
@@ -562,11 +561,11 @@ func (p *Proxy) stepRequestOf(r *http.Request, lim stepLimits) (stepRequest, boo
 		return stepRequest{}, false
 	}
 	query := r.FormValue("query")
-	expr, err := parseLogQLExpr(r.Context(), query)
-	if err != nil {
+	plan := resolvedPlan(query)
+	if plan == nil {
 		return stepRequest{}, false
 	}
-	windows, ok := rangeWindows(expr)
+	windows, ok := rangeWindows(plan.Root)
 	if !ok {
 		return stepRequest{}, false
 	}

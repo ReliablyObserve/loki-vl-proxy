@@ -14,6 +14,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
 var stepTestEnd = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -482,11 +483,11 @@ func TestRangeWindows(t *testing.T) {
 		`{a="b"} |= "x"`: "",
 		`vector(1)`:      "",
 	} {
-		expr, err := parseLogQLExpr(context.Background(), q)
-		if err != nil {
-			t.Fatalf("%s: %v", q, err)
+		var root queryplan.Node
+		if plan := resolvedPlan(q); plan != nil {
+			root = plan.Root
 		}
-		windows, ok := rangeWindows(expr)
+		windows, ok := rangeWindows(root)
 		var got []string
 		for _, w := range windows {
 			got = append(got, w.String())
