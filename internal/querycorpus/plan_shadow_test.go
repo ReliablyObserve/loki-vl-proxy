@@ -278,9 +278,13 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// variance of the group's pooled samples, and the proxy serves the plan's text (lowerMetric).
 				caseID, ok = knownCountVariance, true
 			}
-			if !ok && lower.WritesSkippedUnpack(plan) && !sameAsTranslator(got, legacy) {
+			if !ok && lower.WritesSkippedUnpack(plan) && !sameAsTranslator(got, legacy) &&
+				strings.Count(legacy, "unpack_json") > strings.Count(translator.EncodePhysical(got), "unpack_json") {
 				// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on,
-				// the translator the unpack_json pipe; the proxy serves the plan's text at the root (lowerMetric).
+				// the translator the unpack_json pipe; the proxy serves the plan's text at the root and as an operand of a
+				// binary operation or a label_replace call (lowerMetric). Only a reference that still holds the pipe the
+				// lowering skipped is the divergence: where the reference is the skipped text the proxy serves, a
+				// lowering that writes another text is a mismatch.
 				caseID, ok = knownSkippedUnpack, true
 			}
 			if !ok && lower.WritesNumericEquality(plan) {
@@ -583,7 +587,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-bad.DelegatedByConstruct["known divergence "+knownSkippedUnpack] {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

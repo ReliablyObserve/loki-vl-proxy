@@ -1204,8 +1204,10 @@ func unpackSumGroupingOf(expr logqlpkg.Expr) (*logqlpkg.Grouping, bool) {
 }
 
 // unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
-// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
-const unpackMetricResponseVersion = "@unpack-metric-v1:"
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream,
+// v1), and a topk over a sum with no label behind a keep, or with an empty by clause, answered other values than
+// Loki's (semantics/ungrouped-sum-skips-unpack, v2).
+const unpackMetricResponseVersion = "@unpack-metric-v2:"
 
 // unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an
 // _over_time function is fenced whatever its shape (one more cache miss), and no query without an unpack changes
