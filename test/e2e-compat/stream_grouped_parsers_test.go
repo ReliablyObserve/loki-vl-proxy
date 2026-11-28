@@ -53,6 +53,8 @@ func TestCompat_StreamGroupedParserSumsLikeLoki(t *testing.T) {
 	} {
 		for _, endpoint := range []string{"query", "query_range"} {
 			t.Run(endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				// The window, then the same window a minute later (a refresh on the proxy that answered the first).
+				unpackAgainstLoki(t, query, endpoint, now.Add(-time.Minute))
 				unpackAgainstLoki(t, query, endpoint, now)
 			})
 		}

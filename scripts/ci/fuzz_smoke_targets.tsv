@@ -23,6 +23,7 @@ smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
 smoke	internal/proxy	FuzzPlaceholderExclusion	12s	-	the placeholder exclusion of -json-line-fields-as-line-keys terminates and writes a filter VictoriaLogs parses
 smoke	internal/proxy	FuzzMayHoldDropStage	12s	-	the precheck in front of the detected_level source-drop fence regexp never hides a match
 smoke	internal/proxy	FuzzStreamLevelSeriesFenceSpelling	12s	-	the stream level fence covers every case and blank spelling the parser reads
+smoke	internal/proxy	FuzzStreamGroupedCut	12s	-	the cut query of a sum grouped by stream labels over json and logfmt keeps the selector, filters, range, offset, grouping and ranking
 smoke	internal/proxy	FuzzEnsureStreamDetectedLevel	12s	-	a series built from one stream takes the stream's level field, else the row's level field, normalised; the level label and a present detected_level never change
 smoke	internal/proxy	FuzzDetectedLevelMatchesReference	12s	-	the byte-level detected_level derivation equals the reference held to recorded Loki answers on any line, stream label and stored field
 smoke	internal/proxy	FuzzScalarStatsBinaryOf	12s	-	a stats query joined to a number is read back to the same operator and number

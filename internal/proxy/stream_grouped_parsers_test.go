@@ -13,6 +13,8 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // streamGroupedBackend answers the stats of a cut query with the series given, the stream label check (before the
@@ -77,9 +79,13 @@ func (b *streamGroupedBackend) requests() []string {
 	return append([]string(nil), b.sent...)
 }
 
-func streamGroupedTestProxy(t *testing.T, url string, lowering bool) *Proxy {
+func streamGroupedTestProxy(t *testing.T, url string, lowering bool, lokiProfile ...bool) *Proxy {
 	t.Helper()
-	p, err := New(Config{BackendURL: url, Cache: cache.New(time.Minute, 100), LogLevel: "error"})
+	cfg := Config{BackendURL: url, Cache: cache.New(time.Minute, 100), LogLevel: "error"}
+	if len(lokiProfile) > 0 && lokiProfile[0] {
+		cfg.LabelStyle, cfg.MetadataFieldMode = LabelStyleUnderscores, MetadataFieldModeTranslated
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +118,9 @@ func TestStreamGroupedParsersRoute(t *testing.T) {
 		// checks are the checks the route must send, in order; stats whether it reads the cut query.
 		checks []string
 		stats  bool
+		// loki runs the proxy in the Loki-compatible profile, whose translation restores a plain name's stream value
+		// (the default profile restores none).
+		loki bool
 	}{
 		{name: "served", query: ps5, series: both, lowering: true, served: true, checks: []string{labelled, stored}, stats: true},
 		{name: "a stream lacks the label", query: ps5, series: both, labelled: "row", lowering: true, checks: []string{labelled}},
@@ -124,15 +133,26 @@ func TestStreamGroupedParsersRoute(t *testing.T) {
 		{name: "a parsed key no stream holds", lowering: true,
 			query:  `sum by (route) (count_over_time({app="api"} | json | logfmt | drop __error__ [1m]))`,
 			series: []string{`{"route":"/a"}`}},
-		{name: "a label the stream value restore reads, pinned", lowering: true, served: true, stats: true,
+		{name: "a pinned label the stream value restore reads", lowering: true, served: true, stats: true, loki: true,
 			query:  `sum by (app) (count_over_time({app="api"} | logfmt | json | drop __error__ [1m]))`,
 			series: []string{`{"app":"api"}`}},
-		{name: "two labels", lowering: true, served: true, stats: true,
+		{name: "a pinned label outside the Loki-compatible profile", lowering: true, served: true, stats: true,
+			query:  `sum by (app) (count_over_time({app="api"} | logfmt | json | drop __error__ [1m]))`,
+			series: []string{`{"app":"api"}`},
+			checks: []string{`(app:="api") AND (NOT (({app="api"} AND app:="api"))) | fields _time | limit 1`}},
+		{name: "two labels, the Loki-compatible profile", lowering: true, served: true, stats: true, loki: true,
 			query:  `sum by (level, pod) (count_over_time({app="api"} | json | logfmt | drop __error__ [1m]))`,
 			series: []string{`{"level":"info","pod":"a"}`, `{"level":"info","pod":"b"}`},
 			checks: []string{
 				`(app:="api") AND (NOT {level=~".+"} OR NOT {pod=~".+"}) | fields _time | limit 1`,
 				`(app:="api") AND (NOT (({level="info"} AND level:="info"))) | fields _time | limit 1`,
+			}},
+		{name: "two labels", lowering: true, served: true, stats: true,
+			query:  `sum by (level, pod) (count_over_time({app="api"} | json | logfmt | drop __error__ [1m]))`,
+			series: []string{`{"level":"info","pod":"a"}`, `{"level":"info","pod":"b"}`},
+			checks: []string{
+				`(app:="api") AND (NOT {level=~".+"} OR NOT {pod=~".+"}) | fields _time | limit 1`,
+				`(app:="api") AND (NOT (({level="info"} AND level:="info")) OR NOT (({pod="a"} AND pod:="a") OR ({pod="b"} AND pod:="b"))) | fields _time | limit 1`,
 			}},
 		{name: "ranked", query: `topk(1, ` + ps5 + `)`, series: both, lowering: true, served: true, checks: []string{labelled, stored}, stats: true},
 	} {
@@ -140,7 +160,7 @@ func TestStreamGroupedParsersRoute(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/range=%v", c.name, isRange), func(t *testing.T) {
 				backend := &streamGroupedBackend{series: c.series, labelled: c.labelled, stored: c.stored}
 				srv := backend.serve(t, ts)
-				p := streamGroupedTestProxy(t, srv.URL, c.lowering)
+				p := streamGroupedTestProxy(t, srv.URL, c.lowering, c.loki)
 				form := url.Values{"query": {c.query}}
 				path := "/loki/api/v1/query"
 				if isRange {
@@ -298,4 +318,86 @@ func TestAwaitTenantStreamLabelNames(t *testing.T) {
 			t.Errorf("listing calls %d then %d", afterFirst, afterSecond)
 		}
 	}
+}
+
+// FuzzStreamGroupedCut holds the cut query of the stream grouped sum rule on any query the shape check takes: it
+// parses, is a query of no parser the rule does not take again, keeps the selector, the line filters before the
+// first parser, the range, the offset, the grouping and a ranking, and leaves the request's own tree unchanged.
+//
+// conformance: semantics/stream-grouped-sum-skips-parsers
+func FuzzStreamGroupedCut(f *testing.F) {
+	for _, q := range []string{
+		`sum by (level) (count_over_time({app="a"} | json | logfmt | drop __error__, __error_details__ [5m]))`,
+		`sum by (level, pod) (rate({app="a", env=~"p.*"} |= "x" != "y" | logfmt | json | drop __error__ [1m] offset 1h))`,
+		`topk(2, sum by (level) (bytes_over_time({app="a"} | json | drop x | logfmt | drop __error__ [5m])))`,
+		`sort_desc(sum(bytes_rate({app="a"} | json | logfmt | drop __error__ [5m])) by (level))`,
+		`sum by (level) (count_over_time({app="a"} | json | logfmt [5m]))`,
+	} {
+		f.Add(q)
+	}
+	f.Fuzz(func(t *testing.T, q string) {
+		if len(q) > 2048 {
+			return
+		}
+		expr, err := logqlpkg.Parse(q)
+		if err != nil {
+			return
+		}
+		plan, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			return
+		}
+		queryplan.Resolve(plan)
+		at := lower.StreamGroupedParsersAt(plan)
+		if at < 0 {
+			return
+		}
+		before := expr.String()
+		cut, ok := streamGroupedCutOf(expr, at)
+		if !ok {
+			t.Fatalf("%q: the shape check takes it, the cut does not", q)
+		}
+		if expr.String() != before {
+			t.Fatalf("%q: the cut changed the request's tree", q)
+		}
+		for _, text := range []string{cut.query, cut.ranked} {
+			if text == "" {
+				continue
+			}
+			cutExpr, err := logqlpkg.Parse(text)
+			if err != nil {
+				t.Fatalf("%q: cut %q does not parse: %v", q, text, err)
+			}
+			cutPlan, err := queryplan.Build(cutExpr, queryplan.Inputs{})
+			if err != nil {
+				t.Fatalf("%q: cut %q: %v", q, text, err)
+			}
+			if lower.StreamGroupedParsersAt(cutPlan) >= 0 {
+				t.Fatalf("%q: the cut %q is taken again", q, text)
+			}
+		}
+		cutExpr, _ := logqlpkg.Parse(cut.query)
+		va, ok := cutExpr.(*logqlpkg.VectorAggregation)
+		if !ok {
+			t.Fatalf("%q: cut %q is no sum", q, cut.query)
+		}
+		ra := va.Inner.(*logqlpkg.RangeAggregation)
+		lq := ra.Inner.(*logqlpkg.LogQuery)
+		orig := underRankings(expr).(*logqlpkg.VectorAggregation)
+		oRange := orig.Inner.(*logqlpkg.RangeAggregation)
+		oLog := oRange.Inner.(*logqlpkg.LogQuery)
+		if va.Grouping.String() != orig.Grouping.String() || ra.Op != oRange.Op || ra.RangeDuration != oRange.RangeDuration ||
+			ra.OffsetDuration != oRange.OffsetDuration || lq.Selector.String() != oLog.Selector.String() ||
+			cut.window != oRange.RangeDuration || cut.offset != oRange.OffsetDuration {
+			t.Fatalf("%q: cut %q moved the grouping, range, offset or selector", q, cut.query)
+		}
+		if len(lq.Pipeline) != at {
+			t.Fatalf("%q: cut %q keeps %d stages, want %d", q, cut.query, len(lq.Pipeline), at)
+		}
+		for i := range lq.Pipeline {
+			if lq.Pipeline[i].String() != oLog.Pipeline[i].String() {
+				t.Fatalf("%q: cut %q changed stage %d", q, cut.query, i)
+			}
+		}
+	})
 }

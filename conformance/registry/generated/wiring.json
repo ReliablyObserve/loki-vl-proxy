@@ -705,6 +705,7 @@
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go",
+      "test/e2e-compat/stream_grouped_parsers_test.go",
       "test/e2e-compat/sub_second_step_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go",
       "test/e2e-compat/unpack_metrics_test.go",
@@ -872,6 +873,7 @@
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/stdvar_over_time_binary_marker_test.go",
+      "test/e2e-compat/stream_grouped_parsers_test.go",
       "test/e2e-compat/stream_label_shadowed_test.go",
       "test/e2e-compat/sub_second_step_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go",
@@ -2545,7 +2547,9 @@
     "semantics/stream-grouped-sum-skips-parsers": [
       "internal/proxy/stream_grouped_parsers_test.go",
       "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go",
-      "internal/queryplan/lower/stream_grouping_test.go"
+      "internal/queryplan/lower/stream_grouping_test.go",
+      "test/e2e-compat/stream_grouped_parsers_test.go",
+      "test/e2e-compat/vl_stream_grouped_checks_test.go"
     ],
     "semantics/stream-label-shadowed-by-ingest-json-key": [
       "internal/proxy/stream_tag_restore_test.go",
@@ -2741,7 +2745,8 @@
       "internal/proxy/reprint_translation_test.go",
       "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
-      "test/e2e-compat/instant_parser_probe_window_test.go"
+      "test/e2e-compat/instant_parser_probe_window_test.go",
+      "test/e2e-compat/stream_grouped_parsers_test.go"
     ],
     "semantics/unary-plus-literal-rejected": [
       "internal/querycorpus/grammar_sweep_test.go"
@@ -3362,6 +3367,9 @@
       "internal/proxy/service_name_stream_filter_oracle_test.go",
       "test/e2e-compat/service_name_stream_filter_test.go"
     ],
+    "vl-stream-grouped-label-checks": [
+      "test/e2e-compat/vl_stream_grouped_checks_test.go"
+    ],
     "vl-zstd-response-window": [
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
@@ -3403,7 +3411,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 779,
+  "registry_items": 780,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -7373,6 +7381,12 @@
       "semantics/stdvar-grouped-pooled-variance",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/stream_grouped_parsers_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/stream-grouped-sum-skips-parsers",
+      "semantics/two-parsers-keep-one"
+    ],
     "test/e2e-compat/stream_label_shadowed_test.go": [
       "loki_api_v1_query_range",
       "semantics/stream-label-shadowed-by-ingest-json-key"
@@ -7545,6 +7559,10 @@
       "vl-stats-pipe-after-stats",
       "vl-stats-range-pipe-before-stats"
     ],
+    "test/e2e-compat/vl_stream_grouped_checks_test.go": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "vl-stream-grouped-label-checks"
+    ],
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
@@ -7628,7 +7646,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 921,
+  "tests_with_markers": 923,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7785,5 +7803,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 511
+  "wired_items": 512
 }

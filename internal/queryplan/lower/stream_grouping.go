@@ -25,9 +25,10 @@ import (
 // The shape: a sum by one or more labels (not without) of count_over_time, rate, bytes_over_time or bytes_rate,
 // whose log query holds only line filters before its first parser; from it on bare json and logfmt parsers (no
 // extraction list, no flag), at least one of each, and drops of whole labels (no matcher) that name no grouping
-// label, the last parser followed by a drop of __error__. A grouping label is a plain name: not a parser error
-// label, not an `_extracted` name (the parsers write it), not detected_level or service_name (labels the proxy
-// derives on the read path). Without the drop Loki answers 400 on any line its JSON parser rejects, which the cut
+// label, the last parser followed by a drop of __error__. A grouping label is a plain name: none that starts with an
+// underscore (the parser error labels, and VictoriaLogs' own fields `_msg`, `_time`, `_stream` in any case), not an
+// `_extracted` name (the parsers write it), not detected_level or service_name (labels the proxy derives on the
+// read path). Without the drop Loki answers 400 on any line its JSON parser rejects, which the cut
 // query cannot see, so that shape keeps today's route.
 
 // StreamGroupedParsersAt is the index of the first parser of the sum's log query when p's root is a sum of the
@@ -104,6 +105,6 @@ func streamGroupedParsersStages(stages []queryplan.Stage, grouping []string) int
 
 // streamGroupingLabel reports a grouping label the parsers can only collide with, never write.
 func streamGroupingLabel(label string) bool {
-	return label != "" && !strings.HasPrefix(label, "__") && !strings.HasSuffix(label, "_extracted") &&
+	return label != "" && !strings.HasPrefix(label, "_") && !strings.HasSuffix(label, "_extracted") &&
 		label != "detected_level" && label != "service_name"
 }

@@ -82,7 +82,7 @@ func (p *Proxy) serveStreamGroupedParsers(w http.ResponseWriter, r *http.Request
 		switch {
 		case buffered.code != 0 && buffered.code != http.StatusOK || !complete:
 			outcome = "incomplete"
-		case !p.streamGroupedRowsAbsent(ctx, cut, p.streamGroupedUnstored(cut, values), from, to):
+		case !p.streamGroupedRowsAbsent(ctx, cut, p.streamGroupedUnstored(ctx, cut, values), from, to):
 			outcome = "unstored"
 		case cut.ranked != "":
 			// The ranking of the checked sum: the sum's answer is the response cache's now.
@@ -259,14 +259,18 @@ func (p *Proxy) streamGroupedUnlabelled(cut streamGroupedCut) logsql.FilterExpr 
 }
 
 // streamGroupedUnstored matches a line, for a label of cut the cut query reads from the stored field, whose stream
-// value is not one of the answer's values or whose stored field differs from it, or is nil when the cut query reads
-// every label from the stream (the stream value restore) or the answer is empty. Past maxStreamGroupedValues values
+// value is not one of the answer's values or whose stored field differs from it, or is nil when the cut query's
+// translation reads every label from the stream (the stream value restore, plainStreamLabelNames) or the answer is
+// empty. Past maxStreamGroupedValues values
 // it matches every line: the request keeps the evaluator.
-func (p *Proxy) streamGroupedUnstored(cut streamGroupedCut, values map[string][]string) logsql.FilterExpr {
+func (p *Proxy) streamGroupedUnstored(ctx context.Context, cut streamGroupedCut, values map[string][]string) logsql.FilterExpr {
 	var unstored logsql.FilterExpr
+	// The names the cut query's own translation writes back from _stream for this request (none outside the
+	// Loki-compatible profile): only those are read from the stream; every other name is checked.
+	restored := p.plainStreamLabelNames(ctx, cut.query)
 	n := 0
 	for _, label := range cut.labels {
-		if p.restorableName(label) || len(values[label]) == 0 {
+		if slices.Contains(restored, label) || len(values[label]) == 0 {
 			continue
 		}
 		name := p.streamGroupedName(label)

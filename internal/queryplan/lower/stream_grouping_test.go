@@ -54,6 +54,10 @@ func TestStreamGroupedParsersAt(t *testing.T) {
 		{`sum by (level_extracted) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1}, // the parsers write it
 		{`sum by (__error__) (count_over_time({app="a"} | json | logfmt | drop __error_details__ [5m]))`, -1},
 		{`sum by (detected_level) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
+		{`sum by (_msg) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
+		{`sum by (_stream) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
+		{`sum by (_TIME) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
+		{`sum by (_level) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
 		{`sum by (service_name) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m]))`, -1},
 		{`sum by (level) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m])) * 2`, -1}, // the operand is a query of its own
 		{`topk(2, max by (level) (count_over_time({app="a"} | json | logfmt` + drop + ` [5m])))`, -1},

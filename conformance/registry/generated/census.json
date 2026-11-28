@@ -3726,6 +3726,10 @@
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | semantics/stdvar-grouped-binary-marker",
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | semantics/stdvar-grouped-pooled-variance",
     "test/e2e-compat/stdvar_over_time_binary_marker_test.go | window-bounds-and-step-alignment",
+    "test/e2e-compat/stream_grouped_parsers_test.go | loki_api_v1_query",
+    "test/e2e-compat/stream_grouped_parsers_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/stream_grouped_parsers_test.go | semantics/stream-grouped-sum-skips-parsers",
+    "test/e2e-compat/stream_grouped_parsers_test.go | semantics/two-parsers-keep-one",
     "test/e2e-compat/stream_label_shadowed_test.go | loki_api_v1_query_range",
     "test/e2e-compat/stream_label_shadowed_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
     "test/e2e-compat/sub_second_step_test.go | loki_api_v1_query",
@@ -3838,6 +3842,8 @@
     "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-missing-stats-pipe",
     "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-pipe-after-stats",
     "test/e2e-compat/vl_refusal_prediction_test.go | vl-stats-range-pipe-before-stats",
+    "test/e2e-compat/vl_stream_grouped_checks_test.go | semantics/stream-grouped-sum-skips-parsers",
+    "test/e2e-compat/vl_stream_grouped_checks_test.go | vl-stream-grouped-label-checks",
     "test/e2e-compat/vl_zstd_response_window_test.go | vl-zstd-response-window",
     "test/e2e-fleet/field_mapping_label_mode_test.go | field-mapping-label-names",
     "test/e2e-fleet/field_mapping_label_mode_test.go | semantics/field-mapping-label-modes",
@@ -3887,7 +3893,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 918,
+      "go": 920,
       "playwright": 3
     },
     "page_kinds": {
@@ -3909,7 +3915,7 @@
     "shape_covers_distinct": 121,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 511
+    "wired_items": 512
   },
   "gates": [
     "A/B shape selection",
