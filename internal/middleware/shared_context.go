@@ -17,6 +17,7 @@ type SharedContext struct {
 	mu      sync.Mutex
 	waiters int
 	left    bool // the last waiter left; the call is cancelled and takes no more waiters
+	joined  bool // a waiter other than the first joined
 }
 
 // NewSharedContext starts a shared call with first as its only waiter. When
@@ -45,7 +46,15 @@ func (s *SharedContext) Join() bool {
 		return false
 	}
 	s.waiters++
+	s.joined = true
 	return true
+}
+
+// Joined reports whether a waiter other than the first ever joined the call.
+func (s *SharedContext) Joined() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.joined
 }
 
 // Leave removes a waiter that stopped waiting and cancels the call when it was

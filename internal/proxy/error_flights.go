@@ -673,6 +673,28 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 	run(w, r, nil)
 }
 
+// flightContext is the context a flight's leader runs its handler on: the
+// shared context of the flight's requests (leadFlight). While no other
+// request joined the flight, its error is the leader's own as soon as the
+// leader's context ends, so a handler that checks it right after its client
+// went away (not to store a cancelled answer) sees the cancellation before
+// the shared context's Done channel closes.
+type flightContext struct {
+	context.Context
+	leader context.Context
+	shared *mw.SharedContext
+}
+
+func (c *flightContext) Err() error {
+	if err := c.Context.Err(); err != nil {
+		return err
+	}
+	if err := c.leader.Err(); err != nil && !c.shared.Joined() {
+		return err
+	}
+	return nil
+}
+
 // waitFlight waits for the flight f a request follows, a waiter of the context
 // its leader runs on while it waits (leadFlight); ok is false when the
 // request went away first.
@@ -742,15 +764,21 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 	// waiting on it went away, so a follower is not left to start the run
 	// again because the request that started it was cancelled. It keeps the
 	// leader's deadline.
-	shared := mw.NewSharedContext(r.Context(), true)
+	leaderCtx := r.Context()
+	shared := mw.NewSharedContext(leaderCtx, true)
 	p.flightShares.Store(f, shared)
-	stopLeave := context.AfterFunc(r.Context(), shared.Leave)
+	stopLeave := context.AfterFunc(leaderCtx, func() {
+		if !errors.Is(leaderCtx.Err(), context.DeadlineExceeded) {
+			// The shared context ends at the leader's deadline on its own.
+			shared.Leave()
+		}
+	})
 	defer func() {
 		stopLeave()
 		p.flightShares.Delete(f)
 		shared.Close()
 	}()
-	r = r.WithContext(shared.Context())
+	r = r.WithContext(&flightContext{Context: shared.Context(), leader: leaderCtx, shared: shared})
 	defer func() {
 		// A panic in the handler ends the flight too: its followers run on their own.
 		answer, ttl := p.errorFlights.Finish(key, f, outcome, build, pol)
