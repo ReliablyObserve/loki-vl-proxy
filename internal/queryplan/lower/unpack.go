@@ -174,20 +174,20 @@ func keepsAfterRate(ra *queryplan.RangeAgg, at int) bool {
 // the unpack on wherever it stands. The proxy serves the root (SkipsUnpack) and the operands of binary operations and
 // label_replace calls above it (SkipsUnpackWrapped); the shadows hold every such plan as the case's.
 func WritesSkippedUnpack(p *queryplan.Plan) bool {
-	return writesSkippedUnpack(p.Root)
+	return writesSkippedOf(p.Root, skipsUnpack)
 }
 
-// writesSkippedUnpack is WritesSkippedUnpack of a node.
-func writesSkippedUnpack(n queryplan.Node) bool {
+// writesSkippedOf reports a node with, at any depth, a sum skips reports (skipsUnpack, skipsParsers).
+func writesSkippedOf(n queryplan.Node, skips func(queryplan.Node) bool) bool {
 	switch n := n.(type) {
 	case *queryplan.VectorAgg:
-		return skipsUnpack(n) || writesSkippedUnpack(n.In)
+		return skips(n) || writesSkippedOf(n.In, skips)
 	case *queryplan.Rank:
-		return writesSkippedUnpack(n.In)
+		return writesSkippedOf(n.In, skips)
 	case *queryplan.LabelReplace:
-		return writesSkippedUnpack(n.In)
+		return writesSkippedOf(n.In, skips)
 	case *queryplan.BinOp:
-		return writesSkippedUnpack(n.L) || writesSkippedUnpack(n.R)
+		return writesSkippedOf(n.L, skips) || writesSkippedOf(n.R, skips)
 	}
 	return false
 }
@@ -204,24 +204,24 @@ func SkipsUnpackWrapped(p *queryplan.Plan) bool {
 	default:
 		return false
 	}
-	skips, clean := wrappedSkip(p.Root)
+	skips, clean := wrappedSkipOf(p.Root, skipsUnpack)
 	return skips && clean
 }
 
-// wrappedSkip reports whether n holds SkipsUnpack's shape under binary operations and label_replace calls only
-// (skips), and whether no part of n holds it elsewhere (clean).
-func wrappedSkip(n queryplan.Node) (skips, clean bool) {
+// wrappedSkipOf reports whether n holds a sum skip reports (skipsUnpack, skipsParsers) under binary operations and
+// label_replace calls only (skips), and whether no part of n holds one elsewhere (clean).
+func wrappedSkipOf(n queryplan.Node, skip func(queryplan.Node) bool) (skips, clean bool) {
 	switch n := n.(type) {
 	case *queryplan.BinOp:
-		ls, lc := wrappedSkip(n.L)
-		rs, rc := wrappedSkip(n.R)
+		ls, lc := wrappedSkipOf(n.L, skip)
+		rs, rc := wrappedSkipOf(n.R, skip)
 		return ls || rs, lc && rc
 	case *queryplan.LabelReplace:
-		return wrappedSkip(n.In)
+		return wrappedSkipOf(n.In, skip)
 	case *queryplan.VectorAgg:
-		if skipsUnpack(n) {
+		if skip(n) {
 			return true, true
 		}
 	}
-	return false, !writesSkippedUnpack(n)
+	return false, !writesSkippedOf(n, skip)
 }

@@ -2545,6 +2545,21 @@
    "fixes": [
     "semantics/parser-probe-drop-keeps-range"
    ]
+  },
+  {
+   "id": "explore-parser-sum-drilldown-count",
+   "kind": "explore",
+   "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-parsers",
+    "parser-json",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

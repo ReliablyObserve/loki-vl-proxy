@@ -90,7 +90,9 @@ const parserProbeAt = int64(1795780800) * 1e9 // 2026-11-27T12:00:00Z
 //
 // conformance: semantics/instant-parser-probe-window, semantics/two-parsers-keep-one, loki_api_v1_query
 func TestInstantParserProbeReadsTheQueryWindow(t *testing.T) {
-	const pipe = `{app="x"} | json | logfmt | drop __error__, __error_details__`
+	// A filter after the parsers keeps them run: a sum with no label and no filter after its parsers runs none and
+	// sends no probe (TestUngroupedParserSumSendsNoProbe).
+	const pipe = `{app="x"} | json | logfmt | drop __error__, __error_details__ | level!=""`
 	at := time.Unix(0, parserProbeAt).UTC()
 	window := func(from, to time.Duration) [2]int64 {
 		return [2]int64{parserProbeAt - int64(from) + 1, parserProbeAt - int64(to) + 1}
@@ -107,7 +109,7 @@ func TestInstantParserProbeReadsTheQueryWindow(t *testing.T) {
 		{"offset", `sum(count_over_time(` + pipe + ` [1h] offset 2h))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(3*time.Hour, 2*time.Hour)},
 		{"label_replace", `label_replace(sum(count_over_time(` + pipe + ` [30m])), "a", "b", "", "")`, strconv.FormatInt(parserProbeAt/1e9, 10), window(30*time.Minute, 0)},
 		{"vector operand", `vector(1) + sum(count_over_time(` + pipe + ` [5m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(5*time.Minute, 0)},
-		{"filter after the parsers", `sum(rate(` + pipe + ` | level="info" [10m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(10*time.Minute, 0)},
+		{"another filter after the parsers", `sum(rate(` + pipe + ` | level="info" [10m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(10*time.Minute, 0)},
 		{"absent_over_time", `absent_over_time({app="x"} | json | logfmt [5m])`, strconv.FormatInt(parserProbeAt/1e9, 10), window(5*time.Minute, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

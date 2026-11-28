@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -751,6 +753,11 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}
+	if p.planSkipsParsers(logql) {
+		// The plan writes no parser for the query: neither parser is run, so there is nothing to choose.
+		p.observeInternalOperation(ctx, "prefer_working_parser", "parsers_unread", time.Since(opStart))
+		return logql
+	}
 
 	// Mixed metric requests retain logfmt flags until typed admission above.
 	// The existing sampled fallback evaluates them as unflagged logfmt.
@@ -790,6 +797,26 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
 		return logql
 	}
+}
+
+// planSkipsParsers reports a query the typed lowering serves with no stage from its first parser on
+// (lower.SkipsParsers: a sum that needs no label of a count or a rate over bare json and logfmt parsers, or over an
+// unpack), also under a ranking, which translates the sum as a query of its own: Loki runs no parser for it, so the
+// parser probe has nothing to choose (semantics/ungrouped-sum-skips-parsers). It reads the query's shared plan, and
+// holds only where the lowering serves such a sum (the VectorAgg flip, -query-plan-lowering on, a text the
+// translator's readers accept); everywhere else the probe runs as before.
+func (p *Proxy) planSkipsParsers(query string) bool {
+	if !p.queryPlanLowering || !slices.Contains(p.flippedConstructs, "VectorAgg") {
+		return false
+	}
+	plan := resolvedPlan(strings.TrimSpace(query))
+	if plan == nil {
+		return false
+	}
+	if rank, ok := plan.Root.(*queryplan.Rank); ok {
+		plan = &queryplan.Plan{Root: rank.In}
+	}
+	return (lower.SkipsParsers(plan) || lower.SkipsParsersWrapped(plan)) && writesTranslatorText(plan, lower.Profile{})
 }
 
 // preferWorkingParserAt is preferWorkingParser for an instant query evaluated
