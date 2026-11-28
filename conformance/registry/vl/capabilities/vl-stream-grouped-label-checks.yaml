@@ -8,8 +8,9 @@ description: |
   A stream filter `{k=~".+"}` selects the streams that hold the label k with a
   value, so `NOT {k=~".+"}` finds the rows of streams without it. A row whose
   stream holds k="v" reads `k:="v"` as its field, unless the row carries a
-  regular field of the same name (structured metadata, or a key VictoriaLogs
-  unpacked from the line at ingest), which the field filter then reads: so
+  regular field of the same name (a key VictoriaLogs' Loki push API unpacked
+  from a JSON line at ingest, or a field the ingest wrote after the stream
+  labels), which the field filter then reads: so
   `NOT (({k="v"} AND k:="v"))` finds a row whose stored field differs from its
   stream label. Measured on VictoriaLogs v1.49.0 and v1.54.0 (2026-11-28,
   serve oracle: TestStreamGroupedParsersMatchLoki; live:

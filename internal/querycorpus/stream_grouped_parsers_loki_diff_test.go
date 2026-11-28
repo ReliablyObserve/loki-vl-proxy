@@ -43,6 +43,12 @@ var streamGroupedLines = map[string][]string{
 		`{"nested":{"level":"n"},"route":"/f"}`,
 		`{"level":"warn","app":"zz"}`,
 	},
+	// The bench generator's api-gateway lines: JSON written with spaces after its separators, a nested object.
+	"spaced": {
+		`{"service": {"name": "api-gateway"}, "method": "GET", "path": "/api/v1/users", "status": 200, "level": "info", "user_id": "u1"}`,
+		`{"service": {"name": "api-gateway"}, "method": "POST", "path": "/api/v1/orders/7", "status": 404, "level": "warn", "error": "user not found"}`,
+		`{"service": {"name": "api-gateway"}, "method": "PUT", "path": "/health", "status": 503, "level": "error", "duration_ms": 1200}`,
+	},
 	"logfmt": {
 		`level=debug route=/b`,
 		`level= route=/e`,
@@ -76,6 +82,9 @@ func streamGroupedStreams() []streamGroupedStream {
 		// job=sm: the label is a stream label and a structured metadata field; job=so: structured metadata only.
 		{labels: map[string]string{"job": "sm", "app": "h", "level": "info"}, lines: "mixed", from: all, metadata: map[string]string{"level": "meta"}},
 		{labels: map[string]string{"job": "so", "app": "i"}, lines: "mixed", from: all, metadata: map[string]string{"level": "meta"}},
+		// job=sp: the bench generator's spaced JSON, level label equal to the line's.
+		{labels: map[string]string{"job": "sp", "app": "m", "level": "info"}, lines: "spaced", from: all},
+		{labels: map[string]string{"job": "sp", "app": "n", "level": "warn"}, lines: "spaced", from: all},
 		// job=js: valid JSON only; job=lf: logfmt only.
 		{labels: map[string]string{"job": "js", "app": "j", "level": "info"}, lines: "json", from: all},
 		{labels: map[string]string{"job": "js", "app": "k", "level": "warn"}, lines: "json", from: all},
@@ -114,13 +123,13 @@ func streamGroupedQueries() []string {
 		return `sum by (` + by + `) (` + fn + `(` + s + pipe + ` [1m]` + rng + `))`
 	}
 	var out []string
-	for _, s := range []string{`{job="sg"}`, `{job="lt"}`, `{job="ln"}`, `{job="nl"}`, `{job="sm"}`, `{job="so"}`, `{job="js"}`, `{job="lf"}`} {
+	for _, s := range []string{`{job="sg"}`, `{job="lt"}`, `{job="ln"}`, `{job="nl"}`, `{job="sm"}`, `{job="so"}`, `{job="js"}`, `{job="lf"}`, `{job="sp"}`} {
 		out = append(out,
 			sum("level", "count_over_time", s, ` | json | logfmt`+streamGroupedDrop, ""),
 			sum("level", "count_over_time", s, ` | json | logfmt`, ""),
 		)
 	}
-	for _, s := range []string{`{job="sg"}`, `{job="js"}`, `{job="lf"}`} {
+	for _, s := range []string{`{job="sg"}`, `{job="js"}`, `{job="lf"}`, `{job="sp"}`} {
 		out = append(out,
 			sum("level", "count_over_time", s, ` | logfmt | json`+streamGroupedDrop, ""),
 			sum("level", "count_over_time", s, ` | logfmt | json`, ""),
@@ -192,7 +201,7 @@ func streamGroupedCutData(q string, mr metricRequest) bool {
 			return false // route is a parsed key, not a stream label
 		}
 	}
-	for _, s := range []string{`{job="sg"}`, `{job="js"}`, `{job="lf"}`, `{job=~"sg|js"}`, `{job="sg"} |= "route"`} {
+	for _, s := range []string{`{job="sg"}`, `{job="js"}`, `{job="lf"}`, `{job="sp"}`, `{job=~"sg|js"}`, `{job="sg"} |= "route"`} {
 		if strings.Contains(q, s+" |") {
 			return true
 		}

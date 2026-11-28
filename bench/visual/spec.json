@@ -2575,9 +2575,6 @@
     "parser-json",
     "parser-logfmt",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "semantics/stream-grouped-sum-skips-parsers"
    ]
   },
   {

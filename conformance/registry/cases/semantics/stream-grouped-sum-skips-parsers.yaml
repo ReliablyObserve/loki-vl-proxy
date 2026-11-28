@@ -101,6 +101,8 @@ gap:
   proxy: 'the cut query counted by VictoriaLogs stats, served after the answer and stream value checks'
   planned_test: 'TestStreamGroupedParsersMatchLoki (internal/querycorpus); TestStreamGroupedParsersAt (internal/queryplan/lower); TestStreamGroupedParsersRoute, TestStreamGroupedAnswerValues, TestStreamGroupedCutOf (internal/proxy)'
   clusters: []
+  visual: none
+  visual_reason: 'the wrong answer is the 24h 400 past -manual-range-metric-row-limit, outside the ranges a PR visual run captures; at 1h and 6h main and the PR render the same series (explore-stream-grouped-parsers holds them), the gain there is time, measured by the perf A/B set parser-stream-grouped'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
