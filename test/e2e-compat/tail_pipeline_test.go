@@ -76,7 +76,10 @@ var tailPipelineQueries = []string{
 	`| drop env="tail"`,
 	`| logfmt | keep msg, app`,
 	`| logfmt | drop msg, level="warn"`,
-	`| drop env="tail" | env="tail"`,
+	// A filter after the drop reads the dropped value as missing: Loki keeps every line (the fixture loses env, the
+	// sentinels have none), where reading the stored value keeps only the sentinels. Every row keeps a sentinel, so
+	// a filter that keeps nothing (env="tail" here) cannot be a row.
+	`| drop env="tail" | env!="tail"`,
 	`| drop env="tail" | env=""`,
 }
 
