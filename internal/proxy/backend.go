@@ -669,7 +669,7 @@ func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams 
 		}
 	}
 	if witness != nil {
-		flagged, err := p.levelWitnessResponse(resp)
+		flagged, err := p.levelWitnessResponse(ctx, resp)
 		if err != nil {
 			return nil, err
 		}

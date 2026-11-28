@@ -316,6 +316,9 @@ func (p *Proxy) seriesFoldPost(ctx context.Context, path string, params, sentPar
 	if full, _ := ctx.Value(levelFullChainKey{}).(bool); full {
 		key += ":full-chain"
 	}
+	if statsReadChunks(ctx) {
+		key += ":chunks" // ends at the bound rather than reading the full chain again (levelWitnessResponse)
+	}
 	status, header, body, err := p.coalescer.DoWithGuardCtx(ctx, key, p.breaker.Allow, func(callCtx context.Context) (*http.Response, error) {
 		release, err := p.takeStatsQueryRangeSlot(callCtx)
 		if err != nil {

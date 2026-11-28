@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -654,13 +654,18 @@ func canonicalLabelsKey(labels map[string]string) string {
 	if len(labels) == 0 {
 		return "{}"
 	}
-	keys := make([]string, 0, len(labels))
-	for key := range labels {
+	// One allocation for the text (its length is known before it is written) and none for a few keys.
+	var buf [16]string
+	keys := buf[:0]
+	size := 1
+	for key, value := range labels {
 		keys = append(keys, key)
+		size += len(key) + len(value) + 4
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var b strings.Builder
+	b.Grow(size)
 	b.WriteByte('{')
 	for i, key := range keys {
 		if i > 0 {
@@ -668,7 +673,11 @@ func canonicalLabelsKey(labels map[string]string) string {
 		}
 		b.WriteString(key)
 		b.WriteString(`="`)
-		b.WriteString(strings.ReplaceAll(labels[key], `"`, `\"`))
+		if value := labels[key]; strings.IndexByte(value, '"') >= 0 {
+			b.WriteString(strings.ReplaceAll(value, `"`, `\"`))
+		} else {
+			b.WriteString(value)
+		}
 		b.WriteByte('"')
 	}
 	b.WriteByte('}')

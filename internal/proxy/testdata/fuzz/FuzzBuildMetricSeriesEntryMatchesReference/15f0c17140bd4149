@@ -1,0 +1,7 @@
+go test fuzz v1
+string("\"0\"=01,˯Ûڋɼ\u0383ӡʋɦ0!=0100")
+string("")
+string("")
+bool(true)
+byte('\x16')
+bool(true)
