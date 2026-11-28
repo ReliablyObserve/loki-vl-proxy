@@ -2913,7 +2913,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
 	// Loki's structured-metadata series for the stats reads of a series per stream (metadata_series.go).
-	r = r.WithContext(p.withMetadataSeries(r.Context()))
+	r = r.WithContext(p.withMetadataSeries(r.Context(), logqlQuery))
 	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
 	r = r.WithContext(withReadGridNote(r.Context()))
 
@@ -3398,8 +3398,9 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 		dst = append(dst, "/sn-stream"...)
 	}
 	// A metric answer read with Loki's structured-metadata series (-structured-metadata-series-identity) is kept apart
-	// from one read without it; every key stays as it was while the flag is off.
-	if p.structuredMetadataSeries && query {
+	// from one read without it; every key stays as it was while the flag is off, and for the queries the split cannot
+	// change (metadataSplitChanges), which read as without it.
+	if p.structuredMetadataSeries && query && metadataSplitChanges(r.FormValue("query")) {
 		dst = append(dst, "/sm-series"...)
 	}
 	return dst
@@ -3449,7 +3450,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
 	// Loki's structured-metadata series for the stats reads of a series per stream (metadata_series.go).
-	r = r.WithContext(p.withMetadataSeries(r.Context()))
+	r = r.WithContext(p.withMetadataSeries(r.Context(), logqlQuery))
 	if p.log.Enabled(r.Context(), slog.LevelDebug) {
 		p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 	}

@@ -75,7 +75,7 @@ func TestMetadataSeriesParams(t *testing.T) {
 	byLabel := `app:="a" | stats by (app) count()`
 
 	off := smTestProxy(t, srv.URL, false)
-	ctx := off.withMetadataSeries(context.Background())
+	ctx := off.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
 	params := smStatsParams(perStream)
 	if got := off.metadataSeriesParams(ctx, "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("flag off: %s", got.Get("query"))
@@ -85,8 +85,8 @@ func TestMetadataSeriesParams(t *testing.T) {
 	}
 
 	on := smTestProxy(t, srv.URL, true)
-	ctx = on.withMetadataSeries(context.Background())
-	if on.withMetadataSeries(ctx) != ctx {
+	ctx = on.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
+	if on.withMetadataSeries(ctx, `count by (app) (count_over_time({a="b"}[5m]))`) != ctx {
 		t.Fatal("marked twice")
 	}
 	got := on.metadataSeriesParams(ctx, "/select/logsql/stats_query_range", params).Get("query")
@@ -124,12 +124,12 @@ func TestMetadataSeriesParams(t *testing.T) {
 	plainSrv := httptest.NewServer(plain)
 	defer plainSrv.Close()
 	p2 := smTestProxy(t, plainSrv.URL, true)
-	if got := p2.metadataSeriesParams(p2.withMetadataSeries(context.Background()), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
+	if got := p2.metadataSeriesParams(p2.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("no metadata: %s", got.Get("query"))
 	}
 	// A listing that fails sends the read as it is.
 	down := smTestProxy(t, "http://127.0.0.1:1", true)
-	if got := down.metadataSeriesParams(down.withMetadataSeries(context.Background()), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
+	if got := down.metadataSeriesParams(down.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("listing failed: %s", got.Get("query"))
 	}
 }
@@ -151,7 +151,7 @@ func TestMetadataSeriesKeysAndReadLimit(t *testing.T) {
 	if k0, k1 := off.responseProfileCacheKey(r, "labels"), on.responseProfileCacheKey(r, "labels"); k0 != k1 {
 		t.Errorf("labels: %q %q", k0, k1)
 	}
-	ctx := on.withMetadataSeries(context.Background())
+	ctx := on.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
 	if got := on.statsReadSeriesLimit(ctx); got != on.resolvedMaxStatsQuerySeries(ctx) {
 		t.Errorf("unfolded read: %d", got)
 	}
@@ -160,7 +160,7 @@ func TestMetadataSeriesKeysAndReadLimit(t *testing.T) {
 	if got := on.statsReadSeriesLimit(folded); got != rows {
 		t.Errorf("folded read: %d, want %d", got, rows)
 	}
-	offFolded, _ := withMatrixFold(off.withMetadataSeries(context.Background()), []foldLevel{{}})
+	offFolded, _ := withMatrixFold(off.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), []foldLevel{{}})
 	if got := off.statsReadSeriesLimit(offFolded); got != off.resolvedMaxStatsQuerySeries(offFolded) {
 		t.Errorf("flag off folded read: %d", got)
 	}

@@ -11,8 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
 // flagMetadataSeriesMaxReadRows bounds the rows of one rebuilt VictoriaLogs read.
@@ -116,9 +118,11 @@ func (m *metadataSeriesMemo) add(e metadataSeriesEntry) {
 	}
 }
 
-// withMetadataSeries marks ctx's reads for the identity when the operator declared it.
-func (p *Proxy) withMetadataSeries(ctx context.Context) context.Context {
-	if !p.structuredMetadataSeries {
+// withMetadataSeries marks ctx's reads for the identity when the operator declared it and the split can change the
+// answer of query (metadataSplitChanges): a sum by labels, and every other shape the split cannot change, reads as
+// without the flag.
+func (p *Proxy) withMetadataSeries(ctx context.Context, query string) context.Context {
+	if !p.structuredMetadataSeries || !metadataSplitChanges(query) {
 		return ctx
 	}
 	if _, ok := ctx.Value(metadataSeriesKey{}).(*metadataSeriesMemo); ok {
@@ -438,3 +442,59 @@ func isMetadataReadRowsError(err error) bool {
 // metadataReadRowsError is a folded read over -structured-metadata-series-max-read-rows: the time chunks read it
 // again in smaller chunks (noteStatsReadOverflow), and a single step over it is the chunks' limit error.
 type metadataReadRowsError struct{ rowLimitError }
+
+// metadataSplitChanges reports whether Loki's structured-metadata series can change query's answer, from its plan:
+// a log query, a sum by labels (or of everything) over a function whose value adds up over series (count_over_time,
+// rate, bytes_over_time, bytes_rate, sum_over_time), a max by over max_over_time, a min by over min_over_time and an
+// absent_over_time answer the same over a series per stream, and everything above such an aggregation reads its
+// groups. A query whose plan is unknown, and every other shape, is answered with the split.
+func metadataSplitChanges(query string) bool {
+	plan := resolvedPlan(query)
+	if plan == nil {
+		return true
+	}
+	return splitChangesNode(plan.Root)
+}
+
+func splitChangesNode(n queryplan.Node) bool {
+	switch n := n.(type) {
+	case *queryplan.LogSelect, *queryplan.Scalar, *queryplan.VectorLit:
+		return false
+	case *queryplan.RangeAgg:
+		return n.Op != logql.RangeAbsentOverTime
+	case *queryplan.VectorAgg:
+		if ra, ok := n.In.(*queryplan.RangeAgg); ok {
+			return (n.By != nil && n.By.Without) || !splitFreeAggregation(n.Op, ra)
+		}
+		// An aggregation over groups the split does not change reads those groups.
+		return splitChangesNode(n.In)
+	case *queryplan.BinOp:
+		return splitChangesNode(n.L) || splitChangesNode(n.R)
+	case *queryplan.LabelReplace:
+		return splitChangesNode(n.In)
+	case *queryplan.Rank:
+		// A ranking of the series of n.In: of groups the split does not change, the same ranking.
+		return splitChangesNode(n.In)
+	}
+	return true
+}
+
+// splitFreeAggregation reports a vector aggregation by labels over ra whose value per group is the same whether the
+// group's samples come from a series per stream or a series per stream and metadata set.
+func splitFreeAggregation(op logql.VectorOp, ra *queryplan.RangeAgg) bool {
+	if ra.By != nil {
+		return false
+	}
+	switch op {
+	case logql.VectorSum:
+		switch ra.Op {
+		case logql.RangeCountOverTime, logql.RangeRate, logql.RangeBytesOverTime, logql.RangeBytesRate, logql.RangeSumOverTime:
+			return true
+		}
+	case logql.VectorMax:
+		return ra.Op == logql.RangeMaxOverTime
+	case logql.VectorMin:
+		return ra.Op == logql.RangeMinOverTime
+	}
+	return false
+}

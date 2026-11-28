@@ -16,7 +16,7 @@ import (
 //
 // conformance: metric-identity/structured-metadata-splits-series
 func TestStreamSeriesFold(t *testing.T) {
-	on := (&Proxy{structuredMetadataSeries: true}).withMetadataSeries(context.Background())
+	on := (&Proxy{structuredMetadataSeries: true}).withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
 	spec := statsCompatSpec{GroupBy: []string{"service_name", "_stream", "level", "detected_level"}}
 	by := func(merge withoutMerge, labels ...string) *matrixFold {
 		set := map[string]bool{}
@@ -72,5 +72,38 @@ func TestStreamSeriesFold(t *testing.T) {
 	}
 	if (&seriesFoldRead{}).seriesLabel() != dynamicSeriesHashLabel {
 		t.Error("parser identity's series label")
+	}
+}
+
+// Which queries the split can change: every other one reads, and is keyed, as without the flag.
+//
+// conformance: metric-identity/structured-metadata-splits-series
+func TestMetadataSplitChanges(t *testing.T) {
+	for q, want := range map[string]bool{
+		`{a="b"}`:        false,
+		`{a="b"} | json`: false,
+		`sum by (level_extracted) (count_over_time({a="b"} | json [5m]))`: false,
+		`sum(rate({a="b"}[5m]))`:                                              false,
+		`sum by (app) (bytes_over_time({a="b"}[5m]))`:                         false,
+		`sum by (app) (sum_over_time({a="b"} | unwrap x [5m]))`:               false,
+		`max by (app) (max_over_time({a="b"} | unwrap x [5m]))`:               false,
+		`min(min_over_time({a="b"} | unwrap x [5m]))`:                         false,
+		`absent_over_time({a="b"}[5m])`:                                       false,
+		`topk(3, sum by (app) (rate({a="b"}[5m])))`:                           false,
+		`count by (x) (sum by (x, y) (count_over_time({a="b"}[5m])))`:         false,
+		`sum by (app) (rate({a="b"}[5m])) / sum by (app) (rate({c="d"}[5m]))`: false,
+		`count_over_time({a="b"}[5m])`:                                        true,
+		`count by (app) (count_over_time({a="b"}[5m]))`:                       true,
+		`avg by (app) (rate({a="b"}[5m]))`:                                    true,
+		`sum without (pod) (count_over_time({a="b"}[5m]))`:                    true,
+		`sum by (app) (max_over_time({a="b"} | unwrap x [5m]))`:               true,
+		`max by (app) (count_over_time({a="b"}[5m]))`:                         true,
+		`topk(3, count_over_time({a="b"}[5m]))`:                               true,
+		`sum by (s) (rate({a="b"}[5m]) / count_over_time({a="b"}[5m]))`:       true,
+		`sum by (app) (sum by (app, pod) (rate({a="b"}[5m])) > 1)`:            false,
+	} {
+		if got := metadataSplitChanges(q); got != want {
+			t.Errorf("%s: %v, want %v", q, got, want)
+		}
 	}
 }
