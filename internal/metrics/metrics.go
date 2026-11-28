@@ -1450,9 +1450,8 @@ func (m *Metrics) RecordParserMetricEvaluator(evaluator, reason string) {
 // stepFactorBuckets are the bounds of the step factor histogram: effective step / requested step.
 var stepFactorBuckets = []float64{2, 4, 8, 16, 32, 64, 128, 256, 512, 1024}
 
-// RecordStepAdjusted counts an answer at a raised step (factor > 1), or a request the step layer could not answer at
-// one (factor 0, reason saying why).
-func (m *Metrics) RecordStepAdjusted(endpoint, mode, reason string, factor int64) {
+// RecordStepAdjusted counts an answer at a raised step; factor is the effective step over the requested one.
+func (m *Metrics) RecordStepAdjusted(endpoint, mode, reason string, factor float64) {
 	if m == nil || endpoint == "" {
 		return
 	}
@@ -1475,7 +1474,7 @@ func (m *Metrics) RecordStepAdjusted(endpoint, mode, reason string, factor int64
 	}
 	counter.Add(1)
 	if factor > 1 {
-		hist.observe(float64(factor))
+		hist.observe(factor)
 	}
 }
 

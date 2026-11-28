@@ -2239,7 +2239,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 func (p *Proxy) writeBareParserSeriesLimitError(w http.ResponseWriter, start time.Time, originalQuery string, err error) {
 	p.writeError(w, http.StatusBadRequest, err.Error())
 	elapsed := time.Since(start)
-	p.recordRangeRequest(r.Context(), "query_range", http.StatusBadRequest, elapsed)
+	p.metrics.RecordRequest("query_range", http.StatusBadRequest, elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, true)
 }
 

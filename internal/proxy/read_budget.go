@@ -111,12 +111,6 @@ func readGridOf(ctx context.Context) (readGrid, bool) {
 
 // The effective step of a range metric request whose read passed a proxy-internal bound (step_adapt.go).
 //
-// The effective step is a whole multiple k*step of the requested step, and its evaluation times are times of Loki's
-// answer at the requested step: with the bounds moved onto the step grid (-align-queries-with-step, Loki's
-// align_queries_with_step) the effective request evaluates at the multiples of k*step inside the requested range,
-// which are multiples of the step; without it, at start + j*k*step. Each value is the value Loki returns at that time,
-// because the range window of every range aggregation stays what the query says: only the number of points falls.
-//
 // The cost of a read is its buckets per series. The bucket reads (stats_query_range and the listed chunks) read
 // buckets of gcd(step, window) over the window before the range and the range, (range + window) / gcd; a window
 // shorter than the step reads one bucket per step. Past heavyQueryBucketThreshold buckets the evaluators read raw
@@ -125,13 +119,29 @@ func readGridOf(ctx context.Context) (readGrid, bool) {
 // read or the window grids of a recurrence over the bytes the proxy buffers) needs fewer buckets of its own kind:
 // at most its buckets times the budget share (-range-metric-step-budget-bytes of -backend-max-buffered-response-bytes,
 // one half by default), so the next read holds the budget with the margin the estimate needs.
+//
+// The rule (owner 2026-11-28, "close to loki": as close to Loki's answer as the limits allow, its point density
+// included):
+//   - the effective step is the smallest whole multiple k*step of the requested step that fits, when it is at most
+//     stepMultipleDensity times the smallest step of any whole number of milliseconds that fits: its times are times
+//     of Loki's answer at the requested step and its values Loki's values at them;
+//   - otherwise (a requested step that shares no large factor with the window, 53 ms over [1h]: the smallest
+//     multiple that fits is 19.08 s, 5 points over 80 s, where 360 ms fits with 223) it is that smallest step: the
+//     answer is Loki's answer to the same query at that step.
+//
+// Times are anchored as Loki anchors a request at the effective step: with the bounds moved onto the step grid
+// (-align-queries-with-step, Loki's align_queries_with_step) at the multiples of the effective step inside the
+// requested range, without it at start + j * effective step. Each value is Loki's at its time, because the range
+// window of every range aggregation stays what the query says.
+
+// stepMultipleDensity is how many times coarser than the finest fitting step the smallest fitting multiple of the
+// requested step may be and still be chosen.
+const stepMultipleDensity = 2
 
 // stepCandidateInput is what the choice of an effective step reads.
 type stepCandidateInput struct {
-	// step is the requested step (whole milliseconds); prev the multiple of it the failed read used (1 for the
-	// request as sent).
-	step time.Duration
-	prev int64
+	// step is the requested step (whole milliseconds); prev the step the failed read used (0: the request as sent).
+	step, prev time.Duration
 	// startNs and endNs are the requested bounds; onGrid evaluates the effective request at multiples of its step.
 	startNs, endNs int64
 	onGrid         bool
@@ -150,33 +160,32 @@ type stepCandidateInput struct {
 	halve bool
 }
 
-// effectiveBounds are the bounds of the request at k times the step.
-func effectiveBounds(in stepCandidateInput, k int64) (startNs, endNs int64, ok bool) {
-	eff := int64(in.step) * k
-	if eff <= 0 || in.endNs < in.startNs {
+// effectiveBounds are the bounds of the request at the effective step eff.
+func effectiveBounds(in stepCandidateInput, eff time.Duration) (startNs, endNs int64, ok bool) {
+	e := int64(eff)
+	if e <= 0 || in.endNs < in.startNs {
 		return 0, 0, false
 	}
 	if in.onGrid {
-		startNs = ceilDiv(in.startNs, eff) * eff
-		endNs = floorDiv(in.endNs, eff) * eff
+		startNs = ceilDiv(in.startNs, e) * e
+		endNs = floorDiv(in.endNs, e) * e
 	} else {
 		startNs = in.startNs
-		endNs = in.startNs + (in.endNs-in.startNs)/eff*eff
+		endNs = in.startNs + (in.endNs-in.startNs)/e*e
 	}
 	// Two points at least: a range shorter than its step is a query-split residual to Logs Drilldown
 	// (isQuerySplitResidual), and one point says nothing a coarser grid could not.
-	return startNs, endNs, endNs-startNs >= eff
+	return startNs, endNs, endNs-startNs >= e
 }
 
 func ceilDiv(a, b int64) int64 { return -floorDiv(-a, b) }
 
-// bucketsAt is the buckets per series of a bucket read of one window at k times the step.
-func bucketsAt(in stepCandidateInput, k int64, window time.Duration) int64 {
-	startNs, endNs, ok := effectiveBounds(in, k)
+// bucketsAt is the buckets per series of a bucket read of one window at the effective step eff.
+func bucketsAt(in stepCandidateInput, eff, window time.Duration) int64 {
+	startNs, endNs, ok := effectiveBounds(in, eff)
 	if !ok {
 		return 0
 	}
-	eff := time.Duration(int64(in.step) * k)
 	span := time.Duration(endNs - startNs)
 	if window < eff {
 		return int64(span/eff) + 1
@@ -188,23 +197,27 @@ func bucketsAt(in stepCandidateInput, k int64, window time.Duration) int64 {
 	return int64((span + window) / bucket)
 }
 
-// gridBucketsAt is the buckets per series of the read a failed read noted, at k times the step: the window grids of a
-// recurrence read one bucket per step, the bucket reads the gcd grid.
-func gridBucketsAt(in stepCandidateInput, k int64, g readGrid) int64 {
-	if g.route == "window-grids" {
-		startNs, endNs, ok := effectiveBounds(in, k)
-		if !ok {
-			return 0
-		}
-		return (endNs-startNs)/(int64(in.step)*k) + 1
+// pointsAt is the points per series at the effective step eff.
+func pointsAt(in stepCandidateInput, eff time.Duration) int64 {
+	startNs, endNs, ok := effectiveBounds(in, eff)
+	if !ok {
+		return 0
 	}
-	return bucketsAt(in, k, g.window)
+	return (endNs-startNs)/int64(eff) + 1
 }
 
-// effectiveStepMultiple is the smallest multiple k of the step, above in.prev, whose reads fit: every window's bucket
-// read within maxBuckets, and every read that failed within its bound at most share of its buckets. ok is false when
-// no multiple within the floor, the ceiling and the range fits.
-func effectiveStepMultiple(in stepCandidateInput) (int64, bool) {
+// gridBucketsAt is the buckets per series of the read a failed read noted, at the effective step eff: the window
+// grids of a recurrence read one bucket per step, the bucket reads the gcd grid.
+func gridBucketsAt(in stepCandidateInput, eff time.Duration, g readGrid) int64 {
+	if g.route == "window-grids" {
+		return pointsAt(in, eff)
+	}
+	return bucketsAt(in, eff, g.window)
+}
+
+// effectiveStep is the step the request is served at (the rule above). ok is false when no step within the floor,
+// the ceiling and the range fits, or none is known to change the failed read.
+func effectiveStep(in stepCandidateInput) (time.Duration, bool) {
 	if in.step < time.Millisecond || in.step%time.Millisecond != 0 || in.endNs <= in.startNs || len(in.windows) == 0 {
 		return 0, false
 	}
@@ -239,56 +252,72 @@ func effectiveStepMultiple(in stepCandidateInput) (int64, bool) {
 			shrinks = append(shrinks, shrink{g, int64(math.Ceil(float64(g.buckets) * share))})
 		}
 	}
-	points := func(k int64) int64 {
-		startNs, endNs, ok := effectiveBounds(in, k)
-		if !ok {
-			return 0
-		}
-		return (endNs-startNs)/(int64(in.step)*k) + 1
+	prev := in.prev
+	if prev < in.step {
+		prev = in.step
 	}
-	prev := max(in.prev, 1)
-	fitsAt := func(k int64) bool {
+	fitsAt := func(eff time.Duration) bool {
 		for _, w := range in.windows {
-			if b := bucketsAt(in, k, w); b == 0 || b > maxBuckets {
+			if b := bucketsAt(in, eff, w); b == 0 || b > maxBuckets {
 				return false
 			}
 		}
 		return true
 	}
+	bucketBound := len(shrinks) == 0 && !fitsAt(prev)
 	halveFrom := int64(0)
-	if len(shrinks) == 0 && fitsAt(prev) {
+	if len(shrinks) == 0 && !bucketBound {
 		if !in.halve {
 			// A read that failed with every window within the bound and no grid a coarser step shrinks (raw rows
 			// read for another reason, a read the model does not see): no step is known to change it.
 			return 0, false
 		}
-		halveFrom = int64(math.Ceil(float64(points(prev)) * share))
+		halveFrom = int64(math.Ceil(float64(pointsAt(in, prev)) * share))
 	}
-	lo := prev + 1
-	if in.floor > 0 {
-		lo = max(lo, ceilDiv(int64(in.floor), int64(in.step)))
-	}
-	hi := (in.endNs - in.startNs) / int64(in.step)
-	if in.ceiling > 0 && int64(in.ceiling)/int64(in.step) < hi {
-		hi = int64(in.ceiling) / int64(in.step)
-	}
-	for k := lo; k <= hi; k++ {
-		if !fitsAt(k) {
-			continue
+	fits := func(eff time.Duration) bool {
+		if in.floor > 0 && eff < in.floor || in.ceiling > 0 && eff > in.ceiling || !fitsAt(eff) {
+			return false
 		}
-		if halveFrom > 0 && points(k) > halveFrom {
-			continue
+		if halveFrom > 0 && pointsAt(in, eff) > halveFrom {
+			return false
 		}
-		fits := true
 		for _, s := range shrinks {
-			if b := gridBucketsAt(in, k, s.grid); b == 0 || b > s.most {
-				fits = false
-				break
+			if b := gridBucketsAt(in, eff, s.grid); b == 0 || b > s.most {
+				return false
 			}
 		}
-		if fits {
-			return k, true
+		return true
+	}
+	span := time.Duration(in.endNs - in.startNs)
+	// The multiples of the requested step, or of an earlier effective step off its grid.
+	inc := in.step
+	if prev%in.step != 0 {
+		inc = prev
+	}
+	multiple := time.Duration(0)
+	for eff := prev + inc; eff <= span; eff += inc {
+		if fits(eff) {
+			multiple = eff
+			break
 		}
 	}
-	return 0, false
+	if !bucketBound || prev != in.step {
+		// The bucket bound alone decides how far apart Loki's grid and the finest fitting step are: a read that
+		// shrinks, or a later retry, stays on the multiples.
+		return multiple, multiple > 0
+	}
+	// The finest step of whole milliseconds that fits; no finer than the multiple bound allows is worth the scan.
+	limit := span
+	if multiple > 0 {
+		limit = multiple
+	}
+	for eff := prev + time.Millisecond; eff < limit; eff += time.Millisecond {
+		if fits(eff) {
+			if multiple > 0 && multiple <= stepMultipleDensity*eff {
+				return multiple, true
+			}
+			return eff, true
+		}
+	}
+	return multiple, multiple > 0
 }

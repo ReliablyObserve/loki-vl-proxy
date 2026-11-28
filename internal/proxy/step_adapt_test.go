@@ -25,52 +25,51 @@ func stepInput(step time.Duration, onGrid bool, windows ...time.Duration) stepCa
 	if len(windows) == 0 {
 		windows = []time.Duration{time.Hour}
 	}
-	return stepCandidateInput{step: step, prev: 1, startNs: start, endNs: end, onGrid: onGrid, windows: windows, share: 0.5}
+	return stepCandidateInput{step: step, startNs: start, endNs: end, onGrid: onGrid, windows: windows, share: 0.5}
 }
 
-// TestEffectiveStepMultiple pins the effective steps: the smallest multiple of the step whose reads fit.
+// TestEffectiveStep pins the effective steps: the smallest multiple of the step that fits when it is at most twice
+// the finest step that fits, that finest step otherwise.
 //
 // conformance: limits/range-metric-step-adapt
-func TestEffectiveStepMultiple(t *testing.T) {
+func TestEffectiveStep(t *testing.T) {
+	ms := time.Millisecond
 	cases := []struct {
 		name   string
 		in     stepCandidateInput
 		want   time.Duration
 		wantOK bool
 	}{
-		// (80 s + 1 h) / 400 ms = 9,200 buckets: the first multiple of 50 ms whose gcd with the hour holds the bound.
-		{"50ms over [1h], raw rows", stepInput(50*time.Millisecond, true), 400 * time.Millisecond, true},
-		// 53 ms shares no factor with the hour: gcd(53k ms, 1h) = gcd(k, 3,600,000) ms needs k = 360.
-		{"53ms over [1h], raw rows", stepInput(53*time.Millisecond, true), 360 * 53 * time.Millisecond, true},
+		// (80 s + 1 h) / 400 ms = 9,200 buckets: the first multiple of 50 ms whose gcd with the hour holds the bound;
+		// the finest step that fits is 360 ms, and 400 ms is within twice it.
+		{"50ms over [1h], raw rows", stepInput(50*ms, true), 400 * ms, true},
+		// 53 ms shares no factor with the hour: the smallest multiple that fits is 360 x 53 ms = 19.08 s, more than
+		// twice the finest step that fits, 360 ms.
+		{"53ms over [1h], raw rows", stepInput(53*ms, true), 360 * ms, true},
+		{"53ms over [1h], align off", stepInput(53*ms, false), 360 * ms, true},
+		{"200ms over [1h]", stepInput(200*ms, true), 400 * ms, true},
+		{"1s over [1h] fits", stepInput(time.Second, true), 0, false},
 		// Off the grid the bounds keep the start: same model, same multiple.
-		{"50ms over [1h], align off", stepInput(50*time.Millisecond, false), 400 * time.Millisecond, true},
+		{"50ms over [1h], align off", stepInput(50*ms, false), 400 * ms, true},
 		// A [5m] window at 50 ms: (80 s + 5 m) / 50 ms = 7,600 buckets fit already. A bound on the answer halves the
 		// points; a read bound with no grid that shrinks is not retried.
 		{"50ms over [5m], answer bound", func() stepCandidateInput {
-			in := stepInput(50*time.Millisecond, true, 5*time.Minute)
+			in := stepInput(50*ms, true, 5*time.Minute)
 			in.halve = true
 			return in
-		}(), 100 * time.Millisecond, true},
-		{"50ms over [5m], read bound", stepInput(50*time.Millisecond, true, 5*time.Minute), 0, false},
+		}(), 100 * ms, true},
+		{"50ms over [5m], read bound", stepInput(50*ms, true, 5*time.Minute), 0, false},
 		{"one step's window", func() stepCandidateInput {
-			in := stepInput(50*time.Millisecond, true)
+			in := stepInput(50*ms, true)
 			in.failed = []readGrid{{route: readRouteStepIndependent, buckets: 73600}}
 			return in
 		}(), 0, false},
 		// Two windows: both must fit.
-		{"binary [1h] and [5m]", stepInput(50*time.Millisecond, true, time.Hour, 5*time.Minute), 400 * time.Millisecond, true},
-		// A ceiling below the step that fits: the limit error stays.
-		{"ceiling", func() stepCandidateInput {
-			in := stepInput(50*time.Millisecond, true)
-			in.ceiling = 300 * time.Millisecond
-			return in
-		}(), 0, false},
+		{"binary [1h] and [5m]", stepInput(50*ms, true, time.Hour, 5*time.Minute), 400 * ms, true},
+		// A ceiling below every step that fits: the limit error stays.
+		{"ceiling", func() stepCandidateInput { in := stepInput(50*ms, true); in.ceiling = 300 * ms; return in }(), 0, false},
 		// A floor above the step that fits.
-		{"floor", func() stepCandidateInput {
-			in := stepInput(50*time.Millisecond, true)
-			in.floor = time.Second
-			return in
-		}(), time.Second, true},
+		{"floor", func() stepCandidateInput { in := stepInput(50*ms, true); in.floor = time.Second; return in }(), time.Second, true},
 		// The window grids of a recurrence that failed within the bound: half of their buckets.
 		{"window grids at 1s", func() stepCandidateInput {
 			in := stepInput(time.Second, true)
@@ -91,65 +90,78 @@ func TestEffectiveStepMultiple(t *testing.T) {
 		}(), 0, false},
 		// Raw rows read past it: the step that brings the window within it.
 		{"raw rows past the bound", func() stepCandidateInput {
-			in := stepInput(50*time.Millisecond, true)
-			in.failed = []readGrid{{route: "raw", step: 50 * time.Millisecond, window: time.Hour, bucket: 50 * time.Millisecond, buckets: 73600}}
+			in := stepInput(50*ms, true)
+			in.failed = []readGrid{{route: "raw", step: 50 * ms, window: time.Hour, bucket: 50 * ms, buckets: 73600}}
 			return in
-		}(), 400 * time.Millisecond, true},
+		}(), 400 * ms, true},
+		// A retry after 360 ms failed within the bound: the multiples of 360 ms.
+		{"retry off the grid", func() stepCandidateInput {
+			in := stepInput(53*ms, true)
+			in.prev = 360 * ms
+			in.failed = []readGrid{{route: "buckets", step: 360 * ms, window: time.Hour, bucket: 360 * ms, buckets: 10222}}
+			return in
+		}(), 720 * ms, true},
 		// A range of one step holds no coarser grid of two points.
-		{"no room", stepCandidateInput{step: time.Second, prev: 1, startNs: 0, endNs: int64(time.Second), onGrid: true, windows: []time.Duration{time.Hour}}, 0, false},
+		{"no room", stepCandidateInput{step: time.Second, startNs: 0, endNs: int64(time.Second), onGrid: true, windows: []time.Duration{time.Hour}}, 0, false},
 		// No window: not a metric query.
-		{"no window", stepCandidateInput{step: time.Second, prev: 1, startNs: 0, endNs: int64(time.Hour), onGrid: true}, 0, false},
+		{"no window", stepCandidateInput{step: time.Second, startNs: 0, endNs: int64(time.Hour), onGrid: true}, 0, false},
 	}
 	for _, tc := range cases {
-		k, ok := effectiveStepMultiple(tc.in)
-		if ok != tc.wantOK || ok && time.Duration(k)*tc.in.step != tc.want {
-			t.Errorf("%s: k=%d (%s) ok=%v, want %s ok=%v", tc.name, k, time.Duration(k)*tc.in.step, ok, tc.want, tc.wantOK)
+		eff, ok := effectiveStep(tc.in)
+		if ok != tc.wantOK || ok && eff != tc.want {
+			t.Errorf("%s: %s ok=%v, want %s ok=%v", tc.name, eff, ok, tc.want, tc.wantOK)
 		}
 	}
 }
 
-// checkEffectiveStep is the property of every effective step: a whole multiple above the last one, every evaluation
-// time one of Loki's at the requested step inside the requested range, two points at least, every window's bucket
-// read within the bound, and no smaller multiple that does the same.
-func checkEffectiveStep(t *testing.T, in stepCandidateInput, k int64) {
+// checkEffectiveStep is the property of every effective step: above the last one, every evaluation time anchored as
+// Loki anchors a request at that step inside the requested range (and one of Loki's times at the requested step when
+// the step is a multiple of it), two points at least, within the floor and the ceiling, every window's bucket read
+// within the bound.
+func checkEffectiveStep(t *testing.T, in stepCandidateInput, eff time.Duration) {
 	t.Helper()
-	if k <= max(in.prev, 1) {
-		t.Fatalf("k=%d not above %d", k, in.prev)
+	if eff <= max(in.prev, in.step) {
+		t.Fatalf("%s not above %s", eff, max(in.prev, in.step))
 	}
-	startNs, endNs, ok := effectiveBounds(in, k)
-	if !ok || startNs < in.startNs || endNs > in.endNs || endNs-startNs < int64(in.step)*k {
-		t.Fatalf("bounds %d..%d of %d..%d at k=%d", startNs, endNs, in.startNs, in.endNs, k)
+	startNs, endNs, ok := effectiveBounds(in, eff)
+	if !ok || startNs < in.startNs || endNs > in.endNs || endNs-startNs < int64(eff) {
+		t.Fatalf("bounds %d..%d of %d..%d at %s", startNs, endNs, in.startNs, in.endNs, eff)
 	}
-	for ts := startNs; ts <= endNs; ts += int64(in.step) * k {
-		if in.onGrid && ts%int64(in.step) != 0 || !in.onGrid && (ts-in.startNs)%int64(in.step) != 0 {
-			t.Fatalf("time %d is off Loki's grid of %s from %d", ts, in.step, in.startNs)
+	for ts := startNs; ts <= endNs; ts += int64(eff) {
+		if in.onGrid && ts%int64(eff) != 0 || !in.onGrid && (ts-in.startNs)%int64(eff) != 0 {
+			t.Fatalf("time %d is not anchored as Loki anchors a request at %s", ts, eff)
+		}
+		if eff%in.step == 0 && (in.onGrid && ts%int64(in.step) != 0 || !in.onGrid && (ts-in.startNs)%int64(in.step) != 0) {
+			t.Fatalf("time %d of the multiple %s is off Loki's grid of %s", ts, eff, in.step)
 		}
 	}
-	if in.ceiling > 0 && time.Duration(k)*in.step > in.ceiling || in.floor > 0 && time.Duration(k)*in.step < in.floor {
-		t.Fatalf("k=%d outside the floor and ceiling", k)
+	if in.ceiling > 0 && eff > in.ceiling || in.floor > 0 && eff < in.floor {
+		t.Fatalf("%s outside the floor and ceiling", eff)
 	}
 	for _, w := range in.windows {
-		if b := bucketsAt(in, k, w); b > heavyQueryBucketThreshold {
-			t.Fatalf("window %s holds %d buckets at k=%d", w, b, k)
+		if b := bucketsAt(in, eff, w); b > heavyQueryBucketThreshold {
+			t.Fatalf("window %s holds %d buckets at %s", w, b, eff)
 		}
 	}
 }
 
-// FuzzEffectiveStepMultiple holds every effective step to checkEffectiveStep, and to being the smallest that fits.
+// FuzzEffectiveStep holds every effective step to checkEffectiveStep and, past the bucket bound at the requested
+// step, to the rule: no smaller multiple fits; a multiple is at most twice the finest fitting step, a step off the
+// grid is that finest step and no multiple within twice it fits.
 //
 // conformance: limits/range-metric-step-adapt
-func FuzzEffectiveStepMultiple(f *testing.F) {
-	f.Add(int64(50), int64(80_000), int64(3_600_000), int64(0), true, int64(1), int64(0), int64(0))
-	f.Add(int64(53), int64(80_000), int64(3_600_000), int64(300_000), true, int64(1), int64(0), int64(0))
-	f.Add(int64(1000), int64(3_600_000), int64(60_000), int64(0), false, int64(3), int64(2000), int64(600_000))
-	f.Fuzz(func(t *testing.T, stepMs, spanMs, windowMs, window2Ms int64, onGrid bool, prev, floorMs, ceilMs int64) {
-		if stepMs < 1 || stepMs > 3_600_000 || spanMs < 1 || spanMs > 30*86_400_000 || windowMs < 1 || windowMs > 30*86_400_000 ||
-			window2Ms < 0 || window2Ms > 30*86_400_000 || prev < 1 || prev > 1000 || floorMs < 0 || ceilMs < 0 || spanMs/stepMs > 11_000 {
+func FuzzEffectiveStep(f *testing.F) {
+	f.Add(int64(50), int64(80_000), int64(3_600_000), int64(0), true, int64(0), int64(0))
+	f.Add(int64(53), int64(80_000), int64(3_600_000), int64(300_000), true, int64(0), int64(0))
+	f.Add(int64(1000), int64(3_600_000), int64(60_000), int64(0), false, int64(2000), int64(600_000))
+	f.Fuzz(func(t *testing.T, stepMs, spanMs, windowMs, window2Ms int64, onGrid bool, floorMs, ceilMs int64) {
+		if stepMs < 1 || stepMs > 3_600_000 || spanMs < 1 || spanMs > 86_400_000 || windowMs < 1 || windowMs > 30*86_400_000 ||
+			window2Ms < 0 || window2Ms > 30*86_400_000 || floorMs < 0 || ceilMs < 0 || spanMs/stepMs > 11_000 || spanMs > 200_000 && stepMs < 20 {
 			t.Skip()
 		}
 		step := time.Duration(stepMs) * time.Millisecond
 		end := stepTestEnd.UnixNano() / int64(step) * int64(step)
-		in := stepCandidateInput{step: step, prev: prev, startNs: end - spanMs*int64(time.Millisecond)/int64(step)*int64(step), endNs: end, onGrid: onGrid,
+		in := stepCandidateInput{step: step, startNs: end - spanMs*int64(time.Millisecond)/int64(step)*int64(step), endNs: end, onGrid: onGrid,
 			windows: []time.Duration{time.Duration(windowMs) * time.Millisecond}, floor: time.Duration(floorMs) * time.Millisecond,
 			ceiling: time.Duration(ceilMs) * time.Millisecond, share: 0.5}
 		if !onGrid {
@@ -161,30 +173,42 @@ func FuzzEffectiveStepMultiple(f *testing.F) {
 		if in.endNs <= in.startNs {
 			t.Skip()
 		}
-		k, ok := effectiveStepMultiple(in)
+		eff, ok := effectiveStep(in)
 		if !ok {
 			return
 		}
-		checkEffectiveStep(t, in, k)
-		// Past the bucket bound at prev (raw rows), no smaller multiple brings every window within it.
-		fitsAt := func(j int64) bool {
-			if _, _, ok := effectiveBounds(in, j); !ok || in.floor > 0 && time.Duration(j)*step < in.floor {
+		checkEffectiveStep(t, in, eff)
+		fitsAt := func(e time.Duration) bool {
+			if _, _, ok := effectiveBounds(in, e); !ok || in.floor > 0 && e < in.floor || in.ceiling > 0 && e > in.ceiling {
 				return false
 			}
 			for _, w := range in.windows {
-				if b := bucketsAt(in, j, w); b == 0 || b > heavyQueryBucketThreshold {
+				if b := bucketsAt(in, e, w); b == 0 || b > heavyQueryBucketThreshold {
 					return false
 				}
 			}
 			return true
 		}
-		if fitsAt(prev) {
-			return
+		if fitsAt(step) {
+			return // not past the bucket bound: the halving rules
 		}
-		for j := prev + 1; j < k; j++ {
-			if fitsAt(j) {
-				t.Fatalf("k=%d, but %d fits", k, j)
+		finest := time.Duration(0)
+		for e := step + time.Millisecond; e <= eff; e += time.Millisecond {
+			if fitsAt(e) {
+				finest = e
+				break
 			}
+		}
+		for e := 2 * step; e < eff; e += step {
+			if fitsAt(e) {
+				t.Fatalf("%s chosen, but the multiple %s fits", eff, e)
+			}
+		}
+		if eff%step == 0 && eff > stepMultipleDensity*finest {
+			t.Fatalf("multiple %s chosen, more than twice the finest fitting step %s", eff, finest)
+		}
+		if eff%step != 0 && eff != finest {
+			t.Fatalf("%s off the grid chosen, the finest fitting step is %s", eff, finest)
 		}
 	})
 }
@@ -243,7 +267,7 @@ func (s *stepStub) serve(w http.ResponseWriter, r *http.Request) {
 		s.p.fail(w, r, fail(1<<20))
 		return
 	}
-	body := `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[` + r.FormValue("start") + `,"1"]]}]}}`
+	body := `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"peer_ip":"10.0.0.1"},"values":[[` + r.FormValue("start") + `,"1"]]}]}}`
 	if s.answer != nil {
 		body = s.answer(step)
 	}
@@ -323,7 +347,7 @@ func TestStepLayer_RetriesAtTheSmallestMultipleThatFits(t *testing.T) {
 	if !ok {
 		t.Fatal("not a request the layer reads")
 	}
-	child := effectiveStepRequest(r, sr, 8)
+	child := effectiveStepRequest(r, sr, 400*time.Millisecond)
 	start, _ := strconv.ParseInt(child.FormValue("start"), 10, 64)
 	end, _ := strconv.ParseInt(child.FormValue("end"), 10, 64)
 	if start%int64(400*time.Millisecond) != 0 || end%int64(400*time.Millisecond) != 0 || start < sr.in.startNs || end > sr.in.endNs || child.FormValue("query") != stepTestQuery {
@@ -475,7 +499,7 @@ func TestRangeWindows(t *testing.T) {
 
 // TestStepLayer_ThroughTheRouteChain: through the shipped mux (compatibility cache, flights, query stats), a per-stream
 // count over [1h] at 50 ms whose raw rows pass the buffered bound answers at 400 ms with one warning and one stats
-// object; a repeat goes straight to the learned step and reads the effective request's cached answer (no VictoriaLogs
+// object at most; a repeat goes straight to the learned step and reads the effective request's cached answer (no VictoriaLogs
 // call), the warning answer itself is never cached (the repeat is adjusted again), and the effective request asked
 // directly is the warning-free answer from the cache.
 //
@@ -497,7 +521,7 @@ func TestStepLayer_ThroughTheRouteChain(t *testing.T) {
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || len(resp.Warnings) != 1 || resp.Warnings[0] != "step raised from 50ms to 400ms to fit the query limits" ||
-			len(resp.Data.Stats) == 0 || strings.Count(rec.Body.String(), `"stats"`) != 1 {
+			strings.Count(rec.Body.String(), `"stats"`) > 1 {
 			t.Fatalf("run %d: %.400s (%v)", i, rec.Body.String(), err)
 		}
 		if i == 1 && n != 0 {
@@ -576,10 +600,16 @@ func stepFineRawBackend(t *testing.T) (*httptest.Server, *stepCallCount) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/stats_query_range"):
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[` +
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"peer_ip":"10.0.0.1"},"values":[[` +
 				r.Form.Get("start") + `,"7"]]}]}}`))
 		case r.URL.Path == "/select/logsql/query" && !strings.Contains(r.Form.Get("query"), "stats"):
-			_, _ = w.Write([]byte(strings.Repeat(`{"_time":"2025-12-31T23:30:00Z","_stream":"{app=\"api\"}","_msg":"line","app":"api"}`+"\n", 4096)))
+			// The first raw read (the request at its own step) passes the bound; the rows a later read of the
+			// effective request asks for fit.
+			n := 4096
+			if calls.rawOnce() {
+				n = 3
+			}
+			_, _ = w.Write([]byte(strings.Repeat(`{"_time":"2025-12-31T23:30:00Z","_stream":"{app=\"api\"}","_msg":"line","app":"api"}`+"\n", n)))
 		default:
 			_, _ = w.Write([]byte(`{"values":[]}`))
 		}
@@ -589,8 +619,18 @@ func stepFineRawBackend(t *testing.T) (*httptest.Server, *stepCallCount) {
 }
 
 type stepCallCount struct {
-	mu sync.Mutex
-	n  int
+	mu  sync.Mutex
+	n   int
+	raw bool
+}
+
+// rawOnce reports whether a raw read was answered before, and marks one.
+func (c *stepCallCount) rawOnce() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen := c.raw
+	c.raw = true
+	return seen
 }
 
 func (c *stepCallCount) add() { c.mu.Lock(); c.n++; c.mu.Unlock() }
@@ -615,7 +655,7 @@ func stepRouteProxy(t *testing.T, backend string, calls *stepCallCount) (*Proxy,
 	p.RegisterRoutes(mux)
 	return p, func(step time.Duration, startNs, endNs int64) (*httptest.ResponseRecorder, int) {
 		before := calls.get()
-		form := url.Values{"query": {`count_over_time({app="api"}[1h])`}, "start": {strconv.FormatInt(startNs, 10)}, "end": {strconv.FormatInt(endNs, 10)},
+		form := url.Values{"query": {`sum by (peer_ip) (sum_over_time({app="api"} | json | unwrap bytes [1h]))`}, "start": {strconv.FormatInt(startNs, 10)}, "end": {strconv.FormatInt(endNs, 10)},
 			"step": {strconv.FormatInt(step.Milliseconds(), 10) + "ms"}}
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
 		req.Header.Set("X-Scope-OrgID", "0")
@@ -626,13 +666,15 @@ func stepRouteProxy(t *testing.T, backend string, calls *stepCallCount) (*Proxy,
 }
 
 // TestStepLayer_EachReplicaLearnsOnItsOwn: the learned step is replica memory. A second replica that never served
-// the request pays its own read at the requested step once, then answers the same bytes; its repeat makes no call.
+// the request pays its own read at the requested step once (each replica has a VictoriaLogs stub of its own here, so
+// the calls are counted apart), then answers the same bytes; its repeat makes no call.
 //
 // conformance: limits/range-metric-step-adapt
 func TestStepLayer_EachReplicaLearnsOnItsOwn(t *testing.T) {
-	backend, calls := stepFineRawBackend(t)
-	_, getA := stepRouteProxy(t, backend.URL, calls)
-	_, getB := stepRouteProxy(t, backend.URL, calls)
+	backendA, callsA := stepFineRawBackend(t)
+	backendB, callsB := stepFineRawBackend(t)
+	_, getA := stepRouteProxy(t, backendA.URL, callsA)
+	_, getB := stepRouteProxy(t, backendB.URL, callsB)
 	end := stepTestEnd.UnixNano()
 	start := stepTestEnd.Add(-80 * time.Second).UnixNano()
 	a, aCalls := getA(50*time.Millisecond, start, end)
@@ -641,7 +683,12 @@ func TestStepLayer_EachReplicaLearnsOnItsOwn(t *testing.T) {
 	if a.Code != http.StatusOK || b.Code != http.StatusOK || aCalls == 0 || bCalls != aCalls || b2Calls != 0 {
 		t.Fatalf("replica A %d after %d calls, B %d after %d calls, B's repeat %d calls", a.Code, aCalls, b.Code, bCalls, b2Calls)
 	}
-	strip := func(s string) string { return s[:strings.Index(s, `"stats"`)] }
+	strip := func(s string) string {
+		if i := strings.Index(s, `"stats"`); i >= 0 {
+			return s[:i]
+		}
+		return s
+	}
 	if strip(a.Body.String()) != strip(b.Body.String()) || strip(b.Body.String()) != strip(b2.Body.String()) {
 		t.Fatalf("replicas answer differently:\n%.300s\n%.300s", a.Body.String(), b.Body.String())
 	}

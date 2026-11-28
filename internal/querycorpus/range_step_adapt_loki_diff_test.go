@@ -22,9 +22,10 @@ import (
 // the requested step; the proxy, in front of real VictoriaLogs (the serve oracle, v1.54.0 and v1.49.0), answers at the
 // effective step its warning names.
 //
-// Every run must hold: status 200 with one warning naming the requested step and a whole multiple of it; every
-// returned time is one of Loki's; every returned value is Loki's at that time; every point of Loki's answer at a time
-// on the effective grid is in the proxy's answer (the answer is Loki's restricted to the effective grid). Both grid
+// Every run must hold: status 200 with one warning naming the requested step and the effective step; the answer is
+// Loki's answer to the same query at the effective step, on the bounds Loki anchors it at (every series and point,
+// both ways). On a whole multiple of the requested step, every returned time is also one of Loki's at the requested
+// step with Loki's value there, and every point of that answer on the effective grid is in the proxy's answer. Both grid
 // modes run: the bounds moved onto the step grid (-align-queries-with-step, the effective times are multiples of the
 // effective step) and the bounds as sent (start + j * effective step). Each shape also runs with the mode off, where
 // it keeps the limit error main answers.
@@ -44,7 +45,7 @@ var rangeStepAdaptQueries = []string{
 	`quantile_over_time(0.9, {app="edge-json"} | json | unwrap bytes [1h]) by (peer_ip)`,
 	`topk(5, sum by (client_ip) (count_over_time({app="edge-json"} | json [1h])))`,
 	`sum by (peer_ip) (count_over_time({app="edge-gateway"} | regexp ` + rankedParserRegexp + ` [1h])) / sum by (peer_ip) (count_over_time({app="edge-json"} | json [1h]))`,
-	`sum by (peer_ip) (count_over_time({app="edge-gateway"} | regexp ` + rankedParserRegexp + ` | pattern ` + rankedParserPattern + ` [1h]))`,
+	`sum by (peer_ip) (count_over_time({app="edge-gateway"} |= "agent/1.0" | regexp ` + rankedParserRegexp + ` | pattern ` + rankedParserPattern + ` [1h]))`,
 }
 
 // rangeStepAdaptRequests are the requests of a query: 80 s at 53 ms (no multiple of it divides the hour below 19 s),
@@ -58,6 +59,15 @@ func rangeStepAdaptRequests(q string) []metricRequest {
 			"step": {strconv.FormatInt(step.Milliseconds(), 10) + "ms"}}
 		route := lower.RouteRequest{Step: step, Span: end.Sub(start), End: end}
 		name := "80s step=" + step.String()
+		// Loki's answers at the effective steps the rule picks (360 ms for 53 ms, 400 ms for the others), on the
+		// bounds the effective request has: the multiples of the effective step inside the requested range.
+		for _, eff := range rangeStepAdaptEffective {
+			s, e := alignUp(start, eff), alignDown(end, eff)
+			lf := url.Values{"query": {q}, "start": {s.Format(time.RFC3339Nano)}, "end": {e.Format(time.RFC3339Nano)},
+				"step": {strconv.FormatInt(eff.Milliseconds(), 10) + "ms"}}
+			out = append(out, metricRequest{kind: rangeStepAdaptLokiKind(step, eff), form: lf,
+				route: lower.RouteRequest{Step: eff, Span: e.Sub(s), End: e}})
+		}
 		out = append(out,
 			metricRequest{kind: name + " rows", form: form, route: route, rowLimit: rankedParserRowLimit},
 			metricRequest{kind: name + " rows aligned", form: form, route: route, rowLimit: rankedParserRowLimit, align: true},
@@ -66,6 +76,22 @@ func rangeStepAdaptRequests(q string) []metricRequest {
 		)
 	}
 	return out
+}
+
+// rangeStepAdaptEffective are the effective steps Loki is recorded at.
+var rangeStepAdaptEffective = []time.Duration{360 * time.Millisecond, 400 * time.Millisecond}
+
+// rangeStepAdaptLokiKind names Loki's answer at an effective step for a request at step.
+func rangeStepAdaptLokiKind(step, eff time.Duration) string {
+	return "loki 80s step=" + step.String() + " at " + eff.String()
+}
+
+func alignUp(t time.Time, step time.Duration) time.Time {
+	d := alignDown(t, step)
+	if d.Before(t) {
+		d = d.Add(step)
+	}
+	return d
 }
 
 func rangeStepAdaptMetricQueries(t *testing.T) []metricQuery {
@@ -101,6 +127,9 @@ func decodeStepMatrix(t *testing.T, body []byte) (stepMatrix, []string) {
 	}
 	m := stepMatrix{}
 	for _, s := range resp.Data.Result {
+		// Loki derives detected_level at ingest (discover_log_levels); the engine oracle reads the fixture's lines
+		// as they are, so the label is compared apart (the proxy's derivation has its own tests).
+		delete(s.Metric, "detected_level")
 		key, _ := json.Marshal(s.Metric)
 		points := map[string]string{}
 		for _, v := range s.Values {
@@ -151,6 +180,9 @@ func TestRangeStepAdaptMatchesLoki(t *testing.T) {
 				if !ok || loki.Status != 200 {
 					t.Fatalf("no Loki answer for %s %s (%d %s): record them again", mr.kind, mq.q, loki.Status, loki.Error)
 				}
+				if strings.HasPrefix(mr.kind, "loki ") {
+					continue // a reference answer at an effective step
+				}
 				run := runMetricHandler(t, prof, mr, &metricFront{version: prof.version, answers: rec.VL[prof.version]})
 				if missing := answerRequests(run.missing); len(missing) > 0 {
 					t.Fatalf("%s %s %s: VictoriaLogs request %s was not recorded: record them again with LVP_RUN_ORACLES=1", prof.name, mr.kind, mq.q, missing[0])
@@ -159,7 +191,14 @@ func TestRangeStepAdaptMatchesLoki(t *testing.T) {
 				offReq.stepMode = "off"
 				off := runMetricHandler(t, prof, offReq, &metricFront{version: prof.version, answers: rec.VL[prof.version]})
 				if off.status == 200 {
-					if run.status != 200 || run.body != off.body || strings.Join(run.sent, "\n") != strings.Join(off.sent, "\n") {
+					// The same answer (the stats object holds the run's own execTime) from the same requests.
+					gotM, gotW := decodeStepMatrix(t, []byte(run.body))
+					offM, _ := decodeStepMatrix(t, []byte(off.body))
+					a, _ := json.Marshal(gotM)
+					c, _ := json.Marshal(offM)
+					// The requests are not compared one by one: a probe a sibling's answer cancels is sent in one run and
+					// not in another (recordMetricAnswers runs each request twice for it); a retry would show as a warning.
+					if run.status != 200 || len(gotW) != 0 || string(a) != string(c) {
 						t.Errorf("%s %s %s: fits with the mode off, but the adaptive run differs: %d, %d vs %d requests", prof.name, mr.kind, mq.q, run.status, len(run.sent), len(off.sent))
 					}
 					fitting++
@@ -182,9 +221,36 @@ func TestRangeStepAdaptMatchesLoki(t *testing.T) {
 				parts := stepWarningRE.FindStringSubmatch(warnings[0])
 				requested, err1 := time.ParseDuration(parts[1])
 				effective, err2 := time.ParseDuration(parts[2])
-				if err1 != nil || err2 != nil || requested != mr.route.Step || effective <= requested || effective%requested != 0 {
+				if err1 != nil || err2 != nil || requested != mr.route.Step || effective <= requested {
 					t.Errorf("%s %s %s: steps %s -> %s, requested %s", prof.name, mr.kind, mq.q, parts[1], parts[2], mr.route.Step)
 					continue
+				}
+				// The answer is Loki's answer to the query at the effective step, on the bounds Loki anchors it at.
+				ref, ok := rec.Loki[rangeStepAdaptLokiKind(requested, effective)]
+				if !ok {
+					t.Errorf("%s %s %s: effective step %s has no recorded Loki answer: add it to rangeStepAdaptEffective", prof.name, mr.kind, mq.q, effective)
+					continue
+				}
+				atEff, _ := decodeStepMatrix(t, ref.Body)
+				for series, values := range atEff {
+					for ts, lv := range values {
+						if v, ok := got[series][ts]; !ok || !equalSample(v, lv) {
+							t.Errorf("%s %s %s: %s at %s: %q, Loki at %s answers %s", prof.name, mr.kind, mq.q, series, ts, v, effective, lv)
+						}
+					}
+				}
+				for series, values := range got {
+					for ts, v := range values {
+						if _, ok := atEff[series][ts]; !ok {
+							t.Errorf("%s %s %s: %s at %s: %s, Loki at %s has no point", prof.name, mr.kind, mq.q, series, ts, v, effective)
+						}
+					}
+				}
+				if effective%requested != 0 {
+					if prof.name == diffProfiles()[0].name {
+						b.WriteString("\n  " + mr.kind + ": " + parts[1] + " -> " + parts[2] + " (finest fitting step), " + strconv.Itoa(len(run.sent)) + " requests: " + mq.q)
+					}
+					continue // off the requested grid: Loki's answer at the effective step is the reference
 				}
 				start, _ := time.Parse(time.RFC3339Nano, mr.form.Get("start"))
 				end, _ := time.Parse(time.RFC3339Nano, mr.form.Get("end"))
@@ -197,10 +263,7 @@ func TestRangeStepAdaptMatchesLoki(t *testing.T) {
 					if at.Before(start) || at.After(end) {
 						return false
 					}
-					if mr.align {
-						return at.UnixNano()%int64(effective) == 0
-					}
-					return at.Sub(start)%effective == 0
+					return at.UnixNano()%int64(effective) == 0
 				}
 				points := 0
 				for series, values := range got {

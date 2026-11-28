@@ -27,8 +27,9 @@ import (
 //     its answer is a limit error of a read the proxy bounds itself and Loki would have answered (the bytes it
 //     buffers from one VictoriaLogs response, the rows of one evaluation, the ordered JSON evaluator's bytes and
 //     samples, a binary operand's bytes, the merged answer of a multi-tenant query), and the read's cost falls with
-//     the step, is the request served again at a whole multiple of its step (read_budget.go,
-//     effectiveStepMultiple). The step chosen is remembered for the query, its tenant, credentials, step and span on
+//     the step, is the request served again at the closest step that fits: a whole multiple of its step, or the
+//     finest fitting step when that multiple is more than twice coarser (read_budget.go, effectiveStep). The step
+//     chosen is remembered for the query, its tenant, credentials, step and span on
 //     this replica (stepVerdictTTL), so a repeat goes straight to it.
 //   - floor: a step below -range-metric-min-step is raised to the smallest multiple of it at or above the floor,
 //     before any read. The floor also applies in adaptive mode.
@@ -39,7 +40,7 @@ import (
 // step does not lower (raw rows read for another reason than the step, one step's window, the series of a window).
 // No limit is raised: every effective read is held to the same bounds.
 //
-// The adjusted answer carries Loki's warnings field ("step raised from 53ms to 19s80ms to fit the query limits"), is
+// The adjusted answer carries Loki's warnings field ("step raised from 53ms to 360ms to fit the query limits"), is
 // counted by loki_vl_proxy_step_adjusted_total and the factor histogram, and logged with the steps, the reason and the
 // buckets per series. It is never cached as such: the response caches keep the answer of the effective request (keyed
 // on its step, without the warning), which a repeat reads, and the warning is added when it is sent
@@ -209,7 +210,7 @@ type heldFailure struct {
 // stepFixableReason names a limit error whose read or answer the step sizes: the flag of the limit, without its
 // dash; "" for any other error. answer reports a bound on the answer (its samples, an operand's or a merged answer's
 // bytes), which holds fewer points at a coarser step whatever was read; the other bounds are on one read, whose cost
-// falls with the step only on a bucket grid (effectiveStepMultiple). It decides by the error's type, never its text.
+// falls with the step only on a bucket grid (effectiveStep). It decides by the error's type, never its text.
 func stepFixableReason(err error, typed *lokierr.Error) (reason string, answer bool) {
 	flag := ""
 	if typed != nil {
@@ -435,7 +436,7 @@ type stepVerdicts struct {
 }
 
 type stepVerdict struct {
-	k       int64
+	eff     time.Duration
 	reason  string
 	expires int64
 }
@@ -463,7 +464,7 @@ func (v *stepVerdicts) get(key uint64, now time.Time) (stepVerdict, bool) {
 	return e, true
 }
 
-func (v *stepVerdicts) put(key uint64, k int64, reason string, now time.Time) {
+func (v *stepVerdicts) put(key uint64, eff time.Duration, reason string, now time.Time) {
 	if v == nil {
 		return
 	}
@@ -476,7 +477,7 @@ func (v *stepVerdicts) put(key uint64, k int64, reason string, now time.Time) {
 			}
 		}
 	}
-	v.m[key] = stepVerdict{k: k, reason: reason, expires: now.Add(stepVerdictTTL).UnixNano()}
+	v.m[key] = stepVerdict{eff: eff, reason: reason, expires: now.Add(stepVerdictTTL).UnixNano()}
 	v.n.Store(int64(len(v.m)))
 }
 
@@ -573,29 +574,64 @@ func (p *Proxy) stepRequestOf(r *http.Request, lim stepLimits) (stepRequest, boo
 	if p.stepBudgetBytes > 0 && p.limits().BufferedBackendBodyBytes > 0 {
 		share = float64(p.stepBudgetBytes) / float64(p.limits().BufferedBackendBodyBytes)
 	}
-	onGrid := p.alignQueriesWithStep && startNs%int64(step) == 0 && endNs%int64(step) == 0
-	in := stepCandidateInput{step: step, prev: 1, startNs: startNs, endNs: endNs, onGrid: onGrid, windows: windows,
+	// The effective request is anchored as Loki anchors a request at that step: at its multiples, as Loki's step
+	// alignment does and as its interval splitting (split_queries_by_interval, on by default) floors the start to the
+	// step anyway; the bounds stay inside the requested range.
+	onGrid := true
+	in := stepCandidateInput{step: step, startNs: startNs, endNs: endNs, onGrid: onGrid, windows: windows,
 		floor: lim.floor, ceiling: lim.ceiling, maxBuckets: int64(p.stepMaxPoints), share: share}
 	return stepRequest{in: in, query: query, stepRaw: stepRaw}, true
 }
 
-// effectiveStepRequest is r at k times its step, on the bounds effectiveBounds gives.
-func effectiveStepRequest(r *http.Request, sr stepRequest, k int64) *http.Request {
-	startNs, endNs, _ := effectiveBounds(sr.in, k)
+// effectiveStepRequest is r at the effective step eff, on the bounds effectiveBounds gives.
+func effectiveStepRequest(r *http.Request, sr stepRequest, eff time.Duration) *http.Request {
+	startNs, endNs, _ := effectiveBounds(sr.in, eff)
 	child := r.Clone(r.Context())
 	_ = child.ParseForm()
 	form := url.Values{}
 	for key, v := range child.Form {
 		form[key] = append([]string(nil), v...)
 	}
-	form.Set("step", strconv.FormatInt(sr.in.step.Milliseconds()*k, 10)+"ms")
-	form.Set("start", encodeAlignedBound(startNs))
-	form.Set("end", encodeAlignedBound(endNs))
+	// The query string the client sent with the step and bounds replaced: the effective request keys the response
+	// cache as the same request sent at that step would (a client asking the effective step reads its answer).
+	values := map[string]string{"step": strconv.FormatInt(eff.Milliseconds(), 10) + "ms", "start": encodeAlignedBound(startNs), "end": encodeAlignedBound(endNs)}
+	for key, v := range values {
+		form.Set(key, v)
+	}
 	child.Form, child.PostForm = form, nil
-	child.URL.RawQuery = form.Encode()
+	child.URL.RawQuery = replaceQueryParams(child.URL.RawQuery, values, form)
 	// The answer is read whole for its warning: never one of the cache's encoded variants.
 	child.Header.Del("Accept-Encoding")
 	return child
+}
+
+// replaceQueryParams is raw with the values of the keys in values replaced in place, keeping the order and the
+// spelling of every other parameter; a key raw lacks is appended. An empty raw (a form body) is form encoded.
+func replaceQueryParams(raw string, values map[string]string, form url.Values) string {
+	if raw == "" {
+		return form.Encode()
+	}
+	parts := strings.Split(raw, "&")
+	seen := map[string]bool{}
+	out := parts[:0]
+	for _, part := range parts {
+		key, _, _ := strings.Cut(part, "=")
+		name, err := url.QueryUnescape(key)
+		if v, ok := values[name]; ok && err == nil {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			part = key + "=" + url.QueryEscape(v)
+		}
+		out = append(out, part)
+	}
+	for _, name := range []string{"query", "start", "end", "step"} {
+		if v, ok := values[name]; ok && !seen[name] {
+			out = append(out, name+"="+url.QueryEscape(v))
+		}
+	}
+	return strings.Join(out, "&")
 }
 
 // rangeStepLayer is the step layer around next (the handler behind the time bounds); cached is next behind the
@@ -615,8 +651,8 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		}
 		if lim.floor > 0 {
 			if sr, ok := p.stepRequestOf(r, lim); ok && sr.in.step < lim.floor {
-				if k, fits := floorStepMultiple(sr.in); fits {
-					if p.serveAtStep(w, r, rt, cached, sr, k, lim.mode, "range-metric-min-step", "floor", nil) {
+				if eff, fits := floorStep(sr.in); fits {
+					if p.serveAtStep(w, r, rt, cached, sr, eff, lim.mode, "range-metric-min-step", "floor", nil) {
 						return
 					}
 				}
@@ -630,8 +666,8 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		if p.stepVerdicts != nil && p.stepVerdicts.n.Load() > 0 {
 			if sr, ok := p.stepRequestOf(r, lim); ok {
 				sr.verdict = p.verdictKey(r, sr.query, sr.stepRaw, sr.in.endNs-sr.in.startNs)
-				if v, found := p.stepVerdicts.get(sr.verdict, time.Now()); found && v.k > 1 {
-					if p.serveAtStep(w, r, rt, cached, sr, v.k, lim.mode, v.reason, "learned", nil) {
+				if v, found := p.stepVerdicts.get(sr.verdict, time.Now()); found && v.eff > sr.in.step {
+					if p.serveAtStep(w, r, rt, cached, sr, v.eff, lim.mode, v.reason, "learned", nil) {
 						return
 					}
 				}
@@ -647,11 +683,11 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		if st.held && st.last && r.Context().Err() == nil {
 			if sr, ok := p.stepRequestOf(r, lim); ok {
 				sr.in.failed, sr.in.halve = st.grids, st.halve
-				if k, fits := effectiveStepMultiple(sr.in); fits {
+				if eff, fits := effectiveStep(sr.in); fits {
 					if p.stepVerdicts != nil {
 						sr.verdict = p.verdictKey(r, sr.query, sr.stepRaw, sr.in.endNs-sr.in.startNs)
 					}
-					if p.serveAtStep(w, r, rt, cached, sr, k, lim.mode, st.first.reason, "retry", hw) {
+					if p.serveAtStep(w, r, rt, cached, sr, eff, lim.mode, st.first.reason, "retry", hw) {
 						return
 					}
 				}
@@ -673,16 +709,16 @@ func (p *Proxy) answerHeldFailure(st stepAttempt, began time.Time) {
 	p.metrics.RecordRequest("query_range", f.status, time.Since(began))
 }
 
-// serveAtStep answers r at k times its step, trying coarser multiples while the effective request fails a bound the
+// serveAtStep answers r at the effective step eff, trying coarser multiples while the effective request fails a bound the
 // step sizes. It reports false, having written nothing, when no effective step answers: the caller answers as
 // without the layer. hw is the writer of the failed attempt (nil when the request was not served as it came).
-func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestTelemetry, cached http.HandlerFunc, sr stepRequest, k int64, mode stepMode, reason, source string, hw *stepHoldWriter) bool {
+func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestTelemetry, cached http.HandlerFunc, sr stepRequest, eff time.Duration, mode stepMode, reason, source string, hw *stepHoldWriter) bool {
 	began := time.Now()
 	for attempt := 0; attempt < stepAdaptMaxRetries; attempt++ {
 		if r.Context().Err() != nil {
 			return false
 		}
-		child := effectiveStepRequest(r, sr, k)
+		child := effectiveStepRequest(r, sr, eff)
 		out := &stepAnswerWriter{header: make(http.Header)}
 		rt.armStep()
 		cached(out, child)
@@ -693,11 +729,11 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 		if out.code < http.StatusBadRequest {
 			body := out.body.Bytes()
 			if sr.verdict != 0 && p.stepVerdicts != nil {
-				p.stepVerdicts.put(sr.verdict, k, reason, time.Now())
+				p.stepVerdicts.put(sr.verdict, eff, reason, time.Now())
 			}
-			p.writeStepAdjusted(w, out, sr, k, source, hw)
-			p.metrics.RecordStepAdjusted("query_range", mode.String(), reason, k)
-			p.logStepAdjusted(r.Context(), sr, k, mode, reason, source, len(body), time.Since(began))
+			p.writeStepAdjusted(w, out, sr, eff, source, hw)
+			p.metrics.RecordStepAdjusted("query_range", mode.String(), reason, float64(eff)/float64(sr.in.step))
+			p.logStepAdjusted(r.Context(), sr, eff, mode, reason, source, len(body), time.Since(began))
 			return true
 		}
 		if !st.held || !st.last {
@@ -709,8 +745,8 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			return false
 		}
 		in := sr.in
-		in.prev, in.failed, in.halve = k, st.grids, st.halve
-		next, fits := effectiveStepMultiple(in)
+		in.prev, in.failed, in.halve = eff, st.grids, st.halve
+		next, fits := effectiveStep(in)
 		if !fits || attempt == stepAdaptMaxRetries-1 {
 			if hw == nil {
 				p.answerHeldFailure(st, began)
@@ -719,7 +755,7 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			}
 			return false
 		}
-		k = next
+		eff = next
 	}
 	return false
 }
@@ -740,11 +776,11 @@ func (p *Proxy) writeStepAnswer(w http.ResponseWriter, out *stepAnswerWriter, wa
 
 // writeStepAdjusted writes the adjusted answer: the effective request's body with Loki's warning, never kept by the
 // compatibility cache.
-func (p *Proxy) writeStepAdjusted(w http.ResponseWriter, out *stepAnswerWriter, sr stepRequest, k int64, source string, hw *stepHoldWriter) {
+func (p *Proxy) writeStepAdjusted(w http.ResponseWriter, out *stepAnswerWriter, sr stepRequest, eff time.Duration, source string, hw *stepHoldWriter) {
 	if hw != nil {
 		hw.restoreHeaders()
 	}
-	requested, effective := formatLokiDuration(sr.in.step), formatLokiDuration(sr.in.step*time.Duration(k))
+	requested, effective := formatLokiDuration(sr.in.step), formatLokiDuration(eff)
 	text := "step raised from " + requested + " to " + effective + " to fit the query limits"
 	if source == "floor" {
 		text = "step raised from " + requested + " to " + effective + ", the minimum step of range metric queries"
@@ -753,17 +789,17 @@ func (p *Proxy) writeStepAdjusted(w http.ResponseWriter, out *stepAnswerWriter, 
 	p.writeStepAnswer(w, out, withLokiWarning(out.body.Bytes(), text))
 }
 
-// floorStepMultiple is the smallest multiple of the step at or above the floor, within the ceiling and the range.
-func floorStepMultiple(in stepCandidateInput) (int64, bool) {
+// floorStep is the smallest multiple of the step at or above the floor, within the ceiling and the range.
+func floorStep(in stepCandidateInput) (time.Duration, bool) {
 	if in.step <= 0 || in.floor <= in.step {
 		return 0, false
 	}
-	k := ceilDiv(int64(in.floor), int64(in.step))
-	if in.ceiling > 0 && time.Duration(k)*in.step > in.ceiling {
+	eff := time.Duration(ceilDiv(int64(in.floor), int64(in.step))) * in.step
+	if in.ceiling > 0 && eff > in.ceiling {
 		return 0, false
 	}
-	_, _, ok := effectiveBounds(in, k)
-	return k, ok
+	_, _, ok := effectiveBounds(in, eff)
+	return eff, ok
 }
 
 // withLokiWarning adds a warning to a Loki JSON answer's warnings, creating the field when the answer has none.
@@ -793,14 +829,14 @@ func withLokiWarning(body []byte, text string) []byte {
 }
 
 // logStepAdjusted writes the log line of an adjusted answer.
-func (p *Proxy) logStepAdjusted(ctx context.Context, sr stepRequest, k int64, mode stepMode, reason, source string, answerBytes int, took time.Duration) {
+func (p *Proxy) logStepAdjusted(ctx context.Context, sr stepRequest, eff time.Duration, mode stepMode, reason, source string, answerBytes int, took time.Duration) {
 	if p.log == nil || !p.log.Enabled(ctx, slog.LevelInfo) {
 		return
 	}
 	var requestedBuckets, effectiveBuckets int64
 	for _, w := range sr.in.windows {
-		requestedBuckets = max(requestedBuckets, bucketsAt(sr.in, 1, w))
-		effectiveBuckets = max(effectiveBuckets, bucketsAt(sr.in, k, w))
+		requestedBuckets = max(requestedBuckets, bucketsAt(sr.in, sr.in.step, w))
+		effectiveBuckets = max(effectiveBuckets, bucketsAt(sr.in, eff, w))
 	}
 	p.log.LogAttrs(ctx, slog.LevelInfo, "query step adjusted",
 		slog.String("endpoint", "query_range"),
@@ -808,8 +844,9 @@ func (p *Proxy) logStepAdjusted(ctx context.Context, sr stepRequest, k int64, mo
 		slog.String("reason", reason),
 		slog.String("estimate_source", source),
 		slog.Duration("requested_step", sr.in.step),
-		slog.Duration("effective_step", sr.in.step*time.Duration(k)),
-		slog.Int64("factor", k),
+		slog.Duration("effective_step", eff),
+		slog.Float64("factor", float64(eff)/float64(sr.in.step)),
+		slog.Bool("on_requested_grid", eff%sr.in.step == 0),
 		slog.Int64("requested_buckets_per_series", requestedBuckets),
 		slog.Int64("effective_buckets_per_series", effectiveBuckets),
 		slog.Int("answer_bytes", answerBytes),
