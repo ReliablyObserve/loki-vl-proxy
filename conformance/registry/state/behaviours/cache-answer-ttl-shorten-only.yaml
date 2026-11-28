@@ -1,0 +1,12 @@
+id: cache-answer-ttl-shorten-only
+state: partial
+pending: true
+reason: |
+  Unit-proven in internal/proxy and cmd/proxy: start-up refusal of longer
+  values, unchanged TTLs and keys when unset, every cache of a class stored
+  with the shorter TTL, expiry through the handler and the Loki answer cache,
+  and the key fence across processes sharing one disk tier. Not yet proven on
+  a running fleet (compose stack, e2e-fleet with mixed settings, real
+  Grafana).
+owner_decision: null
+waiver: null

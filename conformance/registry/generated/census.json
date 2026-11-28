@@ -1490,6 +1490,8 @@
     "versions/stats-bucket-label-v1.45 | query"
   ],
   "claim_cells": [
+    "cmd/proxy/answer_cache_ttl_test.go | cache-answer-ttl-shorten-only",
+    "cmd/proxy/answer_cache_ttl_test.go | cache-restart-handover",
     "cmd/proxy/cache_handover_scope_test.go | cache-restart-handover",
     "cmd/proxy/client_auth_test.go | client-authentication",
     "cmd/proxy/delete_api_validation_test.go | delete-api-requires-token",
@@ -1715,6 +1717,7 @@
     "internal/proxy/alerting_tenant_label_test.go | prometheus_api_v1_rules",
     "internal/proxy/alerting_tenant_label_test.go | semantics/tenant-label-default-aliases",
     "internal/proxy/alerting_tenant_label_test.go | tenant-label-isolation",
+    "internal/proxy/answer_cache_ttl_test.go | cache-answer-ttl-shorten-only",
     "internal/proxy/backend_capabilities_test.go | instrumentation-reveals-no-secrets",
     "internal/proxy/backend_capabilities_test.go | vl-capability-layer",
     "internal/proxy/backend_heavy_test.go | backend-admission-and-heavy-query-queueing",
@@ -3859,7 +3862,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 908,
+      "go": 910,
       "playwright": 3
     },
     "page_kinds": {
@@ -3881,7 +3884,7 @@
     "shape_covers_distinct": 120,
     "shapes_path_only": 10,
     "unwired_items": 154,
-    "wired_items": 507
+    "wired_items": 508
   },
   "gates": [
     "A/B shape selection",

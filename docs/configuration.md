@@ -519,6 +519,30 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `query_range`, `query` | 5m final-response cache; requests ending within `-recent-tail-refresh-window` (default `2m`) of now are refetched once the cached entry is older than `-recent-tail-refresh-max-staleness` (default `2s`) |
 | `index_stats`, `volume`, `volume_range` | 10s |
 
+### Shortening the Loki answer TTLs
+
+The TTLs of the table above can be shortened per class, never lengthened: an answer can only become fresher than with the built-in TTLs. A value longer than the built-in TTL, or a negative one, stops the start with an error naming the flag, its variable and the built-in TTL. `0` (the default) keeps the built-in TTL, and so does a value equal to it: TTLs, cache keys and answers are then exactly those of a proxy without the setting. `patterns` is not settable (its TTL keeps mined patterns until they are replaced, it is no freshness bound), nor are the classes that already have their own flags (`-labels-cache-ttl`, `-query-range-*-cache-ttl`, `-parse-risk-probe-cache-ttl`). The flag wins over its variable.
+
+| Flag | Env | Default | Built-in TTL, the longest accepted | What it shortens |
+|---|---|---|---|---|
+| `-cache-answer-ttl-query-range` | `CACHE_ANSWER_TTL_QUERY_RANGE` | `0` | 5m | `query_range` answers in the Loki answer cache; their multi-tenant merge keeps the shorter of this and its 10s. The split windows and extents keep `-query-range-recent-cache-ttl`, `-query-range-history-cache-ttl` and `-query-range-extent-cache-ttl` |
+| `-cache-answer-ttl-query` | `CACHE_ANSWER_TTL_QUERY` | `0` | 5m | instant `query` answers in the Loki answer cache; their multi-tenant merge keeps the shorter of this and its 10s |
+| `-cache-answer-ttl-labels` | `CACHE_ANSWER_TTL_LABELS` | `0` | 5m | `labels` answers in the Loki answer cache and their multi-tenant merge; the label handler cache keeps `-labels-cache-ttl` |
+| `-cache-answer-ttl-label-values` | `CACHE_ANSWER_TTL_LABEL_VALUES` | `0` | 5m | `label_values` answers in the Loki answer cache and their multi-tenant merge; the label handler cache keeps `-labels-cache-ttl` |
+| `-cache-answer-ttl-series` | `CACHE_ANSWER_TTL_SERIES` | `0` | 30s | `series` answers in the Loki answer cache and their multi-tenant merge |
+| `-cache-answer-ttl-detected-fields` | `CACHE_ANSWER_TTL_DETECTED_FIELDS` | `0` | 90s | `detected_fields` answers in the Loki answer cache, the read cache (still scaled with the request window, from the shortened base) and the field detection cache |
+| `-cache-answer-ttl-detected-field-values` | `CACHE_ANSWER_TTL_DETECTED_FIELD_VALUES` | `0` | 90s | `detected_field_values` answers in the Loki answer cache and the read cache (scaled the same way) |
+| `-cache-answer-ttl-detected-labels` | `CACHE_ANSWER_TTL_DETECTED_LABELS` | `0` | 90s | `detected_labels` answers in the Loki answer cache, the read cache (scaled the same way) and the label detection cache (30s, or this when shorter) |
+| `-cache-answer-ttl-index-stats` | `CACHE_ANSWER_TTL_INDEX_STATS` | `0` | 10s | `index_stats` answers in the Loki answer cache and the read cache |
+| `-cache-answer-ttl-volume` | `CACHE_ANSWER_TTL_VOLUME` | `0` | 10s | `volume` answers in the Loki answer cache and the read cache |
+| `-cache-answer-ttl-volume-range` | `CACHE_ANSWER_TTL_VOLUME_RANGE` | `0` | 10s | `volume_range` answers in the Loki answer cache and the read cache |
+
+`loki_vl_proxy_cache_ttl_seconds{class}` shows the TTL each class is stored with, the setting included. A setting bounds the caches its row names and nothing else: a `query_range` answer computed again after its Loki answer cache entry expired can still be assembled from windows and extents kept under their own TTLs.
+
+**Replicas with different settings, disks and restarts.** A cache entry carries its expiry, not its age, so a copy written under a longer TTL (by a peer with another setting, or by this replica's disk tier before a restart with a shorter setting) could otherwise be served past the shorter TTL. Once a class is shortened, its keys in the shared tiers (memory, disk and peers) carry the TTL (`@ttl=<ttl>`): replicas with the same setting share entries as before, replicas with different settings never serve each other's entries, and after a restart with a new setting the entries the old setting wrote to disk are not read (they expire on their own). Unset, the keys are unchanged. During a rolling restart that changes a setting, the class is therefore cold on the replicas with the new setting until they have answered it once, and replicas on the old setting keep sharing among themselves; rolling back is safe the same way. The memory-only answers a graceful shutdown keeps for the next start (`-cache-shutdown-flush-timeout`) are restored only by a process with the same flag values, settings included. The Loki answer cache itself is memory only and is empty after a restart.
+
+**Cost.** A shorter TTL means more VictoriaLogs reads for repeated requests: a repeat inside the TTL makes no VictoriaLogs call, a repeat after it makes the class's usual calls, on every replica that answers it, and a hit on the detected field and label or volume read caches starts a background refresh once a fifth of the shorter TTL has passed (as with the built-in TTL, so with a 2s TTL a hit 0.4s after the store starts one). A TTL under `-disk-cache-min-ttl` or `-peer-write-through-min-ttl` (30s by default) keeps the class's entries in memory only, as the built-in 10s classes already are. Empty label lists keep the negative TTL (max(30s, `-disk-cache-min-ttl`, `-peer-write-through-min-ttl`)) in the multi-tenant merge.
+
 ## Cache (L2 On-Disk)
 
 | Flag | Env | Default | Description |
