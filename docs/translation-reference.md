@@ -87,7 +87,7 @@ A label filter on `detected_level` reads the value Loki attaches at ingest, whic
 :::note Drop/keep scope
 Both forms mutate stream labels as well as structured metadata and parsed fields. Matcher conditions (`=`, `!=`, `=~`, `!~`) remove a stream label only on entries whose value matches (drop) or does not match (keep); the response stream key is recomputed from the remaining labels. Under `label-style=underscores` the Loki name (`service_name`) is also matched against the stored dotted field (`service.name`).
 
-A later stage that reads a label a matcher removed reads it as missing, as in Loki. When the only such reader is one string label filter with no parser before it, the filter reads the stored value and folds in the matchers R:
+A later stage that reads a label a matcher removed reads it as missing, as in Loki. When the only such reader is one `=` or `!=` label filter with no parser before it, the filter reads the stored value and folds in the matchers R:
 - `F AND NOT R` when the filter F rejects an empty value;
 - `R OR F` when F accepts it (log queries);
 - F alone where the matchers remove no value F decides: `| drop level="warn" | level="nope"` is `level:="nope"`.
