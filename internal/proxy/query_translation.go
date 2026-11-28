@@ -165,7 +165,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		for key, value := range telemetry.internalDurationByType {
 			internalDurationByTypeMs[key] = value.Milliseconds()
 		}
-		logAttrs := make([]interface{}, 0, 80)
+		logAttrs := make([]interface{}, 0, 88) // 88 values: 1408 B, a size class
 		logAttrs = append(logAttrs,
 			"http.route", route,
 			"url.path", r.URL.Path,
@@ -186,8 +186,14 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
-		logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows, "flow.served", servedClassNames[served],
-			"flow.reuse.recorded", int(telemetry.reuse.recorded), "flow.reuse.unknown", int(telemetry.reuse.unknown))
+		// The rows and reuse counts are written only when the request had them, so other lines keep their size.
+		logAttrs = append(logAttrs, "flow.served", servedClassNames[served])
+		if telemetry.flow.vlRows > 0 {
+			logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows)
+		}
+		if telemetry.reuse.recorded > 0 || telemetry.reuse.unknown > 0 {
+			logAttrs = append(logAttrs, "flow.reuse.recorded", int(telemetry.reuse.recorded), "flow.reuse.unknown", int(telemetry.reuse.unknown))
+		}
 		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {

@@ -1835,7 +1835,7 @@ func New(cfg Config) (*Proxy, error) {
 	if _, _, on := cfg.Cache.Tiers(); on || cfg.CompatCache != nil {
 		p.buildCosts = newBuildCostLedger()
 	}
-	p.coalescer.OnCall, p.coalescer.OnShare = p.coalescedCallScope, p.coalescedCallShared
+	p.coalescer.OnShare = p.coalescedCallShared
 	if p.drilldownCoalescer != nil {
 		p.drilldownCoalescer.onJoined = func(ctx context.Context) { p.noteSharedWork(ctx, metrics.ReuseBurst, metrics.VLWork{}, false) }
 	}

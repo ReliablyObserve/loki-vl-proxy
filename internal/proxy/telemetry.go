@@ -84,13 +84,15 @@ type requestTelemetry struct {
 	inventoryAdmissionDeadline time.Time
 	// The slow-query log's trace of the request (slow_query_log.go): kept when traceOn, from start, until
 	// traceClosed (the request's log line).
-	start        time.Time
-	traceOn      bool
-	traceClosed  bool
-	planChecked  bool // the request's first VictoriaLogs call has been checked against its planning budget
+	start       time.Time
+	traceOn     bool
+	traceClosed bool
+	planChecked bool // the request's first VictoriaLogs call has been checked against its planning budget
+	// traceCache is the cache steps kept, bounded by slowTraceMaxCacheSteps; a byte in the padding after the flags
+	// above leaves room for shared without a larger allocation of the telemetry.
+	traceCache   uint8
 	trace        []slowTraceStep
 	traceDropped int
-	traceCache   int // cache steps kept, bounded by slowTraceMaxCacheSteps
 }
 
 type requestTelemetrySnapshot struct {

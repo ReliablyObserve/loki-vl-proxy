@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
 // What reuse saves VictoriaLogs. Every VictoriaLogs call is measured once, where its body closes (recordFlowVL,
@@ -47,8 +48,9 @@ func (s *workScope) work() metrics.VLWork {
 	return metrics.VLWork{Calls: s.calls.Load(), Duration: time.Duration(s.nanos.Load()), Bytes: s.bytes.Load(), Rows: s.rows.Load()}
 }
 
-// addScopeWork adds w to every work scope of ctx.
+// addScopeWork adds w to every work scope of ctx and to the shared call ctx runs in.
 func addScopeWork(ctx context.Context, w metrics.VLWork) {
+	mw.CallWorkFrom(ctx).Add(w.Calls, int64(w.Duration), w.Bytes, w.Rows)
 	for s := workScopeFrom(ctx); s != nil; s = s.parent {
 		s.calls.Add(w.Calls)
 		s.nanos.Add(int64(w.Duration))
@@ -224,19 +226,9 @@ func servedClass(status, vlCalls, cacheHits int, reuse flowReuse) metrics.Served
 	return metrics.ServedLocal
 }
 
-// coalescedCallScope is the coalescer's OnCall: a shared call runs in its own work scope, under the scopes of the
-// request that started it.
-func (p *Proxy) coalescedCallScope(ctx context.Context) context.Context {
-	ctx, _ = withWorkScope(ctx)
-	return ctx
-}
-
-// coalescedCallShared is the coalescer's OnShare: the waiter avoided the shared call, whose work the call's scope
-// measured (the call's body is read and closed before its waiters are released).
-func (p *Proxy) coalescedCallShared(waiter, call context.Context) {
-	s := workScopeFrom(call)
-	if s == nil {
-		return
-	}
-	p.noteSharedWork(waiter, metrics.ReuseVLCall, s.work(), true)
+// coalescedCallShared is the coalescer's OnShare: the waiter avoided the shared call, whose work was measured
+// while it ran (the call's body is read and closed before its waiters are released).
+func (p *Proxy) coalescedCallShared(waiter context.Context, work *mw.CallWork) {
+	p.noteSharedWork(waiter, metrics.ReuseVLCall, metrics.VLWork{Calls: work.Calls.Load(), Duration: time.Duration(work.Nanos.Load()),
+		Bytes: work.Bytes.Load(), Rows: work.Rows.Load()}, true)
 }

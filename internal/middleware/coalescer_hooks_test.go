@@ -11,48 +11,75 @@ import (
 
 type hookKey struct{}
 
-// The shared call runs on the context OnCall gives, and OnShare hears of every caller that got the call's answer
-// without running it, with that caller's context and the call's: the leader is never told, nor a caller whose
-// shared call failed.
+// The shared call's context carries its work: what is measured with it is the call's. OnShare hears of every
+// caller that got the call's answer without running it, with that caller's context and the call's work: the
+// leader is never told. A call that runs inside another shared call adds its work to that call's too.
 //
 // conformance: observability-vl-savings
-func TestCoalescerHooksSeeTheCallAndEachWaiter(t *testing.T) {
+func TestCoalescerSharesTheCallsWorkWithEachWaiter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := NewCoalescer()
-		c.OnCall = func(ctx context.Context) context.Context { return context.WithValue(ctx, hookKey{}, "call") }
 		var shares atomic.Int64
-		c.OnShare = func(waiter, call context.Context) {
-			if call.Value(hookKey{}) != "call" || waiter.Value(hookKey{}) != "waiter" {
-				t.Errorf("waiter %v, call %v", waiter.Value(hookKey{}), call.Value(hookKey{}))
+		c.OnShare = func(waiter context.Context, work *CallWork) {
+			if waiter.Value(hookKey{}) != "waiter" || work.Calls.Load() != 1 || work.Bytes.Load() != 5 {
+				t.Errorf("waiter %v, work calls %d bytes %d", waiter.Value(hookKey{}), work.Calls.Load(), work.Bytes.Load())
 			}
 			shares.Add(1)
 		}
 		release := make(chan struct{})
 		started := make(chan struct{}, 1)
 		fn := func(ctx context.Context) (*http.Response, error) {
-			if ctx.Value(hookKey{}) != "call" {
-				t.Error("the call does not run on OnCall's context")
+			if ctx.Value(hookKey{}) != "leader" {
+				t.Error("the call lost the values of the context that started it")
 			}
+			CallWorkFrom(ctx).Add(1, 10, 5, 0)
 			started <- struct{}{}
 			<-release
 			return answer("x")
 		}
+		done := make(chan struct{}, 4)
 		go func() {
 			_, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "leader"), "k", allow, fn)
+			done <- struct{}{}
 		}()
 		<-started
 		for i := 0; i < 3; i++ {
 			go func() {
 				_, _, _, _ = c.DoWithGuardCtx(context.WithValue(context.Background(), hookKey{}, "waiter"), "k", allow, fn)
+				done <- struct{}{}
 			}()
 		}
 		synctest.Wait()
 		close(release)
-		synctest.Wait()
+		for i := 0; i < 4; i++ {
+			<-done
+		}
 		if shares.Load() != 3 || c.CoalescedSaved.Load() != 3 {
 			t.Fatalf("shares %d, saved %d, want 3", shares.Load(), c.CoalescedSaved.Load())
 		}
 	})
+	outer := NewCoalescer()
+	inner := NewCoalescer()
+	var outerWork *CallWork
+	_, _, _, err := outer.DoWithGuardCtx(context.Background(), "outer", allow, func(ctx context.Context) (*http.Response, error) {
+		outerWork = CallWorkFrom(ctx)
+		_, _, _, err := inner.DoWithGuardCtx(ctx, "inner", allow, func(ctx context.Context) (*http.Response, error) {
+			CallWorkFrom(ctx).Add(2, 0, 7, 3)
+			return answer("y")
+		})
+		if err != nil {
+			return nil, err
+		}
+		return answer("x")
+	})
+	if err != nil || outerWork == nil || outerWork.Calls.Load() != 2 || outerWork.Rows.Load() != 3 {
+		t.Fatalf("outer work %+v err %v", outerWork, err)
+	}
+	if CallWorkFrom(context.Background()) != nil {
+		t.Fatal("work outside a call")
+	}
+	var none *CallWork
+	none.Add(1, 1, 1, 1) // outside a call: nothing to record
 }
 
 // A follower that starts the call again after the call it waited on ended with the leader's deadline avoided no
@@ -63,7 +90,7 @@ func TestCoalescerInheritedRetryIsNotASaving(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := NewCoalescer()
 		var shares atomic.Int64
-		c.OnShare = func(context.Context, context.Context) { shares.Add(1) }
+		c.OnShare = func(context.Context, *CallWork) { shares.Add(1) }
 		started := make(chan struct{}, 2)
 		var calls atomic.Int64
 		fn := func(ctx context.Context) (*http.Response, error) {
