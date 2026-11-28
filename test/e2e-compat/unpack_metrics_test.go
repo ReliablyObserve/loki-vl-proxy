@@ -113,10 +113,26 @@ func unpackAgainstLoki(t *testing.T, query, endpoint string, at time.Time) {
 // A sum with no clause over an unpack is one series in Loki, at an instant too: the proxy answered a sum of a rate
 // with one series per stream there.
 //
-// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, loki_api_v1_query_range, loki_api_v1_query
+// A sum with no clause of a count or a rate reads no line for the unpack (semantics/ungrouped-sum-skips-unpack): over
+// a stream that also holds lines that are no JSON object, which Loki parses for none of these sums.
+//
+// conformance: semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki, semantics/ungrouped-sum-skips-unpack, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_UnpackSumsLikeLoki(t *testing.T) {
 	app, now := unpackFixture(t, "unpacksum")
 	selector := fmt.Sprintf(`{app=%q}`, app)
+	badApp, badNow := unpackFixture(t, "unpackbad", `not json %d`, `{"agent":"c","_entry":"cut %d"`)
+	bad := fmt.Sprintf(`{app=%q}`, badApp)
+	for i, query := range []string{
+		`sum(count_over_time(` + bad + ` | unpack [5m]))`,
+		`sum(rate(` + bad + ` | unpack | drop agent [5m]))`,
+		`sum(count_over_time(` + bad + ` |= "packed" | unpack | drop agent, sample [5m] offset 2m))`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			t.Run("skipped/"+endpoint+"/"+strconv.Itoa(i), func(t *testing.T) {
+				unpackAgainstLoki(t, query, endpoint, badNow)
+			})
+		}
+	}
 	// A value beside a numeric `_entry` is no label in Loki, so it converts nothing and fails nothing.
 	unwrapApp, unwrapNow := unpackFixture(t, "unpackunwrap", `{"a":"2","_entry":"x%d"}`, `{"a":"oops","_entry":%d}`)
 	for _, endpoint := range []string{"query", "query_range"} {

@@ -1599,6 +1599,21 @@
    ],
    "covers": [
     "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-rate",
+   "kind": "explore",
+   "query": "sum(rate({app=\"visual-unpack\"} | unpack | drop agent [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-unpack",
     "parser-unpack",
     "loki_api_v1_query_range"
    ]
