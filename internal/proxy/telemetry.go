@@ -25,11 +25,14 @@ const (
 type requestTelemetry struct {
 	mu sync.Mutex
 
-	cacheResult            string
-	upstreamCalls          int
-	upstreamDuration       time.Duration
-	upstreamLastCode       int
-	upstreamErrorSeen      bool
+	cacheResult       string
+	upstreamCalls     int
+	upstreamDuration  time.Duration
+	upstreamLastCode  int
+	upstreamErrorSeen bool
+	// inventory is the bucket plan of the request's metadata inventory listings (metadata_inventory.go), in the
+	// padding after the flag above.
+	inventory              flowInventory
 	upstreamCallsByType    map[string]int
 	upstreamDurationByType map[string]time.Duration
 	internalOpsByType      map[string]int
@@ -86,11 +89,14 @@ type requestTelemetry struct {
 }
 
 type requestTelemetrySnapshot struct {
-	cacheResult            string
-	upstreamCalls          int
-	upstreamDuration       time.Duration
-	upstreamLastCode       int
-	upstreamErrorSeen      bool
+	cacheResult       string
+	upstreamCalls     int
+	upstreamDuration  time.Duration
+	upstreamLastCode  int
+	upstreamErrorSeen bool
+	// inventory is the bucket plan of the request's metadata inventory listings (metadata_inventory.go), in the
+	// padding after the flag above.
+	inventory              flowInventory
 	upstreamCallsByType    map[string]int
 	upstreamDurationByType map[string]time.Duration
 	internalOpsByType      map[string]int
@@ -287,6 +293,7 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		upstreamDuration:       rt.upstreamDuration,
 		upstreamLastCode:       rt.upstreamLastCode,
 		upstreamErrorSeen:      rt.upstreamErrorSeen,
+		inventory:              rt.inventory,
 		upstreamCallsByType:    upstreamCallsByType,
 		upstreamDurationByType: upstreamDurationByType,
 		internalOpsByType:      internalOpsByType,

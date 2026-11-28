@@ -3,7 +3,7 @@
   "totals": {
     "deferred_raw": 9,
     "lowering_marker_reads": 10,
-    "parse_calls": 52,
+    "parse_calls": 51,
     "string_reads": 47,
     "text_built": 203,
     "translator_string_ops": 677
@@ -43,7 +43,7 @@
       "internal/proxy/query_plan.go": 2,
       "internal/proxy/query_range_steps.go": 2,
       "internal/proxy/query_range_windowing.go": 1,
-      "internal/proxy/query_translation.go": 3,
+      "internal/proxy/query_translation.go": 2,
       "internal/proxy/rate_counter_singletons.go": 1,
       "internal/proxy/regexp_capture_fields.go": 1,
       "internal/proxy/tail.go": 1,

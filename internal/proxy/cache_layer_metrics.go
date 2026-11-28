@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"time"
-
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
@@ -97,25 +95,14 @@ func (p *Proxy) cacheSizingStats() []cache.SizingSnapshot {
 	return out
 }
 
-// compatAnswerTTL is the Loki answer cache's TTL for an endpoint. query_range
-// and query use a fixed 5 minutes so the entry outlives the bucket used to
-// generate the key (max(5min, step)) while keeping staleness imperceptible: on
-// a 2-day chart a 5-min gap is 0.17% of width. Using step (up to 1h) as TTL
-// caused visible empty spaces at the chart right edge.
-func compatAnswerTTL(endpoint string) time.Duration {
-	if endpoint == "query_range" || endpoint == "query" {
-		return 5 * time.Minute
-	}
-	return CacheTTLs[endpoint]
-}
-
 // cacheTTLs is the base TTL of each answer class as the proxy stores it: the
 // Loki answer cache by endpoint, then the inner caches with their own TTLs.
-// Every value is set in New and not changed afterwards.
+// Every value is set in New and not changed afterwards; the Loki answer
+// classes include their -cache-answer-ttl-* setting.
 func (p *Proxy) cacheTTLs() []metrics.CacheTTL {
 	out := make([]metrics.CacheTTL, 0, len(metrics.CacheTTLClasses))
 	for _, endpoint := range [...]string{"query_range", "query", "labels", "label_values", "series", "detected_fields", "detected_field_values", "detected_labels", "patterns", "index_stats", "volume", "volume_range"} {
-		out = append(out, metrics.CacheTTL{Class: endpoint, TTL: compatAnswerTTL(endpoint)})
+		out = append(out, metrics.CacheTTL{Class: endpoint, TTL: p.compatAnswerTTL(endpoint)})
 	}
 	return append(out,
 		metrics.CacheTTL{Class: "labels_handler", TTL: p.cacheTTLLabels},

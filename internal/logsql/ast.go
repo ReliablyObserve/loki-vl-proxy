@@ -463,6 +463,35 @@ func (s StreamFilter) appendTo(b []byte) []byte {
 	return append(b, '}')
 }
 
+// StreamFilterAny is a stream filter of several groups of matchers, {a="1", b="2" or c="3"}: the streams that match
+// every matcher of at least one group. VictoriaLogs reads it as one stream filter and selects its streams from the
+// stream index, which it does not for an OR of stream filters ({a="1"} OR {c="3"}).
+type StreamFilterAny struct {
+	Groups [][]LabelMatcher
+}
+
+func (s StreamFilterAny) String() string { return string(s.appendTo(nil)) }
+
+func (s StreamFilterAny) filterExpr() {}
+
+func (s StreamFilterAny) appendTo(b []byte) []byte {
+	b = append(b, '{')
+	for g, group := range s.Groups {
+		if g > 0 {
+			b = append(b, " or "...)
+		}
+		for i, m := range group {
+			if i > 0 {
+				b = append(b, ", "...)
+			}
+			b = append(b, m.Name...)
+			b = append(b, m.Op...)
+			b = appendQuoteLogsQL(b, m.Value)
+		}
+	}
+	return append(b, '}')
+}
+
 // TimeFilter constrains the query to a time range.
 type TimeFilter struct {
 	Range string // e.g. "5m" or "[2024-01-01,2024-01-02]"

@@ -80,6 +80,10 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 | `-field-mapping-label-mode` | `FIELD_MAPPING_LABEL_MODE` | (empty) | Which names of a mapped field answers show: unset (one name per field), `original`, `alias` or `both`. See [Field mapping label modes](#field-mapping-label-modes) |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
+| `-service-name-stream-label-only` | — | `false` | Declare that VictoriaLogs stores `service_name` only as a stream label (or not at all) and `service.name` never as a regular field of a row whose stream has a `service.name` label. A positive `{service_name="x"}` matcher then also sends the stream filter `{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` beside the derived `service_name` filter, so VictoriaLogs reads only the streams that can hold that service (with `service.name` as an OpenTelemetry stream field, that service's streams) instead of every stream in the window. Answers are unchanged while the declaration holds; where it does not, rows can be missed. See [service_name stream filter](#service_name-stream-filter) for the checks to run before turning it on |
+| `-service-name-stream-route` | — | `false` | Off by default; opt in only for a large, mostly idle VictoriaLogs: it lowered throughput under load (see [service_name stream filter](#service_name-stream-filter)). Read a log query of one service (`{service_name="x"}`, a positive matcher with a value) from the streams that can hold it, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out; otherwise the read is sent again with the derived filter alone. Answers are those of the derived filter. One more VictoriaLogs read per log read, which reads the other streams: log reads get shorter, VictoriaLogs' work does not drop. See [service_name stream filter](#service_name-stream-filter) |
+| `-service-name-stream-route-min-window` | — | `30m` | Shortest log read window `-service-name-stream-route` narrows. `0` narrows every window |
+| `-service-name-stream-route-violation-ttl` | — | `1h` | How long a found row keeps that tenant's service on the derived filter alone, with no read beside it (memory, pushed to the peers). `0` remembers nothing |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
 
 Configure `-label-style` and `-metadata-field-mode` with flags (or Helm `extraArgs`). The `LABEL_STYLE` and `METADATA_FIELD_MODE` environment variables do not override the current defaults.
@@ -161,14 +165,15 @@ In `original`, `alias` and `both`:
 - `/labels` lists the names of a field only when VictoriaLogs reports the field in the window. Declared names (`-stream-fields`, `-extra-label-fields`) are listed whenever the window has data: in `alias` and `both` a declared mapping name as declared (a declared `namespace` stays `namespace`), in `original` under the field's own name, and another declared field that VictoriaLogs does not report under its own name. A field that is not a VictoriaLogs stream field is never reported, so declare an alias to list it.
 - `detected_labels` shows each listed name with the field's cardinality. A volume request answers under whichever name `targetLabels` (or the selector) asks for, and `aggregateBy=labels` without `targetLabels` counts every listed name.
 - When a name of a mapped field is also the name of a stored field, listings hold it once, queries for it read the mapped field, and an entry that holds both fields shows it once in structured metadata, with the mapped field's value. Give aliases names no stored field uses.
-- In `alias` and `both`, a key a `| json` or `| logfmt` stage extracts under the name of an alias is read as Loki reads a parsed label that collides with a stream label. Where the entry's stream holds the alias's field, the parsed value is `<alias>_extracted` (in `detected_fields`, `/detected_field/<alias>_extracted/values`, log answers, label filters and groupings) and the alias itself is the stream label; where the stream lacks the field, the parsed key is the alias (`sum by (pod) (count_over_time({…} | logfmt [5m]))` groups such entries by their parsed `pod`). A stored field whose alias a stream carries is not listed by `detected_fields`.
+- In `alias` and `both`, a key a `| json` or `| logfmt` stage extracts under the name of an alias is read as Loki reads a parsed label that collides with a stream label. Where the entry's stream holds the alias's field, the parsed value is `<alias>_extracted` (in `detected_fields`, `/detected_field/<alias>_extracted/values`, log answers, label filters and groupings) and the alias itself is the stream label; where the stream lacks the field, the parsed key is the alias (`sum by (pod) (count_over_time({…} | logfmt [5m]))` groups such entries by their parsed `pod`). A stream that stores a field named like the alias itself (a `pod` stream field that was never renamed) holds the stream label there: a filter or grouping on `pod` after a parser reads that stored value, which the parser overwrites in VictoriaLogs (it is copied aside before the parser), and the parsed key is `pod_extracted`. A stored field whose alias a stream carries is not listed by `detected_fields`, and `/detected_field/<alias>/values` lists only the parsed values Loki lists (none where every stream holds the field), never the stream label's values.
 
 In `both`, the names of stream and series labels are added as the answer leaves the query, query_range and series routes (tail adds them to each line), after every evaluation step, so groupings, `without`, binary matching and `label_replace` run on one name per field, as in `alias`: series counts, values and matching are the alias mode's. A grouped answer keeps only the labels it names: a field that `by()`, `on()`, `group_left()` or `group_right()` names gains no other name, a name a `without()` lists is never added, and a label an answer already carries (a `label_replace` target) keeps its value. Effects to expect when switching a deployment to `both`:
 
 - ungrouped metric results (and alert rules over them) carry one more label per name of a mapped stream field, so an alert keyed on its labels can fire once more as a new series;
 - the new names start with a cold cache: the mode has its own cache entries;
 - a `sum without (k8s_node_name)` keeps the other names of the field (`nodename`, `node`), as a Loki that stored both names would;
-- a key a `| json` or `| logfmt` stage extracts under the `-label-style` name of a mapped stream field (`k8s_pod_name=x` in the line of a stream holding `k8s.pod.name`) keeps that name with the parsed value, and that line gets no added `k8s_pod_name` stream label; a Loki that stored both names answers `k8s_pod_name_extracted` beside the stream label. The `_extracted` rules apply to aliases only;
+- the `-label-style` name of a mapped field with an alias is a stream label like the alias: a key a `| json` or `| logfmt` stage extracts under it (`k8s_pod_name=x` in the line of a stream holding `k8s.pod.name`) is `k8s_pod_name_extracted` beside the `k8s_pod_name` stream label, in log answers and live tail, `detected_fields`, field values, filters and `_extracted` groupings, as a Loki that stored both names answers;
+- a stream that stores a field named like the alias itself (`pod`, never renamed) also gains the `-label-style` name (`k8s_pod_name`) with that value, which a Loki storing both names would not hold there (a parsed `k8s_pod_name` keeps its name on such a stream, since only a stream that stores the mapped field collides with the `-label-style` name: it replaces the added label in an answer without categorized labels, and stands beside it under `parsed` in a categorized one), and a grouping by the `-label-style` name reads the parsed alias, not the parsed `-label-style` key, where the stream lacks the mapped field (known issues);
 - answers grow by the added labels, and the route reads the whole JSON answer and writes it again once (no streaming in this mode; a cached answer is rewritten on each hit).
 
 The mode changes no VictoriaLogs request count. Replicas in `original`, `alias` or `both` keep their own cache entries (memory, disk and peers), which also carry the `-metadata-field-mode`; replicas that leave the flag unset share them with builds that predate the flag.
@@ -513,6 +518,30 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `patterns` | `100y` (effectively persistent; update-on-write) |
 | `query_range`, `query` | 5m final-response cache; requests ending within `-recent-tail-refresh-window` (default `2m`) of now are refetched once the cached entry is older than `-recent-tail-refresh-max-staleness` (default `2s`) |
 | `index_stats`, `volume`, `volume_range` | 10s |
+
+### Shortening the Loki answer TTLs
+
+The TTLs of the table above can be shortened per class, never lengthened: an answer can only become fresher than with the built-in TTLs. A value longer than the built-in TTL, or a negative one, stops the start with an error naming the flag, its variable and the built-in TTL. `0` (the default) keeps the built-in TTL, and so does a value equal to it: TTLs, cache keys and answers are then exactly those of a proxy without the setting. `patterns` is not settable (its TTL keeps mined patterns until they are replaced, it is no freshness bound), nor are the classes that already have their own flags (`-labels-cache-ttl`, `-query-range-*-cache-ttl`, `-parse-risk-probe-cache-ttl`). The flag wins over its variable.
+
+| Flag | Env | Default | Built-in TTL, the longest accepted | What it shortens |
+|---|---|---|---|---|
+| `-cache-answer-ttl-query-range` | `CACHE_ANSWER_TTL_QUERY_RANGE` | `0` | 5m | `query_range` answers in the Loki answer cache; their multi-tenant merge keeps the shorter of this and its 10s. The split windows and extents keep `-query-range-recent-cache-ttl`, `-query-range-history-cache-ttl` and `-query-range-extent-cache-ttl` |
+| `-cache-answer-ttl-query` | `CACHE_ANSWER_TTL_QUERY` | `0` | 5m | instant `query` answers in the Loki answer cache; their multi-tenant merge keeps the shorter of this and its 10s |
+| `-cache-answer-ttl-labels` | `CACHE_ANSWER_TTL_LABELS` | `0` | 5m | `labels` answers in the Loki answer cache and their multi-tenant merge; the label handler cache keeps `-labels-cache-ttl` |
+| `-cache-answer-ttl-label-values` | `CACHE_ANSWER_TTL_LABEL_VALUES` | `0` | 5m | `label_values` answers in the Loki answer cache and their multi-tenant merge; the label handler cache keeps `-labels-cache-ttl` |
+| `-cache-answer-ttl-series` | `CACHE_ANSWER_TTL_SERIES` | `0` | 30s | `series` answers in the Loki answer cache and their multi-tenant merge |
+| `-cache-answer-ttl-detected-fields` | `CACHE_ANSWER_TTL_DETECTED_FIELDS` | `0` | 90s | `detected_fields` answers in the Loki answer cache, the read cache (still scaled with the request window, from the shortened base) and the field detection cache |
+| `-cache-answer-ttl-detected-field-values` | `CACHE_ANSWER_TTL_DETECTED_FIELD_VALUES` | `0` | 90s | `detected_field_values` answers in the Loki answer cache and the read cache (scaled the same way) |
+| `-cache-answer-ttl-detected-labels` | `CACHE_ANSWER_TTL_DETECTED_LABELS` | `0` | 90s | `detected_labels` answers in the Loki answer cache, the read cache (scaled the same way) and the label detection cache (30s, or this when shorter) |
+| `-cache-answer-ttl-index-stats` | `CACHE_ANSWER_TTL_INDEX_STATS` | `0` | 10s | `index_stats` answers in the Loki answer cache and the read cache |
+| `-cache-answer-ttl-volume` | `CACHE_ANSWER_TTL_VOLUME` | `0` | 10s | `volume` answers in the Loki answer cache and the read cache |
+| `-cache-answer-ttl-volume-range` | `CACHE_ANSWER_TTL_VOLUME_RANGE` | `0` | 10s | `volume_range` answers in the Loki answer cache and the read cache |
+
+`loki_vl_proxy_cache_ttl_seconds{class}` shows the TTL each class is stored with, the setting included. A setting bounds the caches its row names and nothing else: a `query_range` answer computed again after its Loki answer cache entry expired can still be assembled from windows and extents kept under their own TTLs.
+
+**Replicas with different settings, disks and restarts.** A cache entry carries its expiry, not its age, so a copy written under a longer TTL (by a peer with another setting, or by this replica's disk tier before a restart with a shorter setting) could otherwise be served past the shorter TTL. Once a class is shortened, its keys in the shared tiers (memory, disk and peers) carry the TTL (`@ttl=<ttl>`): replicas with the same setting share entries as before, replicas with different settings never serve each other's entries, and after a restart with a new setting the entries the old setting wrote to disk are not read (they expire on their own). Unset, the keys are unchanged. During a rolling restart that changes a setting, the class is therefore cold on the replicas with the new setting until they have answered it once, and replicas on the old setting keep sharing among themselves; rolling back is safe the same way. The memory-only answers a graceful shutdown keeps for the next start (`-cache-shutdown-flush-timeout`) are restored only by a process with the same flag values, settings included. The Loki answer cache itself is memory only and is empty after a restart.
+
+**Cost.** A shorter TTL means more VictoriaLogs reads for repeated requests: a repeat inside the TTL makes no VictoriaLogs call, a repeat after it makes the class's usual calls, on every replica that answers it, and a hit on the detected field and label or volume read caches starts a background refresh once a fifth of the shorter TTL has passed (as with the built-in TTL, so with a 2s TTL a hit 0.4s after the store starts one). A TTL under `-disk-cache-min-ttl` or `-peer-write-through-min-ttl` (30s by default) keeps the class's entries in memory only, as the built-in 10s classes already are. Empty label lists keep the negative TTL (max(30s, `-disk-cache-min-ttl`, `-peer-write-through-min-ttl`)) in the multi-tenant merge.
 
 ## Cache (L2 On-Disk)
 
@@ -1259,3 +1288,152 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 Trusted user headers, `send_user_header`, what the request log records and what is forwarded to VictoriaLogs: see [Grafana user identity](tenancy-and-auth.md#5-grafana-user-identity). The recommended setup is `-log-user-header=X-Grafana-User` with `-log-user-header-trusted-cidrs`.
 
 Alerting is not finished: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend (a read bridge to vmalert), but it does not evaluate rules or implement Loki's ruler API. Loki-compatible rule evaluation, rule writes and full ruler parity are planned work, not shipped.
+
+## service_name stream filter
+
+Loki assigns `service_name` at ingest; the proxy derives it on the read path from what VictoriaLogs stores: the
+first non-empty of `service_name`, `service.name`, `service`, `app`, `application`, `app_name`, `name`,
+`app_kubernetes_io_name`, `container`, `container_name`, `k8s.container.name`, `k8s_container_name`, `component`,
+`workload`, `job`, `k8s.job.name`, `k8s_job_name`, else `unknown_service`. A `{service_name="x"}` selector is a
+filter over those fields, which VictoriaLogs evaluates on every stream of the window: Logs Drilldown sends every
+query of a service with that selector.
+
+Two ways let VictoriaLogs pick a service's streams from its stream index instead. Both are off by default:
+
+- `-service-name-stream-label-only` is a declaration. It needs no read beside each read and lowers VictoriaLogs'
+  work, but it is exact only while the declaration holds. Prefer it where the declaration holds.
+- `-service-name-stream-route` checks each read and is always exact, but adds a read and VictoriaLogs work. It is
+  for a large, mostly idle VictoriaLogs where the declaration cannot be made.
+
+### Automatic route: `-service-name-stream-route` (off by default, opt in)
+
+The automatic route is **off by default**. Turn it on with `-service-name-stream-route=true` (Helm
+`extraArgs.service-name-stream-route: "true"`); turn it off again by removing the flag or setting it to `false`.
+Off, every query text, cache key and VictoriaLogs call is what the proxy sends without it.
+
+**How it works.** For a log query of one service, each VictoriaLogs log read gets the stream filter
+`{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""}` in `extra_filters`.
+That argument is ANDed with the query, so VictoriaLogs reads only the streams that can hold the service, through
+its stream index. At the same time, over the same window and tenant, the proxy reads the rows that filter leaves out
+and the derived filter keeps:
+
+```
+(service_name:="x" OR (service_name:="" "service.name":="x")) -{service_name="x" or service_name="", service.name="x" or service_name="", service.name=""} | limit 1
+```
+
+- The narrowed answer is used only when that read returns no row.
+- A row, an error, a timeout or a narrowed read VictoriaLogs refuses (400, 422) sends the read again without the
+  stream filter. That is the read the proxy makes with the route off, so every answer is the derived filter's.
+- A found row (or a refused narrowing) is remembered per tenant and service for
+  `-service-name-stream-route-violation-ttl` (default `1h`). It is kept in memory and pushed to every peer, so
+  every replica then sends that service's log reads once, unnarrowed, with no read beside them. A violation of a
+  request that forwards a user's credentials to VictoriaLogs stays on the replica that found it.
+- No verdict that a window is clean is ever kept: each request proves its own reads. A row written later, also
+  into an earlier window, is seen by the next request. A row that arrives while a request runs may be in or out
+  of its answer, as for any VictoriaLogs read.
+- A request makes at most two proof reads: its first window, then the rest of the request on that side.
+
+**What is eligible.**
+- `query_range` log queries (no metric function).
+- The selector has a positive `service_name="x"` matcher with a value, and no matcher of a declared
+  `-stream-fields` label.
+- Only log reads (`/select/logsql/query`, and the `/select/logsql/hits` prefilter of a split read) at least
+  `-service-name-stream-route-min-window` (default `30m`) long are narrowed.
+- Everything else keeps the derived filter alone, with no read beside it:
+  - metric queries and instant queries;
+  - detected fields and labels, volume, patterns, label values and tail;
+  - `!=`, `=~`, `!~` and empty matchers;
+  - shorter reads;
+  - reads the handler makes before the log read, such as the parser probe of `| json | logfmt`.
+
+**What it costs.** Measured on 2026-11-26 on an isolated stack: VictoriaLogs v1.54.0, 598k rows, 28k streams, 15 services,
+`service_name` a stream label on every row.
+
+- **Bytes read.** The read beside the narrowed one processes every row the derived filter processes. Per read,
+  narrowed plus proof read 1.20x to 1.46x the bytes of the derived filter alone, for example 6.2 MB instead of
+  4.9 MB for a 1h read of the largest service.
+- **Calls.** One more VictoriaLogs call per narrowed read: 2 instead of 1 for a plain log query, 3 instead of 2
+  with `| json`. An exact repeat is answered from the cache with 0 calls either way.
+- **Load.** With 8 concurrent clients for 60 s, mostly cache misses:
+
+  | route | requests/s | p50 | p95 | VictoriaLogs CPU-s per request | VictoriaLogs calls per request |
+  |---|---|---|---|---|---|
+  | off | 231 / 216 | 26 / 28 ms | 78 / 86 ms | 0.028 / 0.029 | 1.33 |
+  | on | 176 / 113 | 36 / 54 ms | 101 / 170 ms | 0.036 / 0.052 | 2.27 |
+
+  That is 24% to 48% lower throughput, 30% to 98% higher latency, and 29% to 77% more VictoriaLogs CPU per
+  request.
+- **Single requests on that stack** were the same or slower cold: up to 3x on 30m windows.
+- **In-process VictoriaLogs (v1.49.0 and v1.54.0, 11.5M rows, one service of 1200)**, with one read at a time,
+  showed the case it is built for: log and `| json | logfmt` reads of 30m to 24h, 1.5x to 3.4x faster on a first
+  read and 1.9x to 4.3x on repeats. Its sort and parser pipes run on the service's rows only. **That was not tested
+  under concurrent load.**
+
+**When to opt in.** All of these should hold:
+- VictoriaLogs is large and mostly idle, so a read beside each read costs latency but not throughput.
+- Log panels of one service read long windows with parser pipes.
+- `-service-name-stream-label-only` cannot be used, because its declaration is false for some tenant or cannot be
+  checked.
+
+**When not to opt in.** Do not turn it on when VictoriaLogs is busy or CPU-bound, when most reads are short, or
+when the declaration of `-service-name-stream-label-only` holds. In the last case prefer that flag: it narrows
+log and metric reads alike with no extra read, so it lowers VictoriaLogs' work (reads 1.3x to 3.7x faster on a first read and 3.7x to 9.4x on repeats, measured),
+while the route never does.
+
+**Check it on your own deployment.**
+1. Enable it on one replica, or in a staging stack, with `-debug-vl-calls-header`.
+2. Compare the same Logs Drilldown and Explore views with it on and off:
+   - `X-Loki-VL-Backend-Calls` per request;
+   - the request duration histograms (`loki_vl_proxy_request_duration_seconds{endpoint="query_range"}`);
+   - VictoriaLogs' own `process_cpu_seconds_total` and `vl_http_requests_total{path="/select/logsql/query"}`.
+3. Watch what the route decides, by outcome, in `loki_vl_proxy_internal_operation_total{operation="service_name_stream_route"}`
+   and its `_duration_seconds` histogram:
+
+   | outcome | meaning |
+   |---|---|
+   | `narrowed` | the proof was clean and the narrowed answer was used |
+   | `violation` | the proof found a row; the read went out again without the filter |
+   | `proof_failed` | the proof erred or timed out; the read went out again |
+   | `narrowed_read_failed` | the narrowed read failed; the read went out again |
+   | `narrowed_read_refused` | VictoriaLogs refused the filter; remembered |
+   | `proof_bound` | the request reached its proof bound; the read went out unnarrowed |
+   | `remembered_violation` | a held violation sent the request to the derived filter alone |
+   | `violation_sent_to_peers` / `peer_violation_received` / `peer_violation_rejected` | the peer push of a violation |
+
+   The per-request log line carries these as `proxy.operations_by_type` at `DEBUG` (see [observability](observability.md)).
+4. Keep it only if `narrowed` dominates, latency drops, and VictoriaLogs CPU per request does not rise beyond what
+   you accept. Many `violation` or `remembered_violation` outcomes mean the deployment stores `service_name` or
+   `service.name` as regular fields, and the route then only adds reads.
+
+### Declared: `-service-name-stream-label-only` (off by default)
+
+It writes the same stream filter into every
+plan-served selector with a positive matcher, log and metric queries alike, with no read beside it, and replaces
+the automatic route when set. It relies on a statement about how the deployment ingests; turn it on only when both
+hold for every tenant:
+
+- `service_name` is stored only as a stream label, or not at all: no structured metadata, OpenTelemetry log
+  attribute or JSON key named `service_name` outside the stream fields (the Loki push route keeps the
+  `service_name` label in the stream; OpenTelemetry ingestion stores `service.name`, not `service_name`);
+- `service.name` is never a regular field of a row whose stream has a `service.name` label (an OpenTelemetry log
+  attribute `service.name` beside the resource attribute). A `service.name` that is a regular field of streams
+  without that label is fine.
+
+Both can be checked in VictoriaLogs over a window (checked on v1.49.0 and v1.54.0); each query must return no
+rows. The first finds a regular `service_name` field, the second a regular `service_name` beside a stream label of
+another value, the third the same for `service.name` (a stream label value holding a `"` is reported too, which
+errs on the safe side):
+
+```
+service_name:* -{service_name=~".+"} | limit 1
+{service_name=~".+"} | extract_regexp `service_name="(?P<__sn_tag>[^"]*)"` from _stream | filter -service_name:eq_field(__sn_tag) | limit 1
+{service.name=~".+"} | extract_regexp `service\.name="(?P<__sd_tag>[^"]*)"` from _stream | filter -"service.name":eq_field(__sd_tag) | limit 1
+```
+
+With the flag the selector keeps its derived filter, so the rows kept are those it keeps without the flag; only
+the streams VictoriaLogs reads change. The stream filter is written for a positive matcher with a value; `!=`, `=~`, `!~`,
+`service_name=""`, a selector that already has a stream filter from `-stream-fields`, the delete API and queries
+the string translator serves keep the derived filter alone. Answers read with the flag are cached under keys of
+their own, so turning it off never serves one. With `service.name` stored as a regular field only, the flag has
+nothing to gain and costs VictoriaLogs about a millisecond more on the first read of a window.
+

@@ -182,6 +182,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
@@ -492,6 +493,11 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		// text, kept apart from the lowering's.
 		cacheKey = "\x00stream-identity\x00" + cacheKey
 	}
+	if absentPresence(ctx) {
+		// The presence query of an absent_over_time: the translator's text over an unpack, kept apart from a client's
+		// sum, which the lowering writes with no unpack (absentPresenceKey).
+		cacheKey = "\x00absent-presence\x00" + cacheKey
+	}
 	ahead := !baseIdentity && identityAhead(ctx)
 	if ahead {
 		// A root dynamic identity over a range longer than the step (dynamicIdentityWindows): the lowering's text with
@@ -537,6 +543,8 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			prof = p.labelTranslator.withAliases(prof)
 			// A root identity over a range longer than the step writes its series hash ahead of the gate.
 			prof.IdentityAhead = ahead
+			// Only the text served here: the delete filter, the shadows and the verdicts keep the derivation alone.
+			prof.ServiceNameStreamLabelOnly = p.serviceNameStreamLabelOnly
 			// The planning budget (query_budget.go) stops the lowering at a node; a stopped lowering must not fall back
 			// to the string translator, which would do the work again.
 			seg := p.beginPlan(ctx, p.limits())
@@ -671,35 +679,6 @@ func pipelineHasParserStageOf(pipeline []logqlpkg.Stage, jsonStage, logfmtStage 
 	return false
 }
 
-func removeParserStage(query, parser string) string {
-	lq, err := parseLogQLQuery(noFlowCtx, query)
-	if err != nil {
-		// Fall back to regex on parse failure.
-		re := jsonParserStageRE
-		if parser == "logfmt" {
-			re = logfmtParserStageRE
-		}
-		result := re.ReplaceAllString(query, "")
-		for strings.Contains(result, "  ") {
-			result = strings.ReplaceAll(result, "  ", " ")
-		}
-		return strings.TrimSpace(result)
-	}
-	remove := logqlpkg.ParserJSON
-	if parser == "logfmt" {
-		remove = logqlpkg.ParserLogfmt
-	}
-	filtered := lq.Pipeline[:0]
-	for _, stage := range lq.Pipeline {
-		if ps, ok := stage.(*logqlpkg.ParserStage); ok && ps.Type == remove {
-			continue
-		}
-		filtered = append(filtered, stage)
-	}
-	lq.Pipeline = filtered
-	return lq.String()
-}
-
 // extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
 // strips all occurrences from the query, and returns the offset duration.
 //
@@ -756,8 +735,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // evaluates it (a step evaluator per side). A wrapper over an ordered mixed parser
 // metric also keeps its stages until its inner evaluator reads them.
 // Dropping one parser from the whole query would take it from the operand
-// that needs it, and the text rewrite of a metric query (removeParserStage)
-// cuts everything after a stage that is the last before its range.
+// that needs it.
 func operandsKeepTheirParsers(logql string) bool {
 	expr, err := parseLogQLExpr(noFlowCtx, stripLabelTransforms(logql))
 	if err != nil {
@@ -777,7 +755,19 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	// Mixed metric requests retain logfmt flags until typed admission above.
 	// The existing sampled fallback evaluates them as unflagged logfmt.
 	logql = logqlpkg.StripParserFlags(logql)
-	baseQuery := extractParserProbeQuery(logql)
+	// One read of the query gives the log query the probe reads and where the stage the probe does not keep
+	// stands; that stage is removed from the text where the parser read it, the rest of the query as written. A
+	// text pattern used to remove a metric query's stage with everything up to the next `|`, so a stage that was
+	// the last one before its range took the range and the closing parentheses with it (#1821), and read a
+	// quantile_over_time's parameter into the probe's log query.
+	stages := logqlpkg.ReadParserStages(logql)
+	baseQuery := stages.LogQuery()
+	if baseQuery == "" {
+		baseQuery = parserProbeLogQuery(logql)
+	}
+	if baseQuery == "" {
+		baseQuery = extractParserProbeQuery(logql)
+	}
 	if baseQuery == "" {
 		baseQuery = logql
 	}
@@ -792,10 +782,10 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	switch preferred {
 	case "json":
 		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_json", time.Since(opStart))
-		return removeParserStage(logql, "logfmt")
+		return stages.Drop(logqlpkg.ParserLogfmt)
 	case "logfmt":
 		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_logfmt", time.Since(opStart))
-		return removeParserStage(logql, "json")
+		return stages.Drop(logqlpkg.ParserJSON)
 	default:
 		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
 		return logql
@@ -895,6 +885,47 @@ func saturatingSub(a, b int64) int64 {
 		return math.MinInt64
 	}
 	return a - b
+}
+
+// parserProbeLogQuery is the log query the parser probe reads for a query: the query itself when it is a log query,
+// or the log query of its first range aggregation, read from the parsed tree (through vector aggregations, binary
+// operands and a typed label_replace). The text pattern it replaces read a quantile_over_time's parameter into the
+// log query (`0.9, {a="b"} | json ...`), and missed a range with an offset; the probe then read nothing useful.
+// It is "" for a query that does not parse or holds no log query the tree reaches (a call kept as text).
+func parserProbeLogQuery(logql string) string {
+	expr, ok := sharedLogQLExpr(logql)
+	if !ok {
+		return ""
+	}
+	var find func(logqlpkg.Expr) *logqlpkg.LogQuery
+	find = func(e logqlpkg.Expr) *logqlpkg.LogQuery {
+		switch n := e.(type) {
+		case *logqlpkg.LogQuery:
+			return n
+		case *logqlpkg.RangeAggregation:
+			lq, _ := n.Inner.(*logqlpkg.LogQuery)
+			return lq
+		case *logqlpkg.VectorAggregation:
+			return find(n.Inner)
+		case *logqlpkg.BinOpExpr:
+			if lq := find(n.Left); lq != nil {
+				return lq
+			}
+			return find(n.Right)
+		case *logqlpkg.OpaqueMetricExpr:
+			if n.Typed && n.Inner != nil {
+				return find(n.Inner)
+			}
+		}
+		return nil
+	}
+	if _, isLog := expr.(*logqlpkg.LogQuery); isLog {
+		return logql
+	}
+	if lq := find(expr); lq != nil {
+		return lq.String()
+	}
+	return ""
 }
 
 var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
@@ -1579,7 +1610,7 @@ func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[st
 		// an unrelated per-line id into a metric series label.
 		_, metadataFields, parsedFields, _ = p.classifyEntryFieldsWithFlags(entry, desc.rawLabels, true, exposure, exposureCache, smBuf, pfBuf)
 	} else {
-		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.finalLabels(), exposure, true, exposureCache, smBuf, pfBuf)
 	}
 	addParsedSeriesLabels(metric, parsedFields, unwrapField, captureLabels, includeParsed)
 	if includeParsed {

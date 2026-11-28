@@ -48,8 +48,9 @@ var dynamicSeries = []string{dynamicSeriesField}
 // key or of an extraction list of plain keys (no keep, no drop, nothing that changes the line or the labels by their
 // values): the queries whose series identity the
 // lowering writes from the data (the top of this file). The functions are the ones taken per series that the outer
-// aggregation then folds: avg, max, min, stddev and stdvar over time (quantile_over_time and rate_counter need each
-// series' samples, which VictoriaLogs' stats cannot give without a row per series).
+// aggregation then folds: avg, max, min, stddev, stdvar, first and last over time (first and last keep the row of the
+// earliest or the latest time per series; quantile_over_time and rate_counter need each series' samples, which
+// VictoriaLogs' stats cannot give without a row per series).
 func DynamicUnwrapIdentity(p *queryplan.Plan) bool {
 	va, ok := p.Root.(*queryplan.VectorAgg)
 	if !ok {
@@ -113,7 +114,7 @@ func dynamicIdentity(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) (parser *q
 	}
 	switch ra.Op {
 	case logql.RangeAvgOverTime, logql.RangeMaxOverTime, logql.RangeMinOverTime, logql.RangeStddevOverTime,
-		logql.RangeStdvarOverTime:
+		logql.RangeStdvarOverTime, logql.RangeFirstOverTime, logql.RangeLastOverTime:
 	default:
 		return nil, false
 	}

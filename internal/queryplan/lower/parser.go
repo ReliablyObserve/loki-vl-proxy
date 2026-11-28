@@ -23,6 +23,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 	var names definedNames
 	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
 	read, streamErr := streamReads(sel, prof)
+	read = aliasStreamReads(sel, prof, read)
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
 		names.note(defs, i)

@@ -44,11 +44,19 @@ import (
 type statsReadMeterKey struct{}
 
 // statsReadMeter records the stats_query_range reads of a chunk: whether one passed its bound (overBytes: the body
-// bound, else the series before the fold), and what they held.
+// bound, else the series before the fold), and what they held. chunks is set by a caller that reads the steps again
+// in smaller time chunks when a read passes the body bound, so the read may stop there (levelWitnessResponse).
 type statsReadMeter struct {
 	over, overBytes bool
+	chunks          bool
 	bytes           int
 	series          int
+}
+
+// statsReadChunks reports a read whose caller reads its steps again in time chunks when it passes the body bound.
+func statsReadChunks(ctx context.Context) bool {
+	m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter)
+	return m != nil && m.chunks
 }
 
 func withStatsReadMeter(ctx context.Context) (context.Context, *statsReadMeter) {
@@ -125,6 +133,19 @@ type listedChunkReads struct {
 	overflowed                   bool
 }
 
+// chunkable reports a request whose windows can be read in time chunks once its read over the whole range passed the
+// stats body bound: the request folds them (a matrix fold) and reads them from stats buckets.
+func (reads listedChunkReads) chunkable(r *http.Request, statsAggFunc string) bool {
+	return matrixFoldFrom(r.Context()) != nil && !listedWindowChunksOff && reads.bucketsOK && statsAggFunc != "" && !*reads.rawRows &&
+		!reads.counter && !reads.quantile
+}
+
+// rereadsInChunks reports a request whose read over the whole range rereadOverflowedInChunks reads again in time
+// chunks when it passes the stats body bound.
+func (reads listedChunkReads) rereadsInChunks(r *http.Request, statsAggFunc string) bool {
+	return !reads.overflowed && reads.chunkable(r, statsAggFunc)
+}
+
 // rereadOverflowedInChunks follows a whole-range read of a window metric's buckets that passed the stats body bound:
 // the replica remembers it, and the steps are read again in time chunks, each folded as it is read, where the answer
 // (the folded groups) fits. It reports whether that answered the request; a read within the bound, or one already in
@@ -145,8 +166,7 @@ func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request,
 // whether it did.
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
-	if fold == nil || listedWindowChunksOff || !reads.bucketsOK || statsAggFunc == "" || *reads.rawRows || reads.counter || reads.quantile ||
-		!reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
+	if !reads.chunkable(r, statsAggFunc) || !reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
@@ -191,6 +211,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 			fetchFrom = from.Add(-step)
 		}
 		readCtx, meter := withStatsReadMeter(ctx)
+		meter.chunks = last > first // a read of one step past its bound is the answer's error
 		var series map[string]manualSeriesSamples
 		var err error
 		answered := -1

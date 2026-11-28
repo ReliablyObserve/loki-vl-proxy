@@ -98,6 +98,22 @@ func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, s
 // string translator writes as a field filter VictoriaLogs rejects or reads as its own filter. A selector names
 // stream labels only, and VictoriaLogs keeps every stream label as a tag of the stream.
 func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
+	return StreamSelectorFilterOpts(ms, labelFn, streamFields, name, SelectorOptions{})
+}
+
+// SelectorOptions are the choices of a selector's filter that come from the deployment rather than the query.
+type SelectorOptions struct {
+	// ServiceNameStreamLabelOnly is the operator's statement (-service-name-stream-label-only) that VictoriaLogs
+	// stores service_name only as a stream label, if at all, and service.name never as a regular field of a row
+	// whose stream has a service.name label. A selector whose only stream-index matcher would be a positive
+	// service_name="v" (v not empty) then also gets ServiceNameStreamFilter(v), so VictoriaLogs reads only the
+	// streams that can hold rows whose derived service_name is v; the derivation's filter stays, so the rows kept
+	// are the same.
+	ServiceNameStreamLabelOnly bool
+}
+
+// StreamSelectorFilterOpts is StreamSelectorFilterNamed with the deployment's options.
+func StreamSelectorFilterOpts(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string, opts SelectorOptions) (logsql.FilterExpr, error) {
 	// The usual selector's matchers are converted on the stack.
 	var buf [4]SelectorMatcher
 	matchers := buf[:0]
@@ -107,7 +123,7 @@ func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFu
 	for _, m := range ms {
 		matchers = append(matchers, SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value})
 	}
-	return selectorFilter(matchers, labelFn, streamFields, name)
+	return selectorFilter(matchers, labelFn, streamFields, name, opts)
 }
 
 // SelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes: the filter the string
@@ -115,12 +131,15 @@ func StreamSelectorFilterNamed(ms []logql.LabelMatcher, labelFn LabelTranslateFu
 // first; every other matcher becomes a field filter, in the selector's order. A detected_level matcher, when
 // detected_level is not a stream field, matches every row or none. A selector that keeps every row is *.
 func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool) (logsql.FilterExpr, error) {
-	return selectorFilter(matchers, labelFn, streamFields, nil)
+	return selectorFilter(matchers, labelFn, streamFields, nil, SelectorOptions{})
 }
 
-// selectorFilter is SelectorFilter with the field names passed through name (nil: as they are).
-func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string) (logsql.FilterExpr, error) {
+// selectorFilter is SelectorFilter with the field names passed through name (nil: as they are) and the deployment's
+// options.
+func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool, name func(string) string, opts SelectorOptions) (logsql.FilterExpr, error) {
 	var stream []logsql.LabelMatcher
+	// service is the value of the first positive, non-empty service_name matcher, for ServiceNameStreamFilter.
+	service, hasService := "", false
 	// The parts are collected on the stack: a selector of one part answers it alone, and one of several a copy.
 	var buf [4]logsql.FilterExpr
 	parts := buf[:0]
@@ -130,6 +149,9 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 			return nil, &ParseError{Msg: fmt.Sprintf("unknown operator %q in stream matcher", m.Op), Pos: -1}
 		}
 		label := SanitizeFieldIdentifier(m.Name)
+		if opts.ServiceNameStreamLabelOnly && !hasService && label == "service_name" && !negate && !isRe && m.Value != "" {
+			service, hasService = m.Value, true
+		}
 		if !streamFields[DetectedLevelLabel] && label == DetectedLevelLabel {
 			filter, err := detectedLevelMatcherFilter(m, negate, isRe)
 			if err != nil {
@@ -166,6 +188,11 @@ func selectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 	}
 	if len(stream) > 0 {
 		return append(append(make(logsql.AllOf, 0, 1+len(parts)), logsql.StreamFilter{Matchers: stream}), parts...), nil
+	}
+	if hasService {
+		// Only where no other matcher reads the stream index: a declared stream field already narrows the streams,
+		// and the second stream filter then costs VictoriaLogs more on a first read than it saves.
+		return append(append(make(logsql.AllOf, 0, 1+len(parts)), ServiceNameStreamFilter(service)), parts...), nil
 	}
 	switch len(parts) {
 	case 0:
@@ -403,6 +430,46 @@ var SyntheticServiceNameFields = []string{
 	"job",
 	"k8s.job.name",
 	"k8s_job_name",
+}
+
+// ServiceNameStreamFilter is the stream filter that keeps every stream that can hold a row whose derived
+// service_name (ServiceNameDerivedFilterExpr) is value, a non-empty value, where service_name is stored only as a
+// stream label and service.name is no regular field of a row whose stream has a service.name label
+// (SelectorOptions.ServiceNameStreamLabelOnly):
+//
+//	{service_name="v" or service_name="", service.name="v" or service_name="", service.name=""}
+//
+// A row derives v from service_name only if its stream's service_name label is v; from service.name only if it
+// has no service_name, so its stream has no service_name label, and its stream's service.name label is v or
+// missing (a row with service.name as a regular field, in a stream without that label); from a later field or as
+// unknown_service only if it has neither, so its stream has neither label. A missing label reads as "" in a
+// stream filter. VictoriaLogs selects the streams from its stream index; the derivation's filter beside it keeps
+// exactly the rows it keeps without it.
+func ServiceNameStreamFilter(value string) logsql.FilterExpr {
+	return logsql.StreamFilterAny{Groups: [][]logsql.LabelMatcher{
+		{{Name: "service_name", Op: "=", Value: value}},
+		{{Name: "service_name", Op: "=", Value: ""}, {Name: "service.name", Op: "=", Value: value}},
+		{{Name: "service_name", Op: "=", Value: ""}, {Name: "service.name", Op: "=", Value: ""}},
+	}}
+}
+
+// ServiceNameStreamFilterProof is the filter of the rows that a read narrowed by ServiceNameStreamFilter(value)
+// leaves out and the derived filter of value (ServiceNameDerivedFilterExpr) keeps, for a non-empty value: a row of a
+// stream the stream filter drops whose service_name is value, or whose service_name is empty and whose service.name
+// is value. A dropped stream has a service_name label other than value, or no service_name label and a
+// service.name label other than value. VictoriaLogs stores a stream label as a field of each of the stream's rows
+// (a regular field of the same name overrides it, never with an empty value), so a row of a dropped stream has a
+// non-empty service_name or service.name and its derivation never reaches a later source. No row matches it
+// exactly when the narrowed read keeps every row the derived filter keeps.
+func ServiceNameStreamFilterProof(value string) logsql.FilterExpr {
+	derived := logsql.AnyOf{
+		logsql.FieldFilter{Field: SyntheticServiceNameFields[0], Op: logsql.FieldOpExact, Value: value, GoQuoted: true},
+		logsql.Group{Expr: logsql.AllOf{
+			logsql.FieldFilter{Field: SyntheticServiceNameFields[0], Op: logsql.FieldOpExact},
+			logsql.FieldFilter{Field: `"` + SyntheticServiceNameFields[1] + `"`, Op: logsql.FieldOpExact, Value: value, GoQuoted: true},
+		}},
+	}
+	return logsql.AllOf{logsql.Group{Expr: derived}, logsql.Exclude{Expr: ServiceNameStreamFilter(value)}}
 }
 
 // matchNoStreams is matchNoStreamsFilter as a filter node.

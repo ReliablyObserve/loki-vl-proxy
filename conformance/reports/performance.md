@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 121 items are locked; 5 carry an effort exception.
+30 of 123 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -304,6 +304,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.03s (24h) | 0.06s † / 0.06s | differs | locked 2026-10-27 |
 | `semantics/nested-aggregation-outer-by-native-routes` | 16 × 3 ranges | 27 same | worst 0.78s / 0.02s (6h) | 1.60s / 0.05s | same | not locked |
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 25 same | worst 1.52s / 0.01s (24h) | 5.00s / 0.04s | same | locked 2026-10-27 |
+| `semantics/parser-probe-drop-keeps-range` | — | not measured | | | | not locked |
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.04s / 0.03s (1h) | 0.04s / 0.02s | same | locked 2026-10-27 |
 | `semantics/pattern-line-filter-anchoring` | 9 × 2 ranges | 18 same | worst 0.24s / 0.01s (24h) | 0.19s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `semantics/pipeline-error-text-parity` | 2 × 4 ranges | 4 same | worst 1.09s / 0.01s (24h) | 1.13s / 0.02s | same | not locked |
@@ -316,6 +317,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/sub-second-step-grid` | 3 × 1 ranges | 3 same | worst 0.03s / 0.01s (5m-200ms) | 0.03s / 0.02s | same | not locked |
 | `semantics/translator-writes-unpack-as-unpack-json` | — | not measured | | | | not locked |
 | `semantics/two-parsers-keep-one` | — | not measured | | | | not locked |
+| `semantics/ungrouped-sum-skips-unpack` | — | not measured | | | | not locked |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 1.82s / 0.01s (24h) | 6.51s / 0.07s | differs; 2 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.26s / 0.02s (24h) | 0.22s / 0.01s | same | not locked; exception |
 | `semantics/unwrap-first-last-per-line-range-longer-than-step` | 1 × 3 ranges | 3 same | worst 0.46s / 0.01s (24h) | 1.52s / 0.02s | differs | not locked |

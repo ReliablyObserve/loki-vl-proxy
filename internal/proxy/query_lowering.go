@@ -161,6 +161,23 @@ func screenMetricQuery(canon string, flipped lower.MetricSet) bool {
 		lower.ScreenMetricIn(canon, flipped) != ""
 }
 
+// skipsUnpackConstruct is the flip of a sum with no by or without clause of a count_over_time or a rate over an
+// unpack followed only by drops (lower.SkipsUnpack): Loki parses no line for it, and the plan writes no
+// stage from the unpack on, where the string translator writes the unpack_json pipe that makes VictoriaLogs parse
+// every line (semantics/ungrouped-sum-skips-unpack). It is served under the VectorAgg flip; the corpus shadow holds
+// these rows as the case's, and TestUnpackSumMatchesLoki (internal/querycorpus) holds the answers to Loki.
+const skipsUnpackConstruct = "VectorAgg unpack skipped"
+
+// skipsUnpackScreen is the text screen of skipsUnpackConstruct: a query that names an unpack and a sum with no
+// clause, anywhere (the root, or an operand of a binary operation or a label_replace call) and in either spelling (an
+// operand the handlers hand on as the tree prints it reads `sum (`), or a sum by and an empty pair of parentheses,
+// under the VectorAgg flip. A sum by labels, sum_over_time and any other query pay no plan. The plan decides.
+func skipsUnpackScreen(canon string, flipped lower.MetricSet) bool {
+	return flipped&lower.MetricVectorAgg != 0 && strings.Contains(canon, "unpack") &&
+		(strings.Contains(canon, "sum(") || strings.Contains(canon, "sum (") ||
+			strings.Contains(canon, "sum by") && strings.Contains(canon, "()"))
+}
+
 // countVarianceScreen is the text screen of countVarianceConstruct: a query that starts with count and names
 // stdvar_over_time and an unwrap. The plan decides.
 func countVarianceScreen(canon string) bool {
@@ -181,7 +198,8 @@ func lowersParse(query string) bool {
 		_, _, ok := screenLogQuery(query, lower.LogStagesOf(QueryPlanFlippedLogStages))
 		return ok
 	}
-	return screenMetricQuery(query, lower.MetricSetOf(QueryPlanFlippedConstructs))
+	flipped := lower.MetricSetOf(QueryPlanFlippedConstructs)
+	return screenMetricQuery(query, flipped) || skipsUnpackScreen(query, flipped)
 }
 
 // turnedAwayByStages reports a parsed query the text screens turn away for a stage of its log query, read from the
@@ -197,6 +215,11 @@ func turnedAwayByStages(expr logqlpkg.Expr) bool {
 			expr, logQuery = x.Inner, false
 			continue
 		case *logqlpkg.VectorAggregation:
+			if x.Op == logqlpkg.VectorSum {
+				// The unpack screen (skipsUnpackScreen) passes a sum over an unpack: the plan serves one with no clause or
+				// an empty by clause (skipsUnpackConstruct) and decides the rest.
+				return false
+			}
 			expr, logQuery = x.Inner, false
 			continue
 		case *logqlpkg.LogQuery:
@@ -285,7 +308,8 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	}
 	flipped := lower.MetricSetOf(p.flippedConstructs)
 	metricFlipped := flipped != 0
-	if !screenMetricQuery(canon, flipped) && (prof.AliasField == nil || lower.ScreenMetricAliasIn(canon, flipped) == "") {
+	screened := screenMetricQuery(canon, flipped) || prof.AliasField != nil && lower.ScreenMetricAliasIn(canon, flipped) != ""
+	if !screened && !skipsUnpackScreen(canon, flipped) {
 		return "", false
 	}
 	// A parser's series identity is served by lowerDynamicIdentity where the handlers read it; a query it does not
@@ -308,6 +332,22 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	// The screen named the construct; the plan's root has the last word.
 	if lower.CountsVarianceSeries(plan) {
 		construct = countVarianceConstruct
+	} else if lower.SkipsUnpack(plan) && !absentPresence(ctx) {
+		// Served under the VectorAgg flip, with every other divergence of the plan's text left to the translator. The
+		// presence query of an absent_over_time keeps the unpack (absentPresenceKey).
+		if construct = skipsUnpackConstruct; !slices.Contains(p.flippedConstructs, "VectorAgg") || !writesTranslatorText(plan, prof) {
+			return "", false
+		}
+	} else if lower.SkipsUnpackWrapped(plan) && !absentPresence(ctx) {
+		// The sum is an operand of a binary operation or a label_replace call: served under the VectorAgg flip and the
+		// flip of the root's construct, with every other divergence of the plan's text left to the translator.
+		if construct = skipsUnpackConstruct; !slices.Contains(p.flippedConstructs, "VectorAgg") ||
+			!slices.Contains(p.flippedConstructs, lower.Construct(plan.Root)) || !writesTranslatorText(plan, prof) {
+			return "", false
+		}
+	} else if !screened {
+		// Only the unpack screen passed it: the plan does not skip the unpack, so the translator writes it.
+		return "", false
 	} else if !lower.KeepDecidesUnwrapIdentity(plan) {
 		if !metricFlipped {
 			return "", false
@@ -461,7 +501,7 @@ func dynamicIdentityOp(op string) bool {
 }
 
 // dynamicIdentityFuncs are the range functions of a dynamic identity, as a query names them.
-var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time"}
+var dynamicIdentityFuncs = [...]string{"avg_over_time", "max_over_time", "min_over_time", "stddev_over_time", "stdvar_over_time", "first_over_time", "last_over_time"}
 
 // misreadLeaf is the kinds of the values of the leaves of e that misreadFilterValue names.
 func misreadLeaf(e *logqlpkg.LabelFilterExpr) misreadKind {

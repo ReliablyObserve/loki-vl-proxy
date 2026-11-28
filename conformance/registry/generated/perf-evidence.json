@@ -109607,6 +109607,7 @@
       "warm_p50": 0.004
     }
   ],
+  "semantics/parser-probe-drop-keeps-range": [],
   "semantics/pattern-line-filter": [
     {
       "baseline": "release",
@@ -115400,6 +115401,7 @@
   ],
   "semantics/translator-writes-unpack-as-unpack-json": [],
   "semantics/two-parsers-keep-one": [],
+  "semantics/ungrouped-sum-skips-unpack": [],
   "semantics/unwrap-conversion-error": [
     {
       "baseline": "release",

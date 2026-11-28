@@ -133,7 +133,7 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		if rewritten {
 			name = key
 		}
-		if label := translate.SanitizeFieldIdentifier(name); slices.Contains(lb.sv, label) {
+		if label := translate.SanitizeFieldIdentifier(name); slices.Contains(lb.sv, label) && (rewritten || len(lb.streamAliasFields(label)) == 0) {
 			if rewritten || lb.aliased(label) {
 				return logsql.FieldFilter{}, "LogSelect stream label after parser" // the alias rules come first
 			}
@@ -179,7 +179,12 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 			// An alias's stream label (-field-mapping-label-mode alias and both) where the entry's stream holds its
 			// field, the parsed key of the alias's name where it does not, as Loki's label of that name reads.
 			has := logsql.FieldFilter{Field: translate.LogsQLFieldName(fields[0]), Op: logsql.FieldOpAny}
-			parsed := lb.parsedFieldLeaf(logsql.QuoteFieldName(label), e)
+			value := logsql.QuoteFieldName(label)
+			if slices.Contains(lb.sv, label) {
+				// The value a stream stores under the alias's own name, else the parsed key (aliasStreamReads).
+				value = translate.StreamValueScratch + label
+			}
+			parsed := lb.parsedFieldLeaf(value, e)
 			f = logsql.Group{Expr: logsql.AnyOf{
 				logsql.Group{Expr: logsql.AllOf{has, f}},
 				logsql.Group{Expr: logsql.AllOf{logsql.NotExpr{Expr: has}, parsed}},

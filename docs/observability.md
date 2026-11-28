@@ -213,6 +213,7 @@ metrics, which see every request whatever the log sampling.
 | `flow.vl.calls`, `flow.vl.ms`, `flow.vl.bytes` | VictoriaLogs calls, their summed time from sending to the end of the response body (the slow-query definition, so body reading is included), and the decoded response bytes. `upstream.calls` and `upstream.duration_ms` keep their earlier meaning (time to the response headers) |
 | `flow.vl.rows` | on `slow_request` only: log rows read from VictoriaLogs raw query bodies (0 for stats and metadata calls, which return aggregates) |
 | `flow.proxy.ms` | the request's own time: its duration minus `flow.vl.ms` and `flow.cache.ms`, never below 0. It includes the parse and translate time, which are not subtracted |
+| `flow.inventory.listings`, `flow.inventory.memory`, `flow.inventory.buckets_cached`, `flow.inventory.buckets_revalidated`, `flow.inventory.buckets_scanned`, `flow.inventory.edges` | only on a request whose label or label values listing the metadata inventory split into time buckets: the listings it planned, how many of them were answered from memory with no VictoriaLogs call, and the pieces of the others: day, hour, 5-minute and minute buckets read from the cache, confirmed by a row count, or read from VictoriaLogs (a piece a covering hour made the listing read again counts here too), and the unaligned edges, read from VictoriaLogs on every listing. A slow first `/labels` of a window shows its cost here: `buckets_scanned` and `edges` are its VictoriaLogs listing calls, besides the row counts of the scanned buckets |
 
 Times are sums of the calls' own times. When a request runs calls in parallel
 (a split query, a metadata fan-out) `flow.vl.ms` and `flow.cache.ms` add up to
@@ -308,7 +309,7 @@ Each step has a `kind`:
 | `kind` | Fields |
 |---|---|
 | `upstream` | one VictoriaLogs call: `route` (the VictoriaLogs path), `query` (the LogsQL), `window` (`start`, `end`, `step` as sent), `status`, `bytes` (decoded body bytes), `outcome` (`eof`, `closed`, `canceled`, `timeout`, `error`), `duration_ms` (to the end of the body) |
-| `operation` | a proxy-side operation or route decision: `operation`, `outcome`, `duration_ms` (for example `patterns_state`, `json_metric_evaluator` with `vl_stats_buckets/pushdown` or `raw_rows/probe`, `translate_query`) |
+| `operation` | a proxy-side operation or route decision: `operation`, `outcome`, `duration_ms` (for example `patterns_state`, `json_metric_evaluator` with `vl_stats_buckets/pushdown` or `raw_rows/probe`, `translate_query`, `service_name_stream_route` with `narrowed`, `violation`, `proof_failed`, `narrowed_read_failed`, `narrowed_read_refused`, `proof_bound` or `remembered_violation`: see [service_name stream filter](configuration.md#service_name-stream-filter)) |
 | `rewrite` | a handler rewrote the request's LogQL: `from`, `to` |
 | `cache` | one cache lookup: `tier` (`l1_memory`, `l2_disk`, `l3_peer` or `unknown`), `result` (`hit`, `miss`, `stale`), `bytes` returned, `duration_ms` |
 
@@ -988,8 +989,8 @@ leaves the L2 copy where it was.
 
 | `class` | Cache | TTL |
 |---|---|---|
-| `query_range`, `query` | Loki answer cache | 5m fixed |
-| `labels`, `label_values`, `series`, `detected_fields`, `detected_field_values`, `detected_labels`, `index_stats`, `volume`, `volume_range` | Loki answer cache | fixed per endpoint (5m, 5m, 30s, 90s, 90s, 90s, 10s, 10s, 10s) |
+| `query_range`, `query` | Loki answer cache | 5m, or shorter with `-cache-answer-ttl-query-range` / `-cache-answer-ttl-query` |
+| `labels`, `label_values`, `series`, `detected_fields`, `detected_field_values`, `detected_labels`, `index_stats`, `volume`, `volume_range` | Loki answer cache | per endpoint (5m, 5m, 30s, 90s, 90s, 90s, 10s, 10s, 10s), or shorter with `-cache-answer-ttl-<class>` (class with dashes) |
 | `patterns` | Loki answer cache | kept until replaced (about 100 years) |
 | `labels_handler`, `label_values_handler` | label list and value caches | `-labels-cache-ttl` (5m when 0) |
 | `label_inventory` | label inventory | 5m fixed |
@@ -1001,7 +1002,9 @@ leaves the L2 copy where it was.
 The label list, label value, detected field and detected label handler caches
 scale their base TTL with the request window: x3 up to 6h, x10 up to 24h, x20
 up to 7d, never above 1h, and 1h beyond 7d. The Loki answer cache keeps the
-fixed TTL.
+unscaled TTL. A `-cache-answer-ttl-<class>` setting shortens the class's base
+TTL (the gauge shows it); the detected field and label handler caches scale
+the shortened base.
 
 ### Query-Range Windowing Metrics
 

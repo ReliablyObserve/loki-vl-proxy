@@ -48,7 +48,9 @@ func keepSeriesGrouping(query string) (string, bool) {
 	if !changed {
 		return query, false
 	}
-	return out.String(), true
+	// The tree prints a call with a blank before its parenthesis (`sort (`); the handlers and the translation read the
+	// request's canonical spelling (logql.CanonicalSpelling), so the rewrite is handed on in it.
+	return logqlpkg.CanonicalSpellingOfValid(out.String()), true
 }
 
 func keepSeriesGroupingExpr(expr logqlpkg.Expr) (logqlpkg.Expr, bool) {
@@ -67,6 +69,11 @@ func keepSeriesGroupingExpr(expr logqlpkg.Expr) (logqlpkg.Expr, bool) {
 			return expr, false // rewritten already (a child request of a rewritten one)
 		}
 		if totalOfMatcherKeep(e) {
+			return expr, false
+		}
+		if g, ok := unpackSumGroupingOf(e); ok && (g == nil || len(g.Labels) == 0) {
+			// A sum with no label of a count or a rate over an unpack adds up every series, whatever a keep leaves, at any
+			// depth (isUnpackSumAll at the root): a grouping pushed under it would take it off the stats route.
 			return expr, false
 		}
 		inner, changed := keepSeriesGroupingExpr(e.Inner)

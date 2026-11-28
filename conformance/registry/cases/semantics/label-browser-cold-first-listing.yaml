@@ -27,6 +27,28 @@ why: |
   24h, 0.15 s over 6h and 0.08 s over 1h; field_names, which also lists
   fields that are not stream labels, takes 23, 9 and 5 ms.
 
+  What VictoriaLogs spends that time on (own stack at the CI generator's
+  density, 7.4M lines over 26 h, VictoriaLogs v1.54, 2026-11-28, main
+  ac182f433; CI A/B run 46107770456 on the same main: 24h cold 1.13 s,
+  6h 0.26 s, 1h 0.10 s against Loki's 5 ms): the per-stream endpoints
+  stream_field_names and stream_field_values build every stream of the
+  window, and the generator starts a new set of pod streams every 10 s,
+  about 324,000 streams a day (count_uniq(_stream_id)). One
+  stream_field_names call over 24 h takes 0.84-1.0 s there and the 23 hour
+  buckets at four in flight 0.58 s, so the bucket plan is not the cost and
+  one call per first listing would be slower; field_names over 24 h takes
+  0.04 s. The first 24h listing makes 63 calls (23 hour listings, 23 hour row
+  counts at about 3 ms each, 17 finer pieces): 0.70 s on that stack. The
+  request line's flow.inventory fields show the plan of each listing.
+
+  Ruled out (2026-11-28): label values from field_values over
+  `{name!=""} <query>` (the column index, 4-18x cheaper) differ from
+  stream_field_values where a row carries a field of the same name as one of
+  its stream's labels (VictoriaLogs' Loki push route appends structured
+  metadata after the stream labels): the field's value is listed instead of
+  the label's, unlike Loki (in-process VictoriaLogs v1.54.0 and v1.49.0, 22 of
+  864 adversarial listings).
+
   Options to reach Loki's time, none implemented here:
   - keep the inventory's buckets warm in the background for the windows
     the presets cover (sealed hours and days once, the open hour within
@@ -41,7 +63,17 @@ why: |
   - list names from field_names (23 ms over 24h) filtered by a kept set of
     stream field names: near Loki, but a new stream label would show only
     after the set is refreshed, a semantics decision;
-  - more parallel bucket calls do not help (1.6 s at eight).
+  - more parallel bucket calls do not help (1.6 s at eight);
+  - list names from field_names plus one `{name!=""} <query> | limit 1`
+    per field name: the same names as stream_field_names on the adversarial
+    listings above (96 of 96, v1.54.0 and v1.49.0); 0.066 s over 24 h with
+    VictoriaLogs' caches warm, 0.36 s after a VictoriaLogs restart, against
+    1.0 s; 1 + N calls for N field names (hundreds for OTel tenants), and
+    whole-window only, so refreshes stay answered from memory only with a
+    background bucket fill: more VictoriaLogs work on a first listing;
+  - one row count per contiguous run of hour buckets
+    (`stats by (_time:1h) count()`, 28 ms over 23 h) instead of one per hour:
+    63 -> 41 calls over 24 h, about 6% of the time.
 
   Until then the label browser shapes hold their cold run to the base
   build's (bench/ab/shapes.json cold_vs_base: no slower than the base

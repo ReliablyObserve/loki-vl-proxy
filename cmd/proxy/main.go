@@ -118,6 +118,10 @@ type proxyRuntimeConfig struct {
 	backendDefaultMsgValue              string
 	jsonLineFieldsAsLineKeys            bool
 	detectedLevelBodyScan               bool
+	serviceNameStreamLabelOnly          bool
+	serviceNameStreamRoute              bool
+	serviceNameRouteMinWindow           time.Duration
+	serviceNameRouteViolationTTL        time.Duration
 	translateShadowSample               float64
 	queryPlanLowering                   bool
 	queryStatsMode                      string
@@ -194,6 +198,7 @@ type proxyRuntimeConfig struct {
 	logStatsInterval                    time.Duration
 	logRateThreshold                    int
 	labelCacheTTL                       time.Duration
+	answerCacheTTLs                     map[string]time.Duration
 	labelsCacheWarm                     bool
 	logqlDottedNames                    string
 	labelBrowseExtensions               string
@@ -538,6 +543,17 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	fs.Duration("cache-answer-ttl-query-range", 0, "Shortens the cache TTL of /query_range answers in the Loki answer cache (their multi-tenant merge keeps the shorter of this and its 10s; the window and extent caches keep their own TTLs). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_QUERY_RANGE")
+	fs.Duration("cache-answer-ttl-query", 0, "Shortens the cache TTL of instant /query answers in the Loki answer cache (their multi-tenant merge keeps the shorter of this and its 10s). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_QUERY")
+	fs.Duration("cache-answer-ttl-labels", 0, "Shortens the cache TTL of /labels answers in the Loki answer cache and their multi-tenant merge (the label handler cache keeps -labels-cache-ttl). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_LABELS")
+	fs.Duration("cache-answer-ttl-label-values", 0, "Shortens the cache TTL of /label/{name}/values answers in the Loki answer cache and their multi-tenant merge (the label handler cache keeps -labels-cache-ttl). Built-in 5m, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_LABEL_VALUES")
+	fs.Duration("cache-answer-ttl-series", 0, "Shortens the cache TTL of /series answers in the Loki answer cache and their multi-tenant merge. Built-in 30s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_SERIES")
+	fs.Duration("cache-answer-ttl-detected-fields", 0, "Shortens the cache TTL of /detected_fields answers in the Loki answer cache, the read cache (still scaled with the request window, from this base) and the field detection cache. Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_FIELDS")
+	fs.Duration("cache-answer-ttl-detected-field-values", 0, "Shortens the cache TTL of /detected_field/{name}/values answers in the Loki answer cache and the read cache (still scaled with the request window, from this base). Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_FIELD_VALUES")
+	fs.Duration("cache-answer-ttl-detected-labels", 0, "Shortens the cache TTL of /detected_labels answers in the Loki answer cache, the read cache (still scaled with the request window, from this base) and the label detection cache (30s, or this when shorter). Built-in 90s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_DETECTED_LABELS")
+	fs.Duration("cache-answer-ttl-index-stats", 0, "Shortens the cache TTL of /index/stats answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_INDEX_STATS")
+	fs.Duration("cache-answer-ttl-volume", 0, "Shortens the cache TTL of /index/volume answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_VOLUME")
+	fs.Duration("cache-answer-ttl-volume-range", 0, "Shortens the cache TTL of /index/volume_range answers in the Loki answer cache and the read cache. Built-in 10s, also the longest value accepted: a longer one is refused at start, so answers never become staler. 0 keeps the built-in TTL. A shortened TTL is part of the cache keys in memory, on disk and on peers, so replicas with different settings never serve each other's entries. Env CACHE_ANSWER_TTL_VOLUME_RANGE")
 	logqlDottedNames := fs.String("logql-dotted-names", "auto", `Dotted names in LogQL (k8s.namespace.name in a stream matcher, label filter, by/without list, keep/drop, label_format, json/logfmt parameters, unwrap):
   auto   - reject in the Loki-compatible profile (-label-style=underscores -metadata-field-mode=translated), accept otherwise (default)
   reject - answer Loki's 400 parse error, as Loki does; detected_fields names dotted JSON keys by Loki's sanitized name with the key in jsonPath
@@ -695,6 +711,10 @@ func run(
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	jsonLineFieldsAsLineKeys := fs.Bool("json-line-fields-as-line-keys", false, "Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `| json` (structured metadata without a parser, parsed labels after `| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too, and so are the fields of any other row stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included): leave it off when such rows carry structured metadata or attributes, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag. Acts in the Loki-compatible profile only (-label-style=underscores with -metadata-field-mode=translated, the defaults) and needs a non-empty VictoriaLogs -defaultMsgValue")
+	serviceNameStreamLabelOnly := fs.Bool("service-name-stream-label-only", false, "Declare that VictoriaLogs stores service_name only as a stream label (or not at all) and service.name never as a regular field of a row whose stream has a service.name label (no structured metadata, log attribute or JSON key named service_name, none named service.name beside a service.name resource attribute or stream field). A {service_name=\"x\"} selector then also sends a stream filter, so VictoriaLogs reads only the streams whose service_name or service.name stream label can give x (with service.name as a stream field, the streams of that service). Answers stay the same while the declaration holds; a row it does not hold for can be missed. Off: the derived service_name filter alone, which VictoriaLogs evaluates over every stream of the window")
+	serviceNameStreamRoute := fs.Bool("service-name-stream-route", false, "Off by default; opt in. Read a log query of one service ({service_name=\"x\"}, a positive matcher with a value, no declared -stream-fields matcher) from the streams that can hold that service, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out; otherwise the read is sent again with the derived service_name filter alone, so answers are always the derived filter's. Each narrowed log read costs one more VictoriaLogs read, which reads the other streams of the window: VictoriaLogs reads 1.2x to 1.5x the bytes and, measured under concurrent load, throughput fell 24% to 48%. Opt in only for a large, mostly idle VictoriaLogs with long log reads of a service and parser pipes; where VictoriaLogs stores service_name only as a stream label, prefer -service-name-stream-label-only. Metric and instant queries, other endpoints and reads shorter than -service-name-stream-route-min-window keep the derived filter alone; outcomes are counted in loki_vl_proxy_internal_operation_total{operation=\"service_name_stream_route\"}. -service-name-stream-label-only, when set, replaces it")
+	serviceNameRouteMinWindow := fs.Duration("service-name-stream-route-min-window", 30*time.Minute, "Shortest log read window -service-name-stream-route narrows; a shorter read gains nothing on a first read (the read beside it costs what the derived filter costs). 0 narrows every window")
+	serviceNameRouteViolationTTL := fs.Duration("service-name-stream-route-violation-ttl", time.Hour, "How long a row -service-name-stream-route found the narrowing leaves out keeps that tenant's service on the derived service_name filter alone, with no read beside it (kept in memory and pushed to the peers). 0 remembers nothing: every log read of the service is narrowed and proven again")
 	detectedLevelBodyScan := fs.Bool("detected-level-body-scan", true, "Derive detected_level from the log line (JSON, logfmt, keywords) when a row has no stored level field, as Loki does; false uses stored level fields only with an unknown fallback")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	deleteAPIAuthToken := fs.String("delete-api-auth-token", "", "Token every /loki/api/v1/delete request must carry, in X-Delete-Token or Authorization: Bearer (constant-time compare); required by -delete-api-enabled. It is the delete API's own credential: the admin token and the admin listener are unaffected. Prefer the Helm value deleteAuth.existingSecret, which keeps it out of the pod spec. When neither this flag nor -delete-api-auth-token-file is given, read from the DELETE_API_AUTH_TOKEN environment variable. A flag value is readable in the process command line")
@@ -869,8 +889,9 @@ func run(
 	peerHotReadAheadTenantFairShare := fs.Int("peer-hot-read-ahead-tenant-fair-share", 50, "Maximum per-tenant share (percent) of key budget in fairness pass")
 	peerHotReadAheadErrorBackoff := fs.Duration("peer-hot-read-ahead-error-backoff", 15*time.Second, "Base read-ahead cooldown applied after peer/index errors")
 
-	// Secrets are resolved here, before any check or component reads them.
-	explicitFlags, err := parseFlagsAndSecrets(fs, args, getenv, []secretFlag{
+	// Secrets and the answer cache TTLs are resolved here, before any check
+	// or component reads them.
+	explicitFlags, answerCacheTTLs, err := parseFlagsSecretsAndAnswerTTLs(fs, args, getenv, []secretFlag{
 		{name: "peer-auth-token", value: peerAuthToken, file: peerAuthTokenFile, env: "PEER_AUTH_TOKEN"},
 		{name: "cache-key-secret", value: cacheKeySecret, file: cacheKeySecretFile, env: "CACHE_KEY_SECRET"},
 		{name: "server.admin-auth-token", value: adminAuthToken, file: adminAuthTokenFile, env: "ADMIN_AUTH_TOKEN"},
@@ -1064,6 +1085,10 @@ func run(
 			backendDefaultMsgValue:              *backendDefaultMsgValue,
 			jsonLineFieldsAsLineKeys:            *jsonLineFieldsAsLineKeys,
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
+			serviceNameStreamLabelOnly:          *serviceNameStreamLabelOnly,
+			serviceNameStreamRoute:              *serviceNameStreamRoute,
+			serviceNameRouteMinWindow:           *serviceNameRouteMinWindow,
+			serviceNameRouteViolationTTL:        *serviceNameRouteViolationTTL,
 			translateShadowSample:               *translateShadowSample,
 			queryPlanLowering:                   *queryPlanLowering,
 			queryStatsMode:                      *queryStatsMode,
@@ -1140,6 +1165,7 @@ func run(
 			logStatsInterval:                    *logStatsInterval,
 			logRateThreshold:                    *logRateThreshold,
 			labelCacheTTL:                       *labelsCacheTTL,
+			answerCacheTTLs:                     answerCacheTTLs,
 			labelsCacheWarm:                     *labelsCacheWarm,
 			logqlDottedNames:                    *logqlDottedNames,
 			labelBrowseExtensions:               *labelBrowseExtensions,
@@ -2528,6 +2554,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendDefaultMsgValue:             cfg.backendDefaultMsgValue,
 		JSONLineFieldsAsLineKeys:           cfg.jsonLineFieldsAsLineKeys,
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
+		ServiceNameStreamLabelOnly:         cfg.serviceNameStreamLabelOnly,
+		ServiceNameStreamRoute:             cfg.serviceNameStreamRoute,
+		ServiceNameStreamRouteMinWindow:    cfg.serviceNameRouteMinWindow,
+		ServiceNameStreamRouteViolationTTL: cfg.serviceNameRouteViolationTTL,
 		TranslateShadowSample:              cfg.translateShadowSample,
 		DisableQueryPlanLowering:           !cfg.queryPlanLowering,
 		QueryStatsMode:                     cfg.queryStatsMode,
@@ -2604,6 +2634,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		MetricsDurationBuckets:             durationBuckets,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
+		AnswerCacheTTLs:                    cfg.answerCacheTTLs,
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		CacheShutdownFlushTimeout:          cfg.cacheShutdownFlushTimeout,
 		CacheStartupWarmBytes:              cfg.cacheStartupWarmBytes,

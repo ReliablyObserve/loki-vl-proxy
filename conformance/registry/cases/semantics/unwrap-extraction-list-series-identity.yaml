@@ -63,8 +63,10 @@ why: |
   55 step<range / 82 step>range of 149 match Loki on v1.49.0 and v1.53.0 (79
   runs fixed, none lost); the emulator run below now answers Loki's recorded
   358 and x 55.944 / y 42.056. Still open (listed in extractionListKnownRuns): count over
-  the series, first, last, quantile, rate and rate_counter under an
-  aggregation, a json alias or path in the list, a ranking, sort or grouping by
+  the series, quantile, rate and rate_counter under an aggregation (first
+  and last under sum, max, min and avg read the list's identity since
+  semantics/unwrap-first-last-per-line-range-longer-than-step was fixed;
+  under count they stay open), a json alias or path in the list, a ranking, sort or grouping by
   a listed label, and a count of lines (`count by (ns) (count_over_time(... |
   logfmt route [5m]))`); a range longer than the step keeps the stream's series
   (semantics/unwrap-per-series-identity-raw-rows).

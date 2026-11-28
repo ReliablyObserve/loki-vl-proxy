@@ -120,7 +120,16 @@ func (p *Proxy) buildRoutingNamespace(routing requestRouting) string {
 		// names-v2: the metadata names of the both mode (each metadata field
 		// mode's own names and the aliases) differ from earlier builds of these
 		// modes, so they carry the metadata field mode too.
-		parts = append(parts, "field-mapping-label-mode", lt.labelMode, lt.listing, "names-v2", p.metadataFieldMode)
+		// alias-reads-v1: the alias and both modes read a stream field stored
+		// under an alias's own name after a parser, answer no stream label
+		// values for a detected field named like a stream label of a mapped
+		// field, and (both) rename a parsed key named like a field's
+		// -label-style name; the original mode's answers did not change.
+		names := "names-v2"
+		if lt.labelMode == FieldMappingLabelModeAlias || lt.labelMode == FieldMappingLabelModeBoth {
+			names = "names-v2/alias-reads-v1"
+		}
+		parts = append(parts, "field-mapping-label-mode", lt.labelMode, lt.listing, names, p.metadataFieldMode)
 	}
 	data, _ := json.Marshal(parts)
 	sum := sha256.Sum256(data)

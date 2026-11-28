@@ -37,9 +37,12 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 		{`sum(min_over_time({app="a"} |= "x" | json | unwrap n [5m]))`, true, true},
 		{`sum(stddev_over_time({app="a"} | json | n > 5 | unwrap n [5m]))`, true, true},
 		{`sum(stddev_over_time({app="a"} | json | unwrap n | __error__="" [5m]))`, true, true},
-		// Not taken per series (additive, or first and last), or not under a vector aggregation of the four.
+		// first and last keep the row of each series (semantics/unwrap-first-last-per-line-range-longer-than-step).
+		{`sum(first_over_time(` + j + `))`, true, true},
+		{`sum(last_over_time({app="a"} | logfmt | unwrap n [5m]))`, true, true},
+		{`max by (app) (last_over_time(` + j + `))`, true, true},
+		// Not taken per series (additive), or not under a vector aggregation of the four.
 		{`sum(sum_over_time(` + j + `))`, false, false},
-		{`sum(first_over_time(` + j + `))`, false, false},
 		{`sum(rate(` + j + `))`, false, false},
 		{`count(avg_over_time(` + j + `))`, false, false},
 		{`topk(1, avg_over_time(` + j + `))`, false, false},
@@ -64,7 +67,7 @@ func TestDynamicUnwrapIdentity(t *testing.T) {
 		{`sum(avg_over_time({app="a"} | logfmt n, _m | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | json n | logfmt m | unwrap n [5m]))`, false, false},
 		{`count(avg_over_time({app="a"} | json n, m | unwrap n [5m]))`, false, false},
-		{`sum(first_over_time({app="a"} | json n, m | unwrap n [5m]))`, false, false},
+		{`sum(first_over_time({app="a"} | json n, m | unwrap n [5m]))`, true, true},
 		{`sum(avg_over_time({app="a"} | json | logfmt | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | logfmt --strict | unwrap n [5m]))`, false, false},
 		{`sum(avg_over_time({app="a"} | regexp "(?P<n>[0-9]+)" | unwrap n [5m]))`, false, false},
@@ -106,6 +109,8 @@ func TestDynamicUnwrapIdentityLowering(t *testing.T) {
 		`sum(stdvar_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner*__lvp_inner as __lvp_inner_var | stats sum(__lvp_inner_var)`,
 		`avg(stddev_over_time(` + j + `))`:                     dynamicHash + ` | stats by (__lvp_sid) stddev(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats avg(__lvp_inner)`,
 		`sum(min_over_time({app="a"} | json | unwrap n [5m]))`: dynamicHash + ` | stats by (__lvp_sid) min(__lvp_v) as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`,
+		`sum(last_over_time(` + j + `))`:                       dynamicHash + ` | stats by (__lvp_sid) row_max(_time, __lvp_v) as __lvp_inner | unpack_json from __lvp_inner fields (__lvp_v) | math __lvp_v as __lvp_inner | math __lvp_inner as __lvp_inner | stats sum(__lvp_inner)`,
+		`sum by (app) (first_over_time(` + j + `))`:            dynamicHash + ` | stats by (app, __lvp_sid) row_min(_time, __lvp_v) as __lvp_inner | unpack_json from __lvp_inner fields (__lvp_v) | math __lvp_v as __lvp_inner | math __lvp_inner as __lvp_inner | stats by (app) sum(__lvp_inner)`,
 	} {
 		if got := keepStats(t, q); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", q, got, want)

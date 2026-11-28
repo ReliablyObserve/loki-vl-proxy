@@ -424,6 +424,12 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // Callers must either hold a breaker.Allow() token or use DoWithGuard (which
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	if st := serviceNameRouteOf(ctx); st != nil {
+		// A read of a log query the service_name stream filter narrows (service_name_route.go).
+		return p.sendServiceNameRouted(ctx, st, path, params, func(c context.Context, ps url.Values) (*http.Response, error) {
+			return p.vlGetInner(c, path, ps)
+		})
+	}
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
@@ -574,6 +580,12 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 // and goes to /select/logsql/query with the bounds that endpoint would read (SeriesFoldQueryParams).
 func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams url.Values, stripUnwrapCounter func([]byte) ([]byte, error),
 	stripJSONMarks func([]byte) ([]byte, []jsonErrorHit, error), folded bool) (*http.Response, error) {
+	if st := serviceNameRouteOf(ctx); st != nil {
+		// A read of a log query the service_name stream filter narrows (service_name_route.go).
+		return p.sendServiceNameRouted(ctx, st, path, params, func(c context.Context, ps url.Values) (*http.Response, error) {
+			return p.vlPostSend(c, path, ps, sentParams, stripUnwrapCounter, stripJSONMarks, folded)
+		})
+	}
 	params, witness := p.pruneLevelChain(ctx, path, params)
 	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	sendPath, sendParams := path, params
@@ -643,7 +655,7 @@ func (p *Proxy) vlPostSend(ctx context.Context, path string, params, sentParams 
 		}
 	}
 	if witness != nil {
-		flagged, err := p.levelWitnessResponse(resp)
+		flagged, err := p.levelWitnessResponse(ctx, resp)
 		if err != nil {
 			return nil, err
 		}

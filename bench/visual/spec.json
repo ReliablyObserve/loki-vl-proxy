@@ -1599,6 +1599,21 @@
    ],
    "covers": [
     "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-rate",
+   "kind": "explore",
+   "query": "sum(rate({app=\"visual-unpack\"} | unpack | drop agent [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-unpack",
     "parser-unpack",
     "loki_api_v1_query_range"
    ]
@@ -1613,6 +1628,50 @@
    ],
    "covers": [
     "semantics/translator-writes-unpack-as-unpack-json",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-by-empty",
+   "kind": "explore",
+   "query": "sum by () (count_over_time({app=\"visual-unpack\"} | unpack [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-times-two",
+   "kind": "explore",
+   "query": "sum(count_over_time({app=\"visual-unpack\"} | unpack [$__auto])) * 2",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-label-replace",
+   "kind": "explore",
+   "query": "label_replace(sum(rate({app=\"visual-unpack\"} | unpack | drop agent [$__auto])), \"dst\", \"x\", \"\", \"\")",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-unpack",
     "parser-unpack",
     "loki_api_v1_query_range"
    ]
@@ -1648,6 +1707,19 @@
    ],
    "fixes": [
     "semantics/unwrap-first-last-range-longer-than-step"
+   ]
+  },
+  {
+   "id": "explore-unwrap-first-last-per-line",
+   "kind": "explore",
+   "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+   "covers": [
+    "semantics/unwrap-first-last-per-line-range-longer-than-step",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-first-last-per-line-range-longer-than-step"
    ]
   },
   {
@@ -2521,6 +2593,24 @@
    ],
    "fixes": [
     "semantics/two-parsers-keep-one"
+   ]
+  },
+  {
+   "id": "explore-parser-probe-drop",
+   "kind": "explore",
+   "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/parser-probe-drop-keeps-range",
+    "parser-json",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/parser-probe-drop-keeps-range"
    ]
   }
  ],
