@@ -52,7 +52,7 @@ func keepBlankQueries() []string {
 	for _, keep := range []string{"keep\v", "keep \u00a0", "keep\f, \u2028", "keep\u0085"} {
 		for _, fn := range []string{"count_over_time", "rate", "bytes_over_time", "bytes_rate"} {
 			for _, parser := range []string{"", " | json"} {
-				for _, outer := range []string{"", "count", "sum"} {
+				for _, outer := range []string{"", "count", "sum", "sort"} {
 					q := fn + `({app="api"}` + parser + " | " + keep + " [1m])"
 					if outer != "" {
 						q = outer + "(" + q + ")"
@@ -160,7 +160,8 @@ func TestKeepSeriesGrouping_BlankKeepListMatchesLokiEngine(t *testing.T) {
 			t.Errorf("%q rewritten to %q (changed=%v), recorded %q: record them again with LVP_RUN_ORACLES=1", r.Q, got, changed, r.Rewritten)
 			continue
 		}
-		if e, err := logqlpkg.Parse(got); err != nil || e.String() != got {
+		// The rewrite is handed on in the request's canonical spelling (logql.CanonicalSpelling).
+		if e, err := logqlpkg.Parse(got); err != nil || logqlpkg.CanonicalSpellingOfValid(e.String()) != got {
 			t.Errorf("%q: the rewrite %q does not read back: %v", r.Q, got, err)
 		}
 		if again, changed := keepSeriesGrouping(got); changed {

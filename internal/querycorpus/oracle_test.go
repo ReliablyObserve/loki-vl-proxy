@@ -321,6 +321,12 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 		// VictoriaLogs answers to both are recorded in internal/queryplan/lower).
 		return "", "", false
 	}
+	if lower.WritesSkippedUnpack(plan) {
+		// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on, the
+		// translator the unpack_json pipe; they count the same lines but are other texts, by design
+		// (semantics/ungrouped-sum-skips-unpack; held to Loki by TestUnpackSumMatchesLoki).
+		return "", "", false
+	}
 	if lower.WritesKeepUnwrapIdentity(plan) || lower.WritesDynamicUnwrapIdentity(plan) || lower.WritesCountVarianceSeries(plan) {
 		// A keep before the unwrap, or a parser's labels, decide the series: the plan groups by the labels the keep
 		// leaves, or by the stream and a hash of the parsed labels, the translator by the stream
