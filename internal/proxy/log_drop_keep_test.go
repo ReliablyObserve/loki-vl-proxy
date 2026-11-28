@@ -25,7 +25,7 @@ func translatorDropKeep(query string) (drop, keep []translate.DropCondition, bar
 	}
 	drop, bareDrop, rules := dropKeepFromPipeline(lq.Pipeline)
 	for _, r := range rules {
-		keep = append(keep, r.conds...)
+		keep = append(keep, r.conditions()...)
 		bareKeep = append(bareKeep, r.bare...)
 	}
 	return drop, keep, bareDrop, bareKeep

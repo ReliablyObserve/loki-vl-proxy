@@ -27,11 +27,24 @@ func applyBareFieldMutationToStreamLabels(drop, keep []string, raw, translated m
 	return canonicalLabelsKey(got), got, true
 }
 
+// conditions are the stage's matchers as conditions, whichever form the rule holds them in.
+func (k *keepRule) conditions() []translate.DropCondition {
+	if k.eq == nil {
+		return k.conds
+	}
+	out := make([]translate.DropCondition, 0, len(k.eq))
+	for _, m := range k.eq {
+		dc, _ := translate.NewDropCondition(m.Name, m.Op, m.Value) // = and != compile nothing
+		out = append(out, dc)
+	}
+	return out
+}
+
 // flatDropKeep lists the conditions and bare names of a query's drop and keep stages.
 func flatDropKeep(query string) (drop, keep []translate.DropCondition, bareDrop, bareKeep []string) {
 	drop, bareDrop, rules := extractDropKeepFromAST(query)
 	for _, r := range rules {
-		keep = append(keep, r.conds...)
+		keep = append(keep, r.conditions()...)
 		bareKeep = append(bareKeep, r.bare...)
 	}
 	return drop, keep, bareDrop, bareKeep
