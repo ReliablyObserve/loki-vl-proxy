@@ -159,7 +159,7 @@ func TestRebuildReadahead_StopsWhenTheWalkIsAhead(t *testing.T) {
 	// read-ahead (TestRebuildReadahead_FastDeviceNeverStops); decide at once,
 	// after a short walk probe.
 	walkProbe, probeTime := rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime
-	rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime = time.Millisecond, 0
+	rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime = 20*time.Millisecond, 0 // several walk ticks
 	t.Cleanup(func() { rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime = walkProbe, probeTime })
 	path := filepath.Join(t.TempDir(), "f")
 	size := int64(3 * rebuildReadaheadProbeMin)
