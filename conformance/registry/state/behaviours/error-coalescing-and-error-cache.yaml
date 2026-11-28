@@ -5,7 +5,7 @@ reason: |
   stub VictoriaLogs: TestErrorFlights_ConcurrentFailuresShareOneCall (20
   identical failing requests, one call, byte-equal answers),
   TestErrorFlights_TransientHeldThenRecovers, TestErrorFlights_DataFailureHeldForDataTTL,
-  TestErrorFlights_CancelledLeaderFollowersRetry, TestErrorFlights_TenantIsolationAndReload,
+  TestErrorFlights_CancelledLeaderKeepsTheRunForFollowers, TestErrorFlights_TenantIsolationAndReload,
   TestErrorFlights_ConcurrentSuccessesShareOneCall, TestErrorFlights_PostQueries,
   TestErrorFlights_StreamResponse, TestErrorFlights_Switches; the store's
   bounds and TTLs in internal/cache TestErrorFlights*; the plan's classes in

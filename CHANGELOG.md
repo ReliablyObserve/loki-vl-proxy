@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `/loki/api/v1/patterns` no longer fails where VictoriaLogs refuses its sampled read for memory (#1821). When neither the exact tier nor the counts answer, the proxy reads the newest lines of the range with VictoriaLogs' `limit` (`-patterns-max-backend-rows`, 20000), a sort that held every field of every row: on rows with dozens of stored attributes VictoriaLogs refused it (`cannot calculate [sort by (_time) desc limit 20000], since it requires more than 1146MB of memory`) and the Patterns tab had no answer. The read now keeps only the fields mining reads (time, message, stream and level fields), so its memory follows the messages; the patterns mined are the same, except for a row stored without a message whose level is read from its line with the line scan on. A read still refused for memory is sent again with half the rows, at most three times and not below 1000 rows (counted as `loki_vl_proxy_internal_operation_total{operation="patterns_rows",outcome="backend_memory_limit"}`, and `outcome="reduced"` when a smaller read answers); such an answer mines fewer, newer lines and is not cached.
+- Identical requests in flight no longer start their VictoriaLogs reads again when the request that started them goes away (#1821). They share one run, which ran on the context of the request that started it: when Grafana cancelled that request (a user leaving a view), the reads were cancelled and every request still waiting started the run again, reading VictoriaLogs twice and answering late by the first request's time. The run is now cancelled when the last request waiting on it goes away; a request alone still cancels its reads at once. A request that only followed a parser probe whose starter went away now probes again instead of keeping both parser stages.
+
 ## [2.385.0] - 2026-11-28
 
 ### Performance

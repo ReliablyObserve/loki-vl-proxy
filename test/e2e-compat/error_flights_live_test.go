@@ -486,11 +486,11 @@ func TestErrorFlightsLive_ZOutageHeldAndRecovers(t *testing.T) {
 	}
 }
 
-// With VictoriaLogs paused, a leader whose client gives up hands its followers
-// nothing: they start again as a new leader and answer 200 once VictoriaLogs
-// resumes, never the leader's cancellation; a follower that gives up gets its
-// own 499 while the leader goes on. A timeout is never held: the repeat asks
-// VictoriaLogs again.
+// With VictoriaLogs paused, a leader whose client gives up does not end the
+// run its followers wait on (it is cancelled only when the last of them went
+// away): they answer 200 with the lines once VictoriaLogs resumes, never the
+// leader's cancellation; a follower that gives up gets its own 499 while the
+// run goes on. A timeout is never held: the repeat asks VictoriaLogs again.
 //
 // conformance: semantics/error-coalescing-no-inherited-cancel
 func TestErrorFlightsLive_ZPausedLeaderCancelFollowersRetry(t *testing.T) {
@@ -545,7 +545,7 @@ func TestErrorFlightsLive_ZPausedLeaderCancelFollowersRetry(t *testing.T) {
 			continue
 		}
 		if a.err != nil || a.code != http.StatusOK || strings.Count(string(a.body), "errflight ") != 3 {
-			t.Fatalf("follower %d answered %d %v %.200s, want the new leader's 200 with the lines", i, a.code, a.err, a.body)
+			t.Fatalf("follower %d answered %d %v %.200s, want the run's 200 with the lines", i, a.code, a.err, a.body)
 		}
 	}
 

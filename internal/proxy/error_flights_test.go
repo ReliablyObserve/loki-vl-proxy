@@ -233,12 +233,15 @@ func TestErrorFlights_TransientHeldThenRecovers(t *testing.T) {
 	}
 }
 
-// A leader that its client cancels hands nothing to the followers: the first
-// follower whose request is alive asks VictoriaLogs itself, and the others get
-// its answer, never the leader's cancellation.
+// A leader that its client cancels while followers wait does not end the run:
+// it is the flight's, cancelled only when the last request waiting on it went
+// away (leadFlight), so the followers get its answer from the one VictoriaLogs
+// call, never the leader's cancellation and never a second call. (A leader whose
+// deadline ends the run hands nothing; its followers start again:
+// TestErrorFlightsLive_ZPausedLeaderCancelFollowersRetry.)
 //
-// conformance: semantics/error-coalescing-no-inherited-cancel
-func TestErrorFlights_CancelledLeaderFollowersRetry(t *testing.T) {
+// conformance: semantics/error-coalescing-no-inherited-cancel, semantics/client-cancellation-propagates
+func TestErrorFlights_CancelledLeaderKeepsTheRunForFollowers(t *testing.T) {
 	leaderGate := make(chan struct{})
 	stub := newFlightStub(t, func(n int64, w http.ResponseWriter, r *http.Request) {
 		if n == 1 {
@@ -267,18 +270,17 @@ func TestErrorFlights_CancelledLeaderFollowersRetry(t *testing.T) {
 	}
 	waitFor(t, func() bool { return p.errorFlights.Waiting() >= followers })
 	cancelLeader()
-	if a := <-leaderDone; a.Code != 499 {
-		t.Fatalf("cancelled leader answered %d, want 499", a.Code)
-	}
-	wg.Wait()
+	time.Sleep(50 * time.Millisecond) // the run would see a cancellation by now
 	close(leaderGate)
+	<-leaderDone // its client is gone: what it was written is not read
+	wg.Wait()
 	for _, a := range answers {
 		if a.Code != http.StatusInternalServerError {
-			t.Fatalf("follower answered %d %q, want the new leader's 500", a.Code, a.Body.String())
+			t.Fatalf("follower answered %d %q, want the run's 500", a.Code, a.Body.String())
 		}
 	}
-	if got := stub.calls.Load(); got != 2 {
-		t.Fatalf("VictoriaLogs calls = %d, want 2 (the cancelled call and one for all followers)", got)
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("VictoriaLogs calls = %d, want 1 (the run every request waited on)", got)
 	}
 }
 
