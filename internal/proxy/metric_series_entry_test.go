@@ -257,3 +257,25 @@ func BenchmarkBuildMetricSeriesEntry(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkCanonicalLabelsKey writes the key of label sets of 2, 9 and 40 labels: the sorted copy of the names with
+// every value escaped (reference) against the key written once (canonicalLabelsKey).
+func BenchmarkCanonicalLabelsKey(b *testing.B) {
+	for _, n := range []int{2, 9, 40} {
+		labels := map[string]string{}
+		for i := 0; i < n; i++ {
+			labels["label_"+strconv.Itoa(i)] = "value-" + strconv.Itoa(i*31)
+		}
+		for _, c := range []struct {
+			name string
+			key  func(map[string]string) string
+		}{{"reference", refCanonicalLabelsKey}, {"once", canonicalLabelsKey}} {
+			b.Run(strconv.Itoa(n)+"/"+c.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					_ = c.key(labels)
+				}
+			})
+		}
+	}
+}
