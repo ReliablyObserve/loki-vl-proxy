@@ -12,11 +12,11 @@ import (
 // matches its value, and removes every other label of the entry, stream label,
 // structured metadata and parsed alike; the error labels are never removed.
 type keepRule struct {
-	bare []string
-	// eq are the stage's matchers when each is = or != (read from the query, no copy), conds their conditions when
-	// one is a regexp; at most one of them is set.
-	eq    []logqlpkg.DropMatcher
-	conds []translate.DropCondition
+	// stage is the query's keep stage: its bare names, and its matchers when each is = or != (read from the query,
+	// no copy); conds are the matchers' conditions when one is a regexp (regexp set).
+	stage  *logqlpkg.KeepStage
+	conds  []translate.DropCondition
+	regexp bool
 	// parserAfter says a parser stage follows, whose labels the keep does not
 	// see; adderAfter says a parser or a label_format follows, so a label of
 	// an entry that the keep does not name may have been added after it.
@@ -32,15 +32,14 @@ func keepRulesOf(pipeline []logqlpkg.Stage) keepRules {
 	for _, stage := range pipeline {
 		switch s := stage.(type) {
 		case *logqlpkg.KeepStage:
-			rule := keepRule{bare: s.Labels}
+			rule := keepRule{stage: s}
 			if slices.ContainsFunc(s.Matchers, func(m logqlpkg.DropMatcher) bool { return m.Op != "=" && m.Op != "!=" }) {
+				rule.regexp = true
 				for _, m := range s.Matchers {
 					if dc, err := translate.NewDropCondition(m.Name, m.Op, m.Value); err == nil {
 						rule.conds = append(rule.conds, dc)
 					}
 				}
-			} else {
-				rule.eq = s.Matchers
 			}
 			rules = append(rules, rule)
 		case *logqlpkg.ParserStage:
@@ -58,11 +57,11 @@ func keepRulesOf(pipeline []logqlpkg.Stage) keepRules {
 
 // names reports whether the stage names name, bare or with a matcher.
 func (k *keepRule) names(name string) bool {
-	if slices.Contains(k.bare, name) {
+	if slices.Contains(k.bare(), name) {
 		return true
 	}
-	for i := range k.eq {
-		if k.eq[i].Name == name {
+	for _, m := range k.eq() {
+		if m.Name == name {
 			return true
 		}
 	}
@@ -75,15 +74,31 @@ func (k *keepRule) names(name string) bool {
 }
 
 // matched reports whether the stage has matchers.
-func (k *keepRule) matched() bool { return len(k.eq) > 0 || len(k.conds) > 0 }
+func (k *keepRule) matched() bool { return len(k.eq()) > 0 || len(k.conds) > 0 }
+
+// bare are the names the stage lists bare.
+func (k *keepRule) bare() []string {
+	if k.stage == nil {
+		return nil
+	}
+	return k.stage.Labels
+}
+
+// eq are the stage's matchers when each is = or != (nil when conds holds them).
+func (k *keepRule) eq() []logqlpkg.DropMatcher {
+	if k.stage == nil || k.regexp {
+		return nil
+	}
+	return k.stage.Matchers
+}
 
 // keeps reports whether the stage leaves the label name with value.
 func (k *keepRule) keeps(name, value string) bool {
-	if isSpecialKeepLabel(name) || slices.Contains(k.bare, name) {
+	if isSpecialKeepLabel(name) || slices.Contains(k.bare(), name) {
 		return true
 	}
-	for i := range k.eq {
-		if m := &k.eq[i]; m.Name == name && (m.Value == value) == (m.Op == "=") {
+	for _, m := range k.eq() {
+		if m.Name == name && (m.Value == value) == (m.Op == "=") {
 			return true
 		}
 	}
@@ -139,7 +154,7 @@ func (rules keepRules) entry(sm, pf map[string]string, lt *LabelTranslator) {
 		if rule.adderAfter || !rule.matched() {
 			// The stored level and name_extracted base fields the projection
 			// retains for the proxy are no labels the stage keeps.
-			keepEntryFields(rule.bare, sm, pf)
+			keepEntryFields(rule.bare(), sm, pf)
 		}
 		if !rule.matched() {
 			// The projection removed every other field of a bare keep.

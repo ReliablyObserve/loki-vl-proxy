@@ -17,7 +17,7 @@ func applyBareFieldMutationToStreamLabels(drop, keep []string, raw, translated m
 		got = translated
 	}
 	if len(keep) > 0 {
-		if kept, ok := (keepRules{{bare: keep}}).streamLabels(got, lt); ok {
+		if kept, ok := (keepRules{{stage: &logqlpkg.KeepStage{Labels: keep}}}).streamLabels(got, lt); ok {
 			got, changed = kept, true
 		}
 	}
@@ -29,11 +29,11 @@ func applyBareFieldMutationToStreamLabels(drop, keep []string, raw, translated m
 
 // conditions are the stage's matchers as conditions, whichever form the rule holds them in.
 func (k *keepRule) conditions() []translate.DropCondition {
-	if k.eq == nil {
+	if k.regexp {
 		return k.conds
 	}
-	out := make([]translate.DropCondition, 0, len(k.eq))
-	for _, m := range k.eq {
+	out := make([]translate.DropCondition, 0, len(k.eq()))
+	for _, m := range k.eq() {
 		dc, _ := translate.NewDropCondition(m.Name, m.Op, m.Value) // = and != compile nothing
 		out = append(out, dc)
 	}
@@ -45,7 +45,7 @@ func flatDropKeep(query string) (drop, keep []translate.DropCondition, bareDrop,
 	drop, bareDrop, rules := extractDropKeepFromAST(query)
 	for _, r := range rules {
 		keep = append(keep, r.conditions()...)
-		bareKeep = append(bareKeep, r.bare...)
+		bareKeep = append(bareKeep, r.bare()...)
 	}
 	return drop, keep, bareDrop, bareKeep
 }
