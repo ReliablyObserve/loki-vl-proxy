@@ -275,6 +275,7 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	limit := int64(p.seriesMetadataMaxReadRows)
 	bound := int64(p.limits().BufferedBackendBodyBytes)
 	if seriesFoldFrom(ctx) != nil {
+		noteStatsReadRows(ctx, rows, limit)
 		// A folded read (series_fold_stream.go) groups a series across the buckets of its read, so it is never cut into
 		// slices; VictoriaLogs holds a group per series of the read, so one over the bound is refused as past its
 		// bound: the time chunks read it again in smaller chunks.

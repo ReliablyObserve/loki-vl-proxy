@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +52,16 @@ type statsReadMeter struct {
 	chunks          bool
 	bytes           int
 	series          int
+	// rowsLoad is a folded read's rows over -structured-metadata-series-max-read-rows (metadata_series.go): the chunk
+	// is sized by it, as by its series and bytes.
+	rowsLoad float64
+}
+
+// noteStatsReadRows records a folded read's rows against their bound.
+func noteStatsReadRows(ctx context.Context, rows, limit int64) {
+	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil && limit > 0 {
+		m.rowsLoad = max(m.rowsLoad, float64(rows)/float64(limit))
+	}
 }
 
 // statsReadChunks reports a read whose caller reads its steps again in time chunks when it passes the body bound.
@@ -231,7 +242,12 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		}
 		switch {
 		case meter.over && last > first:
-			size, halved = max(1, (last-first+1)/listedChunkShrink), true
+			shrink := int64(listedChunkShrink)
+			if meter.rowsLoad > 0 {
+				// A folded read over its row bound is refused before it is sent: the chunk that fits is known.
+				shrink = int64(math.Ceil(meter.rowsLoad / listedChunkLoad))
+			}
+			size, halved = max(1, (last-first+1)/shrink), true
 			continue
 		case meter.over:
 			p.writeErr(w, ctx, p.listedStepOverflowError(meter.overBytes))
@@ -297,9 +313,9 @@ func listedChunkBucketSteps(step, window, bucket time.Duration) int64 {
 // listedChunkLoad of the tighter of the two bounds (the series before the fold, the body bytes), at least one step
 // and at most bucketSteps.
 func nextListedChunkSize(read, bucketSteps int64, m statsReadMeter, budget, bodyBound int) int64 {
-	load := 0.0
+	load := m.rowsLoad
 	if budget > 0 {
-		load = float64(m.series) / float64(budget)
+		load = max(load, float64(m.series)/float64(budget))
 	}
 	if bodyBound > 0 {
 		load = max(load, float64(m.bytes)/float64(bodyBound))
