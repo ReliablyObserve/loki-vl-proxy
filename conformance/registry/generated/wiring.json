@@ -187,6 +187,7 @@
     "cache-restart-handover": [
       "cmd/proxy/answer_cache_ttl_test.go",
       "cmd/proxy/cache_handover_scope_test.go",
+      "internal/cache/disk_rebuild_readahead_test.go",
       "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
       "internal/cache/peer_bulk_governor_test.go",
@@ -291,6 +292,10 @@
     ],
     "drilldown/patterns-range-end-inside-sample": [
       "internal/proxy/patterns_sample_end_test.go"
+    ],
+    "drilldown/patterns-rows-fields": [
+      "internal/proxy/patterns_row_fields_test.go",
+      "internal/proxy/patterns_rows_memory_test.go"
     ],
     "field-mapping-label-names": [
       "cmd/proxy/field_mapping_label_mode_test.go",
@@ -555,6 +560,7 @@
       "test/e2e-compat/tenant_limits_published_test.go"
     ],
     "loki_api_v1_index_stats": [
+      "internal/proxy/flight_cancel_test.go",
       "internal/proxy/gaps_test.go",
       "internal/proxy/index_stats_window_test.go",
       "test/e2e-compat/index_stats_like_loki_test.go",
@@ -615,6 +621,8 @@
       "internal/proxy/patterns_mine_parallel_test.go",
       "internal/proxy/patterns_non_selector_test.go",
       "internal/proxy/patterns_owner_test.go",
+      "internal/proxy/patterns_row_fields_test.go",
+      "internal/proxy/patterns_rows_memory_test.go",
       "internal/proxy/patterns_sample_end_test.go",
       "internal/proxy/patterns_scope_test.go",
       "internal/proxy/patterns_state_test.go",
@@ -630,6 +638,7 @@
       "internal/proxy/drilldown_series_limit_loki_test.go",
       "internal/proxy/drilldown_series_limit_rule_loki_test.go",
       "internal/proxy/field_mapping_both_answers_test.go",
+      "internal/proxy/flight_cancel_test.go",
       "internal/proxy/instant_result_type_test.go",
       "internal/proxy/json_parser_error_check_handler_test.go",
       "internal/proxy/keep_series_grouping_test.go",
@@ -1523,7 +1532,9 @@
       "internal/querycorpus/typed_pair_blank_test.go"
     ],
     "semantics/client-cancellation-propagates": [
-      "internal/proxy/backend_heavy_test.go"
+      "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/error_flights_test.go",
+      "internal/proxy/flight_cancel_test.go"
     ],
     "semantics/comment-between-function-and-parenthesis-accepted": [
       "internal/logql/zero_range_comments_loki_test.go",
@@ -1641,6 +1652,7 @@
       "internal/middleware/coalescer_cancel_test.go",
       "internal/proxy/error_flights_edge_test.go",
       "internal/proxy/error_flights_test.go",
+      "internal/proxy/flight_cancel_test.go",
       "test/e2e-compat/error_flights_live_test.go"
     ],
     "semantics/error-coalescing-request-flights": [
@@ -3403,7 +3415,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 778,
+  "registry_items": 779,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -3454,6 +3466,9 @@
     ],
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/disk_rebuild_readahead_test.go": [
+      "cache-restart-handover"
     ],
     "internal/cache/error_flights_test.go": [
       "semantics/error-cache-bounded-memory",
@@ -4296,6 +4311,7 @@
     ],
     "internal/proxy/error_flights_test.go": [
       "limits/series-limit-error",
+      "semantics/client-cancellation-propagates",
       "semantics/error-cache-byte-equal-answers",
       "semantics/error-cache-classes-and-ttl",
       "semantics/error-cache-operator-switches",
@@ -4459,6 +4475,12 @@
       "quality/query-range-extent-cache",
       "quality/query-range-settled-steps",
       "semantics/unwrap-first-last-range-longer-than-step"
+    ],
+    "internal/proxy/flight_cancel_test.go": [
+      "loki_api_v1_index_stats",
+      "loki_api_v1_query",
+      "semantics/client-cancellation-propagates",
+      "semantics/error-coalescing-no-inherited-cancel"
     ],
     "internal/proxy/gaps_test.go": [
       "loki_api_v1_index_stats"
@@ -5072,6 +5094,14 @@
     ],
     "internal/proxy/patterns_persistence_test.go": [
       "peer-cache-replication"
+    ],
+    "internal/proxy/patterns_row_fields_test.go": [
+      "drilldown/patterns-rows-fields",
+      "loki_api_v1_patterns"
+    ],
+    "internal/proxy/patterns_rows_memory_test.go": [
+      "drilldown/patterns-rows-fields",
+      "loki_api_v1_patterns"
     ],
     "internal/proxy/patterns_sample_end_test.go": [
       "drilldown/patterns-full-range-counts",
@@ -7626,7 +7656,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 919,
+  "tests_with_markers": 923,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7783,5 +7813,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 510
+  "wired_items": 511
 }
