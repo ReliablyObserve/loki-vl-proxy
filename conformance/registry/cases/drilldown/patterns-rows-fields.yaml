@@ -41,7 +41,7 @@ compare:
     is answered from a smaller read.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#1852"
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/patterns.go readPatternRows, internal/proxy/patterns_exact.go patternRowsQuery'
@@ -49,5 +49,5 @@ gap:
   proxy: 'patterns from the sampled lines, read with only the fields mining needs; fewer rows on a memory refusal'
   planned_test: 'TestPatternRowFieldsMineAsWholeRows, TestPatternRowFieldsMissingMessageLevel, TestPatternRowsQueryKeepsTheFilter, TestPatternRowsMemoryRefusalReadsFewerRows, TestPatternRowsReducedAnswerIsNotKept, TestIsVLMemoryLimitMessage (internal/proxy)'
   visual: none
-  visual_reason: 'filled after the stack proof'
+  visual_reason: 'the refusal needs a cluster vlselect with a low memory allowance, which the visual-smoke stack does not run; the Patterns tab before and after is in PR #1852 local proof'
   clusters: []
