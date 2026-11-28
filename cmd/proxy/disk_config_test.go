@@ -19,9 +19,10 @@ func TestDiskFlagsPassStorageBudgets(t *testing.T) {
 		bytes, queue int64
 		entries      int
 		index        int64
+		readahead    bool
 	}{
-		{"defaults", nil, "s2", 1000, 4 << 20, 16 << 20, 100000, 16 << 20},
-		{"explicit", []string{"-disk-cache-codec=zstd", "-disk-cache-flush-size=25", "-disk-cache-flush-bytes=8192", "-disk-cache-max-buffer-bytes=32768", "-disk-cache-max-entries=40", "-disk-cache-max-index-bytes=16384"}, "zstd", 25, 8192, 32768, 40, 16384},
+		{"defaults", nil, "s2", 1000, 4 << 20, 16 << 20, 100000, 16 << 20, true},
+		{"explicit", []string{"-disk-cache-codec=zstd", "-disk-cache-flush-size=25", "-disk-cache-flush-bytes=8192", "-disk-cache-max-buffer-bytes=32768", "-disk-cache-max-entries=40", "-disk-cache-max-index-bytes=16384", "-disk-cache-rebuild-readahead=false"}, "zstd", 25, 8192, 32768, 40, 16384, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sentinel := errors.New("captured config")
@@ -35,7 +36,7 @@ func TestDiskFlagsPassStorageBudgets(t *testing.T) {
 				t.Fatalf("run: %v", err)
 			}
 			cfg := got.diskCfg
-			if cfg.Codec != tc.codec || cfg.FlushSize != tc.batch || cfg.FlushBytes != tc.bytes || cfg.MaxBufferBytes != tc.queue || cfg.MaxEntries != tc.entries || cfg.MaxIndexBytes != tc.index {
+			if cfg.Codec != tc.codec || cfg.FlushSize != tc.batch || cfg.FlushBytes != tc.bytes || cfg.MaxBufferBytes != tc.queue || cfg.MaxEntries != tc.entries || cfg.MaxIndexBytes != tc.index || cfg.RebuildReadahead != tc.readahead {
 				t.Fatalf("disk config = %+v", cfg)
 			}
 		})

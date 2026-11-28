@@ -66,6 +66,8 @@ decisions:
       evictions; refusals = layer rejections) ties the two together. The reason
       families drop the component label: the question is per tier and layer,
       and summing over components keeps the set fixed (476 series then; 482 with the demotion family).
+      Issue #1802 item 5 asked again whether the existing families should get
+      the reason label; owner decision (recorded with #1841): they stay unchanged.
     evidence: |
       TestEvictionSignalsRandomOperationsBalance and
       TestEvictionSignalsConcurrentBalance hold the invariant over random and

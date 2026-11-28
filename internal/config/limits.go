@@ -591,7 +591,7 @@ var Limits = []Limit{
 		Metric:     "loki_vl_proxy_patterns_lines_scanned_total",
 		Alert:      "none",
 		LokiParity: "",
-		Sizing:     "Raise it for sparse selectors where patterns are mined from too few lines; every extra row is VictoriaLogs scan work and proxy parsing.",
+		Sizing:     "Raise it for sparse selectors where patterns are mined from too few lines; every extra row is VictoriaLogs scan work and proxy parsing. VictoriaLogs answers the read with a sort of the newest rows that holds the fields mining reads; a read it refuses for memory is sent again with half the rows, at most three times and not below 1000 (counted by loki_vl_proxy_internal_operation_total, operation patterns_rows): lower it when that count grows.",
 	},
 	{
 		Flag:       "patterns-second-pass-max-rows",

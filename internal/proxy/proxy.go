@@ -837,19 +837,23 @@ var CacheTTLs = map[string]time.Duration{
 }
 
 type Proxy struct {
-	backend                *url.URL
-	rulerBackend           *url.URL
-	alertsBackend          *url.URL
-	client                 *http.Client
-	backendBudget          chan struct{}
-	tailClient             *http.Client
-	cache                  *cache.Cache
-	compatCache            *cache.Cache
-	log                    *slog.Logger
-	metrics                *metrics.Metrics
-	queryTracker           *metrics.QueryTracker
-	coalescer              *mw.Coalescer
-	errorFlights           *cache.ErrorFlights
+	backend       *url.URL
+	rulerBackend  *url.URL
+	alertsBackend *url.URL
+	client        *http.Client
+	backendBudget chan struct{}
+	tailClient    *http.Client
+	cache         *cache.Cache
+	compatCache   *cache.Cache
+	log           *slog.Logger
+	metrics       *metrics.Metrics
+	queryTracker  *metrics.QueryTracker
+	coalescer     *mw.Coalescer
+	errorFlights  *cache.ErrorFlights
+	// flightShares maps a request flight (*cache.Flight) its leader runs to the
+	// shared context the leader's handler runs on (leadFlight): a follower joins
+	// it, so the run ends only when the last of its requests went away.
+	flightShares           sync.Map
 	errorFlightCounters    errorFlightCounters
 	windowFreeHeldUntil    atomic.Int64 // latest expiry of a failure held for every window
 	windowFreeSeenUntil    atomic.Int64 // until when requests join a window-free probe

@@ -62,6 +62,9 @@
     "drilldown/patterns-range-end-inside-sample | compare:observed",
     "drilldown/patterns-range-end-inside-sample | gap:fixed",
     "drilldown/patterns-range-end-inside-sample | query",
+    "drilldown/patterns-rows-fields | compare:observed",
+    "drilldown/patterns-rows-fields | gap:fixed",
+    "drilldown/patterns-rows-fields | query",
     "drilldown/plugin-legend-sync-race | compare:observed",
     "drilldown/plugin-legend-sync-race | gap:upstream",
     "drilldown/plugin-legend-sync-race | query",
@@ -1517,6 +1520,7 @@
     "cmd/proxy/tenant_routing_test.go | tenant-query-limits",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
+    "internal/cache/disk_rebuild_readahead_test.go | cache-restart-handover",
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
@@ -1941,6 +1945,7 @@
     "internal/proxy/error_flights_edge_test.go | semantics/error-coalescing-no-inherited-cancel",
     "internal/proxy/error_flights_edge_test.go | semantics/error-coalescing-request-flights",
     "internal/proxy/error_flights_test.go | limits/series-limit-error",
+    "internal/proxy/error_flights_test.go | semantics/client-cancellation-propagates",
     "internal/proxy/error_flights_test.go | semantics/error-cache-byte-equal-answers",
     "internal/proxy/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/proxy/error_flights_test.go | semantics/error-cache-operator-switches",
@@ -2056,6 +2061,10 @@
     "internal/proxy/first_last_window_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/first_last_window_cache_test.go | quality/query-range-settled-steps",
     "internal/proxy/first_last_window_cache_test.go | semantics/unwrap-first-last-range-longer-than-step",
+    "internal/proxy/flight_cancel_test.go | loki_api_v1_index_stats",
+    "internal/proxy/flight_cancel_test.go | loki_api_v1_query",
+    "internal/proxy/flight_cancel_test.go | semantics/client-cancellation-propagates",
+    "internal/proxy/flight_cancel_test.go | semantics/error-coalescing-no-inherited-cancel",
     "internal/proxy/gaps_test.go | loki_api_v1_index_stats",
     "internal/proxy/index_stats_window_test.go | loki_api_v1_index_stats",
     "internal/proxy/index_stats_window_test.go | quality/index-stats-default-window",
@@ -2410,6 +2419,10 @@
     "internal/proxy/patterns_owner_test.go | patterns-loki-mining",
     "internal/proxy/patterns_owner_test.go | peer-cache-patterns",
     "internal/proxy/patterns_persistence_test.go | peer-cache-replication",
+    "internal/proxy/patterns_row_fields_test.go | drilldown/patterns-rows-fields",
+    "internal/proxy/patterns_row_fields_test.go | loki_api_v1_patterns",
+    "internal/proxy/patterns_rows_memory_test.go | drilldown/patterns-rows-fields",
+    "internal/proxy/patterns_rows_memory_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_sample_end_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_sample_end_test.go | drilldown/patterns-range-end-inside-sample",
     "internal/proxy/patterns_sample_end_test.go | loki_api_v1_patterns",
@@ -3864,13 +3877,13 @@
     "case_consumers": {
       "any": 50,
       "api": 125,
-      "drilldown": 67,
+      "drilldown": 68,
       "explore": 272,
       "grafana-datasource": 4,
       "operator": 6
     },
     "claiming_tests": {
-      "go": 914,
+      "go": 918,
       "playwright": 3
     },
     "page_kinds": {
@@ -3892,7 +3905,7 @@
     "shape_covers_distinct": 120,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 510
+    "wired_items": 511
   },
   "gates": [
     "A/B shape selection",

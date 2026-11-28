@@ -210,20 +210,12 @@ type patternQueryScope struct {
 	step           time.Duration
 }
 
-// patternScope reads a request into a patternQueryScope. ok is false for a request they do not answer: a query that
-// is not a bare stream selector, or bounds or a step it cannot read.
-func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (patternQueryScope, bool) {
+// patternSelectorFilter is the VictoriaLogs filter of a /patterns query that is a bare stream selector, from its
+// parsed tree: the filter the translator writes for it. ok is false for another query.
+func (p *Proxy) patternSelectorFilter(query string) (logsql.FilterExpr, bool) {
 	lq, err := parsedLogQuery(strings.TrimSpace(query))
 	if err != nil || len(lq.Pipeline) > 0 {
-		return patternQueryScope{}, false
-	}
-	startNs, endNs, ok := parseLokiTimeRangeToUnixNano(startParam, endParam)
-	if !ok || endNs <= startNs {
-		return patternQueryScope{}, false
-	}
-	step, ok := patternCountsStep(startNs, endNs, stepParam)
-	if !ok {
-		return patternQueryScope{}, false
+		return nil, false
 	}
 	p.configMu.RLock()
 	streamFields := p.streamFieldsMap
@@ -234,6 +226,24 @@ func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (pat
 	p.configMu.RUnlock()
 	filter, err := translate.StreamSelectorFilter(lq.Selector.Matchers, labelFn, streamFields)
 	if err != nil {
+		return nil, false
+	}
+	return filter, true
+}
+
+// patternScope reads a request into a patternQueryScope. ok is false for a request they do not answer: a query that
+// is not a bare stream selector, or bounds or a step it cannot read.
+func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (patternQueryScope, bool) {
+	filter, ok := p.patternSelectorFilter(query)
+	if !ok {
+		return patternQueryScope{}, false
+	}
+	startNs, endNs, ok := parseLokiTimeRangeToUnixNano(startParam, endParam)
+	if !ok || endNs <= startNs {
+		return patternQueryScope{}, false
+	}
+	step, ok := patternCountsStep(startNs, endNs, stepParam)
+	if !ok {
 		return patternQueryScope{}, false
 	}
 	filter = logsql.AllOf{filter, patternMinableLines}
