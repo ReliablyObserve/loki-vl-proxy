@@ -84,6 +84,33 @@ decisions:
     performance:
       tracked: ['request path: allocations per request (benchstat)', 'cache read: ns/op of a hit']
       bound: 'a request without cache or VictoriaLogs work allocates 0 to 2 more (the log line) and ~190 B more; a cache read adds two clock reads, the shared lookup histogram lock and the request lock (twice with the trace on)'
+  - id: inventory-bucket-plan-on-the-request-line
+    chosen: 'Six 8-bit counts of the metadata inventory listings of a request (listings, memory answers, buckets cached, revalidated and scanned, edges) in padding of the request telemetry, written on the request and slow_request lines only when the request planned an inventory listing'
+    over: ['a log line per listing', 'counting them under the internal operations map (it would change proxy.operation_types)', '16-bit counts in the flow counters (the telemetry would grow from 760 to 776 bytes, one allocation size class up: +128 B on every request)']
+    why: |
+      Issue #1821 item 3 (approved): a slow first /labels of a window waited
+      for every bucket of the inventory, and nothing showed how many buckets
+      were cached and how many were read from VictoriaLogs. The counts are
+      the plan the listing already tallies for loki_vl_proxy_internal_operation
+      (whose outcome label is unchanged). A request with no inventory listing
+      writes no new field, so other log lines keep their shape.
+    evidence: |
+      TestLabelsRequestLineCarriesTheInventoryBucketPlan: the pieces read
+      equal the listing calls the fake VictoriaLogs saw (cold window, moved
+      window, memory answer, unplanned listing). Local stack 2026-11-28 (main
+      ac182f433 vs this change, VictoriaLogs v1.54.0, 7.44M lines over 26 h):
+      a first 24 h /labels logs 39 buckets scanned and 1 edge (63 VictoriaLogs
+      calls with the 23 row counts); its moved windows log memory 1 and 0
+      calls; timings and calls equal to main. Apple M5 Pro, GOMAXPROCS=4,
+      benchstat n=8: BenchmarkRequestPath and BenchmarkRequestLogger ns/op,
+      B/op and allocs/op unchanged (the labels miss with the log on: +0.18%
+      B/op, the six fields' bytes, 0 allocs).
+    code: [internal/proxy/query_flow.go, internal/proxy/telemetry.go, internal/proxy/metadata_inventory.go]
+    tests: [TestLabelsRequestLineCarriesTheInventoryBucketPlan, TestFlowInventoryCountsSaturate]
+    performance:
+      tracked: ['BenchmarkRequestPath', 'BenchmarkRequestLogger']
+      bound: 'no added allocation and no size class change of the request telemetry; a labels line with an inventory listing writes six more integer fields'
+    pending: true
   - id: cache-reads-counted-by-tier-reached
     chosen: 'A histogram per route and tier of the attached tiers each request lookup reached (hit or miss), derived in the proxy cache-read wrappers from the method and the answering tier'
     over: ['counting only the answering tier', 'counting file reads of the disk database per request', 'counters threaded through the cache read methods', 'a tier label without a route', 'a layer label']

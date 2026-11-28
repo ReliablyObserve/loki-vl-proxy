@@ -583,6 +583,7 @@
       "internal/proxy/label_inventory_cover_oracle_test.go",
       "internal/proxy/label_inventory_cover_test.go",
       "internal/proxy/label_inventory_memory_test.go",
+      "internal/proxy/label_inventory_plan_log_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/labels_alias_test.go",
       "internal/proxy/labels_post_form_cache_test.go",
@@ -974,6 +975,7 @@
       "internal/metrics/cache_since_start_metrics_test.go",
       "internal/metrics/request_flow_test.go",
       "internal/proxy/cache_reads_per_request_test.go",
+      "internal/proxy/label_inventory_plan_log_test.go",
       "internal/proxy/query_flow_test.go",
       "internal/proxy/query_lowering_shared_parse_test.go",
       "internal/proxy/query_lowering_test.go"
@@ -1972,6 +1974,9 @@
     "semantics/keyword-fold-runes-read-as-keyword": [
       "internal/logql/lexer_edges_loki_test.go",
       "internal/proxy/keyword_fold_runes_test.go"
+    ],
+    "semantics/label-browser-cold-first-listing": [
+      "internal/proxy/label_inventory_plan_log_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
       "internal/proxy/label_browser_gates_test.go",
@@ -4526,6 +4531,11 @@
       "quality/labels-backfill-into-cached-bucket",
       "semantics/label-browser-latency-cold-and-refresh",
       "semantics/label-inventory-exact-and-incremental"
+    ],
+    "internal/proxy/label_inventory_plan_log_test.go": [
+      "loki_api_v1_labels",
+      "observability-query-flow",
+      "semantics/label-browser-cold-first-listing"
     ],
     "internal/proxy/label_map_plan_test.go": [
       "architecture-syntax-package-layering"
@@ -7532,7 +7542,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 909,
+  "tests_with_markers": 910,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7614,7 +7624,6 @@
     "semantics/json-count-mixed-window-binary-failures",
     "semantics/json-empty-value-label-series",
     "semantics/keep-composition-retains-discarded-identity-in-count-metrics",
-    "semantics/label-browser-cold-first-listing",
     "semantics/label-format-function-composition-content-selection",
     "semantics/label-format-function-literal-output",
     "semantics/label-replace-around-vector",
@@ -7690,5 +7699,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 506
+  "wired_items": 507
 }

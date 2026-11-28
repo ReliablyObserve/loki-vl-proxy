@@ -117,7 +117,9 @@ const (
 	flowInventoryCount
 )
 
-var flowInventoryNames = [flowInventoryCount]string{
+// flowInventoryNames are the fields' names, held as interface values so a line appends them without converting
+// (and allocating) each.
+var flowInventoryNames = [flowInventoryCount]any{
 	"flow.inventory.listings", "flow.inventory.memory", "flow.inventory.buckets_cached",
 	"flow.inventory.buckets_revalidated", "flow.inventory.buckets_scanned", "flow.inventory.edges",
 }
@@ -131,13 +133,12 @@ func (f *flowInventory) add(kind, n int) {
 	f[kind] = uint8(min(int(f[kind])+max(n, 0), math.MaxUint8))
 }
 
-// logAttrs is the bucket plan of the request and slow_request lines: none for a request that planned no
-// inventory listing.
-func (f flowInventory) logAttrs() []any {
+// appendLogAttrs appends the bucket plan to the attributes of a request or slow_request line: nothing for a
+// request that planned no inventory listing.
+func (f flowInventory) appendLogAttrs(attrs []any) []any {
 	if f[flowInventoryListings] == 0 {
-		return nil
+		return attrs
 	}
-	attrs := make([]any, 0, 2*flowInventoryCount)
 	for i, n := range f {
 		attrs = append(attrs, flowInventoryNames[i], int(n))
 	}

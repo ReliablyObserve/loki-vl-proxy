@@ -45,7 +45,8 @@ func lastRequestLine(t *testing.T, buf *bytes.Buffer) map[string]any {
 func inventoryPlanCounts(t *testing.T, line map[string]any) (counts map[string]int, present bool) {
 	t.Helper()
 	counts = map[string]int{}
-	for _, name := range flowInventoryNames {
+	for _, n := range flowInventoryNames {
+		name := n.(string)
 		v, ok := line[name]
 		if !ok {
 			continue

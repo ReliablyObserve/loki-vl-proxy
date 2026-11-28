@@ -281,7 +281,7 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		"proxy.steps", trace,
 	}
 	attrs = append(attrs, telemetry.flow.logAttrs(elapsed)...)
-	attrs = append(attrs, telemetry.inventory.logAttrs()...)
+	attrs = telemetry.inventory.appendLogAttrs(attrs)
 	attrs = append(attrs, "flow.vl.rows", telemetry.flow.vlRows)
 	attrs = p.appendTenantScopeAttrs(ctx, attrs, tenant)
 	attrs = append(attrs, p.callerLogAttrs(ctx)...)
