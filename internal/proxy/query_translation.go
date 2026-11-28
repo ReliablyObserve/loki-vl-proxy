@@ -182,6 +182,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))

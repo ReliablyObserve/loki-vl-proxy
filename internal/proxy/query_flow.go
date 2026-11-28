@@ -106,6 +106,63 @@ type flowCounters struct {
 	lokiCache [lokiCacheSlotCount]flowLokiCache
 }
 
+// The pieces of a metadata inventory listing, by how each was answered.
+const (
+	flowInventoryListings    = iota // listings the inventory planned
+	flowInventoryMemory             // listings answered from memory with no VictoriaLogs call
+	flowInventoryCached             // buckets read from the cache
+	flowInventoryRevalidated        // cached buckets a row count confirmed
+	flowInventoryScanned            // buckets read from VictoriaLogs
+	flowInventoryEdges              // unaligned edges, read from VictoriaLogs on every listing
+	flowInventoryCount
+)
+
+// flowInventoryNames are the fields' names, held as interface values so a line appends them without converting
+// (and allocating) each.
+var flowInventoryNames = [flowInventoryCount]any{
+	"flow.inventory.listings", "flow.inventory.memory", "flow.inventory.buckets_cached",
+	"flow.inventory.buckets_revalidated", "flow.inventory.buckets_scanned", "flow.inventory.edges",
+}
+
+// flowInventory counts a request's inventory pieces (the bucket plan of #1821). Six 8-bit counts fit in padding of
+// the request's telemetry, which keeps its allocation size class; a count stops at 255, above any plan of one
+// listing of a week.
+type flowInventory [flowInventoryCount]uint8
+
+func (f *flowInventory) add(kind, n int) {
+	f[kind] = uint8(min(int(f[kind])+max(n, 0), math.MaxUint8))
+}
+
+// appendLogAttrs appends the bucket plan to the attributes of a request or slow_request line: nothing for a
+// request that planned no inventory listing.
+func (f flowInventory) appendLogAttrs(attrs []any) []any {
+	if f[flowInventoryListings] == 0 {
+		return attrs
+	}
+	for i, n := range f {
+		attrs = append(attrs, flowInventoryNames[i], int(n))
+	}
+	return attrs
+}
+
+// recordInventoryPlan counts one inventory listing of the request and how its pieces were answered.
+func recordInventoryPlan(ctx context.Context, memory bool, cached, revalidated, scanned, edges int) {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	rt.inventory.add(flowInventoryListings, 1)
+	if memory {
+		rt.inventory.add(flowInventoryMemory, 1)
+	}
+	rt.inventory.add(flowInventoryCached, cached)
+	rt.inventory.add(flowInventoryRevalidated, revalidated)
+	rt.inventory.add(flowInventoryScanned, scanned)
+	rt.inventory.add(flowInventoryEdges, edges)
+	rt.mu.Unlock()
+}
+
 func (f *flowCounters) cacheLookups() int { return f.cacheHits() + f.cacheMisses() + f.cacheStale() }
 
 func (f *flowCounters) cacheHits() (n int) {
