@@ -140,3 +140,21 @@ decisions:
     tests: [TestFieldMappingLabelMode_ParsedAliasCollisionDetectedFields, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL, TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias, TestExtractedFilterAliased, TestStreamLabelPattern, FuzzFieldMappingLabelMode, TestCompat_FieldMappingAliasCollisionsMatchLoki]
     quality: 'alias and both answer the collision rows as Loki with the pre-migration names; original and unset write the same LogsQL and answers as before.'
     performance: 'BenchmarkFieldMappingAliasCollision. Main versus this change on the paths it touches in the default mode (detected_fields, translation, lowering; Apple M5 Pro, GOMAXPROCS=4, 6 runs, 2026-11-26): allocs/op identical, B/op -0.14% (geomean), time within noise; the alias modes allocate 30% more in a detected_fields scan of keys named like aliases (892 vs 686), the lowering the same.'
+  - id: alias-stored-stream-name-and-both-base-name
+    chosen: 'In alias and both, an alias a query reads after a json or logfmt parser is read from the alias''s field where the stream holds it, else from the value the stream stores under the alias''s own name, copied aside before the first parser, else from the parsed key; /detected_field/<name>/values of an alias (and in both of a -label-style name) answers only the scanned parsed values; in both the -label-style name of a mapped field with an alias is a stream label for the collision rename'
+    over: [reading the parsed key where the stream lacks the alias''s field (a stream that stores pod itself then answered the parsed value), the stream label fallback of field values for these names (answers a stream label''s values where Loki lists none), keeping the -label-style name out of the collision rules in both (its parsed key kept the name beside the added stream label)]
+    why: |
+      Loki parity for the owner's definitions (alias: a Loki that stored the
+      alias; both: a Loki that stored both names). The lowering decides from the
+      plan: Profile.aliasReads holds the aliases the plan's groupings name, the
+      label filters after a parser name the rest (aliasStreamReads), and only
+      the alias and both modes set the alias functions, so the unset and
+      original texts are unchanged. The stored value reuses the stream value
+      scratch (translate.StreamValueScratch): copied before the first parser,
+      filled from the parsed key in a log query, put back behind each parser in
+      a metric query.
+    evidence: 'Offline Loki differential (2026-11-28): Loki 3.7 engine and pipeline oracles over a fixture of mapped, unmapped and pod-storing streams per parser, VictoriaLogs v1.49.0 and v1.54.0 serve oracle, proxy handlers: alias 74 -> 92 and both 42 -> 90 of 112 query runs match Loki; unset and original pinned byte for byte to the answers recorded at the base (internal/querycorpus/testdata/field-mapping-label-mode-loki-diff.jsonl.gz); remaining rows listed in fmKnown'
+    code: [internal/queryplan/lower/alias_stream_value.go, internal/queryplan/lower/label_filter_parsed.go, internal/queryplan/lower/parser.go, internal/queryplan/lower/lower.go, internal/queryplan/lower/route.go, internal/proxy/field_mapping_labels.go, internal/proxy/field_mapping_both_answers.go, internal/proxy/cache_keys.go, internal/proxy/drilldown.go, internal/proxy/stream_processing.go, internal/proxy/ordered_json_metric.go, internal/proxy/request_scope.go]
+    tests: [TestFieldMappingLabelModesMatchLoki, TestFieldMappingLabelMode_StreamNameValuesAndBaseNameCollision, TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL, FuzzFieldMappingLabelMode]
+    quality: 'alias and both answer the rows of their Loki reference except the fmKnown classes; unset and original answers unchanged byte for byte.'
+    performance: 'Default mode: no change (same text, same code path). alias and both: one copy pipe before the first parser and one format pipe per parser for each alias the query reads after a parser (a log query also fills from each spelling of the key), plus one delete; no VictoriaLogs call added.'

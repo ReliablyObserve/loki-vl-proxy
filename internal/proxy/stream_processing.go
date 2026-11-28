@@ -1279,6 +1279,10 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 // (lineFieldExposure.entryLabelName); streamOnly and finalLabels are the
 // labels of _stream and the stream labels the entry carries.
 func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels, streamOnly, finalLabels map[string]string, exposure *lineFieldExposure, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+	if exposure != nil {
+		// The both mode's stream labels carry every name of a mapped field: a parsed key named like one is renamed.
+		finalLabels = p.labelTranslator.withBothStreamNames(finalLabels)
+	}
 	for k := range smBuf {
 		delete(smBuf, k)
 	}
@@ -1386,6 +1390,10 @@ func (e *lineFieldExposure) resolveStreamKeyFields(pending []pendingField, defer
 // This matches Loki's behavior: Loki stores structured metadata separately and only
 // JSON/logfmt parser stages produce parsed fields, regardless of the query parser stage.
 func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, streamOnly, finalLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, bool) {
+	if exposure != nil {
+		// The both mode's stream labels carry every name of a mapped field: a parsed key named like one is renamed.
+		finalLabels = p.labelTranslator.withBothStreamNames(finalLabels)
+	}
 	for k := range smBuf {
 		delete(smBuf, k)
 	}

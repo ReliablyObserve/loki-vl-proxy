@@ -746,11 +746,18 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 						t.Fatalf("%s: listed alias %q of %q reads %q", mode, name, m.VLField, lt.ToVL(name))
 					}
 				}
-				// The alias functions of the lowering: an alias names its field both ways, any other label none.
+				// The alias functions of the lowering: an alias names its field both ways, any other label none;
+				// in the both mode the field's -label-style name names it too (bothBaseName).
 				for _, label := range []string{m.LokiLabel, lt.baseName(m.VLField), answer} {
 					field := lt.aliasField(label)
 					if lt.isAliasLabel(label) != (field != "") {
 						t.Fatalf("%s: alias %q names field %q", mode, label, field)
+					}
+					if base, ok := lt.bothBaseName(field); field != "" && ok && base == label {
+						if mode != FieldMappingLabelModeBoth || lt.fieldAlias(field) == "" {
+							t.Fatalf("%s: base name %q of %q read as a stream label", mode, label, field)
+						}
+						continue
 					}
 					if field != "" && lt.fieldAlias(field) != label {
 						t.Fatalf("%s: field %q of alias %q names %q", mode, field, label, lt.fieldAlias(field))

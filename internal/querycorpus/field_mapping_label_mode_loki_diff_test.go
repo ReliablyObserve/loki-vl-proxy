@@ -632,8 +632,47 @@ func compareFMMeta(fq fmQuery, loki metricLokiAnswer, run metricHandlerRun) metr
 	return d
 }
 
-// fmKnown are the rows that still differ from Loki, by mode and query id, with the reason.
-var fmKnown = map[string]string{}
+// The rows that still differ from Loki, by class (docs/KNOWN_ISSUES.md, registry case
+// semantics/field-mapping-label-modes).
+const (
+	// fmKnownAliasBase: in the alias mode the -label-style name of a mapped field (k8s_pod_name) is a query name of
+	// the field (it reads the field before and after a parser), where the pre-migration Loki has no such stream label:
+	// its k8s_pod_name is the parsed key, and no k8s_pod_name_extracted exists. Changing it changes the documented
+	// alias mode rule that every name of a mapping is a query name.
+	fmKnownAliasBase = "alias mode: the -label-style name of a mapped field reads the field after a parser"
+	// fmKnownBothNative: in the both mode a stream that stores pod itself (never renamed) also carries k8s_pod_name
+	// in the answer (the both layer adds every name of the field the answer label pod reads), so its parsed
+	// k8s_pod_name is renamed beside it; a Loki storing both names holds pod alone on such a stream.
+	fmKnownBothNative = "both mode: a stream storing the alias itself gains the -label-style name"
+	// fmKnownBothBaseGrouping: in the both mode a grouping by the -label-style name fills the field from the parsed
+	// alias key (pod) where the stream lacks the field, not from the parsed k8s_pod_name key.
+	fmKnownBothBaseGrouping = "both mode: a grouping by the -label-style name reads the parsed alias where the stream lacks the field"
+)
+
+// fmKnown are the rows that still differ from Loki, by mode and query id, with their class.
+var fmKnown = map[string]string{
+	`alias log {service_name="fm-json"} | json | k8s_pod_name="kl-0-1"`:                                                                     fmKnownAliasBase,
+	`alias log {service_name="fm-json"} | json | k8s_pod_name_extracted!=""`:                                                                fmKnownAliasBase,
+	`alias log {service_name="fm-logfmt"} | logfmt | k8s_pod_name="kl-0-1"`:                                                                 fmKnownAliasBase,
+	`alias log {service_name="fm-logfmt"} | logfmt | k8s_pod_name_extracted!=""`:                                                            fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name) (count_over_time({service_name="fm-json"} | json [5m]))`:                                            fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name) (count_over_time({service_name="fm-logfmt"} | logfmt [5m]))`:                                        fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-json"} | json [5m]))`:                                  fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-json"} | json | k8s_pod_name_extracted!="" [5m]))`:     fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-logfmt"} | logfmt [5m]))`:                              fmKnownAliasBase,
+	`alias metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-logfmt"} | logfmt | k8s_pod_name_extracted!="" [5m]))`: fmKnownAliasBase,
+	`both log {service_name="fm-json"} | json`:                                                                                              fmKnownBothNative,
+	`both log {service_name="fm-json"} | json | pod!="pod-1"`:                                                                               fmKnownBothNative,
+	`both log {service_name="fm-json"} | json | pod=~"npod-3|line-2-.*"`:                                                                    fmKnownBothNative,
+	`both log {service_name="fm-json"} | json | pod_extracted=~".+-1"`:                                                                      fmKnownBothNative,
+	`both log {service_name="fm-logfmt"} | logfmt`:                                                                                          fmKnownBothNative,
+	`both log {service_name="fm-logfmt"} | logfmt | pod!="pod-1"`:                                                                           fmKnownBothNative,
+	`both log {service_name="fm-logfmt"} | logfmt | pod=~"npod-3|line-2-.*"`:                                                                fmKnownBothNative,
+	`both log {service_name="fm-logfmt"} | logfmt | pod_extracted=~".+-1"`:                                                                  fmKnownBothNative,
+	`both metric sum by (k8s_pod_name) (count_over_time({service_name="fm-json"} | json [5m]))`:                                             fmKnownBothBaseGrouping,
+	`both metric sum by (k8s_pod_name) (count_over_time({service_name="fm-logfmt"} | logfmt [5m]))`:                                         fmKnownBothBaseGrouping,
+	`both metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-json"} | json [5m]))`:                                   fmKnownBothNative,
+}
 
 // TestFieldMappingLabelModesMatchLoki replays the recorded answers through the handlers: the unset and original
 // modes answer byte for byte what they answered at the base; alias and both answer what their Loki reference
@@ -670,6 +709,9 @@ func TestFieldMappingLabelModesMatchLoki(t *testing.T) {
 						for _, k := range run.sent {
 							u, _ := url.ParseQuery(k[strings.Index(k, "?")+1:])
 							if q := u.Get("query"); q != "" {
+								if len(q) > 900 {
+									q = "…" + q[len(q)-900:]
+								}
 								t.Logf("SENT %s %s %s | %s", mode.name(), mr.kind, fq.id(), q)
 							}
 						}

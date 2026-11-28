@@ -49,6 +49,31 @@ func (lt *LabelTranslator) addBothNames(labels map[string]string, skip map[strin
 	return added
 }
 
+// withBothStreamNames returns labels with the names addBothNames gives them,
+// as the stream labels of a log line leave the route in the both mode: labels
+// itself when it gains none (every other mode), else a copy.
+func (lt *LabelTranslator) withBothStreamNames(labels map[string]string) map[string]string {
+	if !lt.answersBothNames() {
+		return labels
+	}
+	for field, names := range lt.listing {
+		if len(names) < 2 {
+			continue
+		}
+		if _, ok := labels[lt.vlToLoki[field]]; !ok {
+			continue
+		}
+		for _, name := range names {
+			if _, has := labels[name]; !has {
+				out := cloneStringMap(labels)
+				lt.addBothNames(out, nil)
+				return out
+			}
+		}
+	}
+	return labels
+}
+
 // addBothNamesFJ is addBothNames for a label object of a JSON answer.
 func (lt *LabelTranslator) addBothNamesFJ(obj *fj.Object, skip map[string]bool, arena *fj.Arena) bool {
 	added := false

@@ -127,9 +127,12 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL(t *testing.T) {
 	queries := map[string][]string{
 		`{service_name="s"} | logfmt | pod_extracted=~".+-1"`:                      {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
 		`sum by (pod_extracted) (count_over_time({service_name="s"} | json [5m]))`: {`[{,](?:pod|k8s\\.pod\\.name)=\"`},
-		`{service_name="s"} | logfmt | pod="x"`:                                    {`(k8s.pod.name:* "k8s.pod.name":="x") OR (NOT k8s.pod.name:* pod:="x")`},
-		`sum by (pod) (count_over_time({service_name="s"} | logfmt [5m]))`:         {`format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name | stats by (k8s.pod.name)`},
-		`sum by (namespace) (rate({service_name="s"} | json [5m]))`:                {`format if (NOT k8s.namespace.name:*) "<namespace>" as k8s.namespace.name`},
+		// A stream that stores pod itself (never renamed) holds the stream label in that field, which the parser
+		// overwrites: its value is copied aside before the parser and read where the stream lacks k8s.pod.name.
+		`{service_name="s"} | logfmt | pod="x"`: {`copy pod as __lxsv_pod | unpack_logfmt | format if (NOT __lxsv_pod:* "pod":*) "<pod>" as __lxsv_pod`,
+			`(k8s.pod.name:* "k8s.pod.name":="x") OR (NOT k8s.pod.name:* __lxsv_pod:="x")`, `| delete __lxsv_*`},
+		`sum by (pod) (count_over_time({service_name="s"} | logfmt [5m]))`: {`copy pod as __lxsv_pod | unpack_logfmt | format if (__lxsv_pod:*) "<__lxsv_pod>" as pod`, `format if (NOT k8s.pod.name:*) "<pod>" as k8s.pod.name | stats by (k8s.pod.name)`},
+		`sum by (namespace) (rate({service_name="s"} | json [5m]))`:        {`format if (NOT k8s.namespace.name:*) "<namespace>" as k8s.namespace.name`},
 		// The Logs Drilldown field breakdown of a renamed key (count and rate) and a second base beside it: served
 		// from the plan in alias and both, where the default mode leaves them to the string translator.
 		`sum by (pod_extracted) (count_over_time({service_name="s"} | logfmt | pod_extracted!="" [5m]))`:            {`| delete __lxp* | format if ("pod.extracted":*)`, `format if (__lxp_stream:~"[{,](?:pod|k8s\\.pod\\.name)=\"" __lxp_pod:*) "<__lxp_pod>" as pod_extracted | delete __lxp* | stats by (pod_extracted) count()`},
@@ -150,6 +153,12 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL(t *testing.T) {
 		}
 		return s
 	}
+	// In the both mode the -label-style name of a mapped field is a stream label too (it is added to the stream
+	// labels beside the alias): read after a parser as an alias is, and its _extracted rename collides with it.
+	bothWants := map[string][]string{
+		`{service_name="s"} | logfmt | k8s_pod_name="x"`:                                      {`(k8s.pod.name:* "k8s.pod.name":="x") OR (NOT k8s.pod.name:* __lxsv_k8s_pod_name:="x")`},
+		`sum by (k8s_pod_name_extracted) (count_over_time({service_name="s"} | logfmt [5m]))`: {`[{,](?:k8s[._]pod[._]name|k8s\\.pod\\.name)=\"`},
+	}
 	for q, wants := range queries {
 		original := translate(FieldMappingLabelModeUnset, q)
 		unset := translate("", q)
@@ -163,6 +172,10 @@ func TestFieldMappingLabelMode_ParsedAliasCollisionLogsQL(t *testing.T) {
 		}
 		for _, mode := range []FieldMappingLabelMode{FieldMappingLabelModeAlias, FieldMappingLabelModeBoth} {
 			got := translate(mode, q)
+			wants := wants
+			if both, ok := bothWants[q]; ok && mode == FieldMappingLabelModeBoth {
+				wants = both
+			}
 			for _, want := range wants {
 				if !strings.Contains(got, want) {
 					t.Errorf("%s %s: missing %s in\n%s", mode, q, want, got)
@@ -193,6 +206,83 @@ func TestFieldMappingLabelMode_NoUnderscoreFallbackForAlias(t *testing.T) {
 		got := p.addUnderscorefallbackByLabels(query, []string{"pod", "namespace", "k8s_namespace_name"})
 		if !strings.HasSuffix(got, want) {
 			t.Errorf("%s: %s, want suffix %s", mode, got, want)
+		}
+	}
+}
+
+// mappedOnlyVL answers every read with one logfmt row whose stream holds the
+// mapped field k8s.pod.name; its line carries the keys pod and k8s_pod_name.
+func mappedOnlyVL(t *testing.T) string {
+	t.Helper()
+	row := map[string]string{"_time": "2026-01-01T00:00:01Z", "_stream": `{k8s.pod.name="pod-a",service.name="svc"}`, "_stream_id": "1",
+		"_msg": "level=info pod=line-a k8s_pod_name=kl-a", "k8s.pod.name": "pod-a", "service.name": "svc"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			_ = json.NewEncoder(w).Encode(row)
+		case "/select/logsql/streams":
+			_ = json.NewEncoder(w).Encode(map[string]any{"values": []map[string]any{{"value": row["_stream"], "hits": 1}}})
+		case "/select/logsql/field_values", "/select/logsql/stream_field_values":
+			_ = json.NewEncoder(w).Encode(map[string]any{"values": []map[string]any{{"value": "pod-a", "hits": 1}}})
+		default:
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// A detected field named like a stream label of a mapped field has no values
+// where every line's stream holds the field (-field-mapping-label-mode alias
+// and both): Loki lists the line's key as name_extracted there, and no stream
+// label is a detected field. In the both mode the field's -label-style name is
+// such a stream label too, so a parsed k8s_pod_name is k8s_pod_name_extracted.
+//
+// conformance: field-mapping-label-names, semantics/field-mapping-label-modes
+func TestFieldMappingLabelMode_StreamNameValuesAndBaseNameCollision(t *testing.T) {
+	mappings := []FieldMapping{{VLField: "k8s.pod.name", LokiLabel: "pod"}, {VLField: "k8s.pod.name", LokiLabel: "k8s_pod_name"}}
+	for _, tc := range []struct {
+		mode              FieldMappingLabelMode
+		empty             []string
+		fields, notListed []string
+	}{
+		{FieldMappingLabelModeAlias, []string{"pod"}, []string{"pod_extracted", "k8s_pod_name"}, []string{"pod", "k8s_pod_name_extracted"}},
+		{FieldMappingLabelModeBoth, []string{"pod", "k8s_pod_name"}, []string{"pod_extracted", "k8s_pod_name_extracted"}, []string{"pod", "k8s_pod_name"}},
+	} {
+		p := newMappingProxy(t, mappedOnlyVL(t), nil, Config{LabelStyle: LabelStyleUnderscores, MetadataFieldMode: MetadataFieldModeTranslated,
+			FieldMappingLabelMode: tc.mode, FieldMappings: mappings})
+		for _, name := range tc.empty {
+			var out struct {
+				Values []string `json:"values"`
+			}
+			body := mappingGet(t, p, "/loki/api/v1/detected_field/"+name+"/values", url.Values{"query": {`{service_name="svc"}`}})
+			if err := json.Unmarshal(body, &out); err != nil {
+				t.Fatalf("%s %s: %v: %s", tc.mode, name, err, body)
+			}
+			if len(out.Values) != 0 {
+				t.Errorf("%s: /detected_field/%s/values = %v, want none (Loki: the key is %s_extracted)", tc.mode, name, out.Values, name)
+			}
+		}
+		var fields struct {
+			Fields []collisionField `json:"fields"`
+		}
+		body := mappingGet(t, p, "/loki/api/v1/detected_fields", url.Values{"query": {`{service_name="svc"}`}})
+		if err := json.Unmarshal(body, &fields); err != nil {
+			t.Fatal(err)
+		}
+		listed := map[string]bool{}
+		for _, f := range fields.Fields {
+			listed[f.Label] = true
+		}
+		for _, name := range tc.fields {
+			if !listed[name] {
+				t.Errorf("%s: detected_fields lacks %s: %s", tc.mode, name, body)
+			}
+		}
+		for _, name := range tc.notListed {
+			if listed[name] {
+				t.Errorf("%s: detected_fields lists %s: %s", tc.mode, name, body)
+			}
 		}
 	}
 }

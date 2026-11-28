@@ -587,7 +587,11 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	if errVals != nil {
 		return nil, errVals
 	}
-	if !derivedLevel && len(values) == 0 && scanCtx.Err() == nil {
+	// A name that is a stream label of a mapped field in the alias and both modes (an alias, and in both the
+	// -label-style name) is a detected field only as the parsed key of a line whose stream lacks the field, which the
+	// scan above reads with Loki's collision rule (Loki lists no stream label): no fallback below answers for it.
+	streamName := p.labelTranslator.isAliasLabel(fieldName)
+	if !derivedLevel && !streamName && len(values) == 0 && scanCtx.Err() == nil {
 		// A stream label is no log field: its values come from the labels. This read decides the answer when the
 		// fields hold none, so its failure fails the request.
 		labelValues, labelErr := p.detectedLabelValuesForField(scanCtx, fieldName, query, start, end, lineLimit)
@@ -605,7 +609,7 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	// Last resort: field is inside JSON or logfmt _msg (not VL-indexed) and was
 	// not found by scan or relaxed-query. Only reached when no relaxed query is
 	// available (relaxOnEmpty=false or query already relaxed).
-	if len(values) == 0 && scanCtx.Err() == nil {
+	if len(values) == 0 && !streamName && scanCtx.Err() == nil {
 		unpacked, unpackErr := p.fetchUnpackedFieldValues(scanCtx, query, start, end, fieldName, lineLimit)
 		if unpackErr != nil {
 			// The only read that can find a field inside the line: its failure is not "no values".

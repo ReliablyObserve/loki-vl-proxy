@@ -1507,6 +1507,9 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				}
 				if alias, ok := p.labelTranslator.aliasAnswer(key); ok {
 					rowAliases = addRowAlias(rowAliases, alias)
+					if base, ok := p.labelTranslator.bothBaseName(key); ok {
+						rowAliases = addRowAlias(rowAliases, base)
+					}
 				} else if p.labelTranslator.isAliasLabel(lokiLabel) {
 					rowAliases = addRowAlias(rowAliases, lokiLabel) // a stored field named like the alias
 				}

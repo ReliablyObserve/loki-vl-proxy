@@ -296,7 +296,8 @@ func (lt *LabelTranslator) isAliasLabel(label string) bool {
 }
 
 // aliasField returns the stored field an alias label is the stream label of
-// (isAliasLabel), "" for any other label and in the original mode.
+// (isAliasLabel), "" for any other label and in the original mode. In the both
+// mode the field's -label-style name is such a label too (bothBaseName).
 func (lt *LabelTranslator) aliasField(label string) string {
 	if !lt.listsAliases() {
 		return ""
@@ -305,10 +306,32 @@ func (lt *LabelTranslator) aliasField(label string) string {
 	if !ok {
 		return ""
 	}
-	if answer, ok := lt.aliasAnswer(field); !ok || answer != label {
+	answer, ok := lt.aliasAnswer(field)
+	if !ok {
 		return ""
 	}
+	if answer != label {
+		if base, listed := lt.bothBaseName(field); !listed || base != label {
+			return ""
+		}
+	}
 	return field
+}
+
+// bothBaseName returns the -label-style name of a field with an alias in the
+// both mode, where stream labels carry it beside the alias
+// (field_mapping_both_answers.go): a parsed key of that name is renamed
+// name_extracted beside it, as Loki renames a key named like a stream label.
+// false in the other modes and for a field the both mode lists no base name of.
+func (lt *LabelTranslator) bothBaseName(field string) (string, bool) {
+	if lt.labelMode != FieldMappingLabelModeBoth {
+		return "", false
+	}
+	base := lt.baseName(field)
+	if _, ok := lt.aliasAnswer(field); !ok || !slices.Contains(lt.listing[field], base) {
+		return "", false
+	}
+	return base, true
 }
 
 // fieldAlias is the alias a stored field carries as its stream label in the
