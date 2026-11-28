@@ -572,8 +572,10 @@ limited to 125 MiB/s, +3%), the walk needs only 9% of the file and the volume
 adds no latency. On a volume with read latency the walk without the read-ahead
 waits that latency on each of its 17,900 reads (about 18 s at 1 ms). With the
 read-ahead it takes about the file's size divided by the throughput (6.3 s
-here), computed, not measured. A warm page cache adds about 2 ms (2,000 records)
-and leaves 26,000 records unchanged within noise. `-disk-cache-rebuild-readahead=false`
+here), computed, not measured. A warm page cache costs 2 to 6 ms: the read-ahead copies pages
+that are already in memory. Two benchmark runs measured 18 → 20 ms and
+19 → 25 ms for 26,000 records, and 2.0 → 4.4 ms and 2.7 → 8.9 ms for 2,000
+records of 256 KiB. `-disk-cache-rebuild-readahead=false`
 keeps the walk alone.
 
 ### Restore time targets by storage

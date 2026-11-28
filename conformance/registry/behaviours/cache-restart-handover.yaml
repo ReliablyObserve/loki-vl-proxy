@@ -279,8 +279,11 @@ decisions:
       2026-11-28. BenchmarkRestoreIndexRebuild, Apple M5 Pro SSD, GOMAXPROCS=4,
       cold page cache (F_NOCACHE copy), n=6, host loaded by other builds:
       26,000 records / 200 MiB 1.08 s -> 59 ms, 10,000 / 128 MiB 403 -> 24 ms,
-      2,000 / 512 MiB 152 -> 46 ms; warm page cache 26,000 records 18.2 vs
-      19.5 ms (~), 2,000 records 2.0 vs 4.4 ms (+2.4 ms), +4 MiB of buffers.
+      2,000 / 512 MiB 152 -> 46 ms (repeated on the final code: 1.12 s -> 60
+      ms, 469 -> 28 ms, 158 -> 52 ms); warm page cache, two runs: 26,000
+      records 18.2 -> 19.5 ms and 19.3 -> 24.7 ms, 10,000 records 8.0 -> 9.2
+      ms, 2,000 records 2.0 -> 4.4 ms and 2.7 -> 8.9 ms (the read-ahead copies
+      pages already in memory), +4 MiB of buffers.
       Real proxy starts on the same machine (5 each, interleaved): 26,000
       records 1.10 s -> 0.05 s rebuild, 2,000 records 0.16 -> 0.04 s.
       Emulated volumes (a local Linux VM, data disk throttled per container,
