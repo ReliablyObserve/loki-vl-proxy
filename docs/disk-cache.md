@@ -538,45 +538,63 @@ page cache that walk waits for one read of about 4 KiB per record, scattered
 over the file. With `-disk-cache-rebuild-readahead` (default `true`) the proxy
 reads the file into the page cache in file order while the walk runs:
 
-- eight positioned reads of 512 KiB at a time, 4 MiB of buffers in all;
+- eight positioned reads of 512 KiB at a time, each buffer allocated on its
+  first read (4 MiB at most);
 - stopped and joined when the walk ends, so it never runs while the replica
   answers queries or peers;
 - the walk finds most pages already read, and the device serves large
   sequential reads instead of one random read per record.
 
-It only reads and never changes what the rebuild keeps, drops or orders. The
-`disk cache index rebuilt` log line reports `readahead_bytes`. The bytes it
-reads stay in the page cache, which the kernel can reclaim. A container's
-memory accounting counts them, up to the file's size, until then. With the
-restart hand-over the warm-up then reads those values from memory instead of the
-disk.
+It only reads and never changes what the rebuild keeps, drops or orders.
 
-Measured on 2026-11-28 with the read-ahead of commit `36348635a` (`BenchmarkRestoreIndexRebuild` and a real proxy start).
-The emulated runs used the harness of the targets below: a local Linux VM with
-its data disk throttled per container and **no latency added**, so they are not
-EBS. "Ready" is rebuild plus warm-up with the hand-over, two runs per cell:
+Reading the whole file pays only when it is faster than the walk alone. With
+large records the walk reads a few KiB of each and passes the file's bytes
+faster than a throughput-bound read of all of them, and under memory pressure
+the pages read ahead are reclaimed before the walk reaches them. Without a
+check, a 2.2 GB file of large records at 125 MiB/s rebuilt in 16.6 s instead of
+7.2 s, and in 20.1 s with 1 GiB of container memory. So the read-ahead decides
+once:
 
-| File, storage | Rebuild off → on | Ready off → on | Read during the rebuild, off → on |
-|---|---:|---:|---:|
-| 50,000 records of 8 KiB (252 MB, `s2`), VM unthrottled | 2.19 → 0.12 s | 2.47 → 0.34 s | 150 → 252 MB |
-| the same, 125 MiB/s and 3,000 IOPS | 12.1 → 1.9 s | 20.4 → 2.1 s | 150 → 252 MB |
-| the same, 375 MiB/s and 6,500 IOPS | 5.6 → 0.6 s | 9.4 → 0.8 s | 150 → 252 MB |
-| 19,000 records, 2 GiB mix (794 MB, `s2`), VM unthrottled | 0.95 → 0.16 s | 1.85 → 0.91 s | 73 → 794 MB |
-| the same, 125 MiB/s and 3,000 IOPS | 5.9 → 6.1 s | 11.4 → 6.7 s | 73 → 794 MB |
-| the same, 375 MiB/s and 6,500 IOPS | 2.7 → 2.0 s | 4.6 → 2.6 s | 73 → 794 MB |
-| Apple M5 Pro SSD, real proxy start, 26,000 records (433 MB), 5 starts | 1.1 → 0.05 s | | |
-| the same, 2,000 records of 256 KiB (541 MB) | 0.16 → 0.04 s | | |
+- it waits until the walk has passed its first record, then times the walk
+  alone for 50 ms;
+- it then reads, and after 16 MiB and at least 100 ms compares its rate with
+  the walk's;
+- it stops when the walk alone is as fast.
 
-In the one cell where the rebuild gets slower (large records on a volume
-limited to 125 MiB/s, +3%), the walk needs only 9% of the file and the volume
-adds no latency. On a volume with read latency the walk without the read-ahead
-waits that latency on each of its 17,900 reads (about 18 s at 1 ms). With the
-read-ahead it takes about the file's size divided by the throughput (6.3 s
-here), computed, not measured. A warm page cache costs 2 to 6 ms: the read-ahead copies pages
-that are already in memory. Two benchmark runs measured 18 → 20 ms and
-19 → 25 ms for 26,000 records, and 2.0 → 4.4 ms and 2.7 → 8.9 ms for 2,000
-records of 256 KiB. `-disk-cache-rebuild-readahead=false`
-keeps the walk alone.
+A rebuild that ends within the 50 ms (a warm page cache) reads nothing ahead.
+
+The `disk cache index rebuilt` log line reports `readahead_bytes` and
+`readahead_stopped_early`. The bytes read ahead stay in the page cache, which
+the kernel can reclaim; a container's memory accounting counts them, up to the
+file's size, until then. With the restart hand-over the warm-up then reads
+those values from memory instead of the disk.
+
+Measured on 2026-11-28 with commit `983d54efe`. The emulated runs used the
+harness of the targets below: a local Linux VM with its data disk throttled per
+container and **no latency added**, so they are not EBS. Two runs per cell;
+"ready" is rebuild plus warm-up with the hand-over, "stopped" means the
+read-ahead stopped itself:
+
+| File, storage | Rebuild off → on | Ready off → on |
+|---|---:|---:|
+| 50,000 records of 8 KiB (252 MB, `s2`), VM unthrottled | 1.14 → 0.36 s | 1.34 → 0.51 s |
+| the same, 125 MiB/s and 3,000 IOPS | 12.1 → 4.4 s | 20.4 → 4.6 s |
+| the same, 375 MiB/s and 6,500 IOPS | 5.6 → 1.8 s | 9.4 → 2.0 s |
+| 19,000 records, 2 GiB mix (794 MB, `s2`), VM unthrottled | 0.54 → 0.27 s | 1.10 → 0.76 s |
+| the same, 125 MiB/s and 3,000 IOPS (stopped) | 5.89 → 5.89 s | 11.4 → 11.2 s |
+| the same, 375 MiB/s and 6,500 IOPS | 2.70 → 2.41 s | 4.59 → 2.92 s |
+| 19,000 large records (2.2 GB, `raw`), 125 MiB/s, 6 GiB or 1 GiB of memory (stopped) | 7.19 → 7.29 s | |
+| the same, 375 MiB/s (stopped) | 3.30 → 3.39 s | |
+| Apple M5 Pro SSD, real proxy start, 26,000 records (433 MB), 5 starts | 1.04 → 0.10 s | |
+| the same, 2,000 records of 256 KiB (541 MB) | 0.16 → 0.10 s | |
+
+Where it stops, the probe costs about 0.1 s (1.4 to 2.6% of the rebuild). With
+a warm page cache the rebuild is unchanged (`BenchmarkRestoreIndexRebuild`:
+21.9 against 20.8 ms and 2.2 against 2.2 ms, not significant). During a
+hand-over load the read-ahead waits for the walk, so it does not shorten that
+phase. On a volume with read latency the walk without the read-ahead waits that
+latency on each read (17,900 reads at 1 ms is about 18 s); this is computed,
+not measured. `-disk-cache-rebuild-readahead=false` keeps the walk alone.
 
 ### Restore time targets by storage
 
@@ -584,9 +602,8 @@ A restarted replica is ready after two phases, one after the other:
 
 1. **index rebuild**, before the listener opens: one read of about 4 KiB per
    record on disk, one at a time. Its time follows the number of records and the
-   volume's read latency; with the [read-ahead](#index-rebuild) (default) it is
-   at most about the file's size divided by the throughput. The startup probe
-   covers it.
+   volume's read latency; the [read-ahead](#index-rebuild) (default) shortens
+   it when reading the whole file is faster. The startup probe covers it.
 2. **warm-up**, bounded by `-cache-startup-warm-timeout`: reading and decoding
    the hot set. Its time follows throughput, IOPS and, about eight times less
    than the rebuild, latency (eight reads in flight).
@@ -653,9 +670,10 @@ the stored size (5.6 s and 11.1 s).
 
 These estimates and the targets above were made without the
 [index rebuild read-ahead](#index-rebuild), and they still apply with it off.
-With it on, the rebuild is bounded by the file's read time as well, and the
-warm-up reads from memory what the read-ahead already read. The targets are
-therefore upper bounds. They have not been re-measured with latency.
+With it on, the rebuild is no slower than without it beyond its probe (about
+0.1 s), and the warm-up reads from memory what the read-ahead already read. The
+targets therefore remain upper bounds. They have not been re-measured with
+latency.
 
 ### Sizing
 
@@ -675,7 +693,7 @@ The volume must be larger than the cache file, which holds everything the disk
 tier keeps, not only the hot set. Throughput and IOPS shorten the warm-up. The
 index rebuild gets shorter with fewer records (`-disk-cache-max-entries`,
 `-disk-cache-max-bytes`), a volume with lower read latency, or, with the
-read-ahead on, more throughput. In the emulation without the read-ahead, a
+read-ahead on and records small enough for it to pay, more throughput. In the emulation without the read-ahead, a
 10 GiB file of 94,000 records, 1.9 GiB of them hot, rebuilt in 32 s at 3,000
 IOPS and in an estimated 288 s at 3 ms a read.
 

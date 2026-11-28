@@ -272,37 +272,32 @@ decisions:
     tests: [TestRestore_StopsAtAFullMemoryTier, TestPeerRestore_NeverOverwritesFresherLocalData, TestMetrics_Handler_EmitsCacheRestartMetrics, TestOTLPPusher_RestoredEntriesAndBytesBySource]
     pending: true
   - id: index-rebuild-read-ahead
-    chosen: 'While the start-up index rebuild walks the records, read the cache file in file order into the page cache with eight positioned reads of 512 KiB at a time, stopped and joined when the walk ends (before the listener opens); -disk-cache-rebuild-readahead, default true'
-    over: ['the walk alone (one read of about 4 KiB per record, one at a time, on a cold page cache)', 'one record per query for the metric buckets (issue #1802 item 2: 33-40% fewer records, but a format change, slower post-restart reads of batched records and whole-record rewrites; see disk-reads-one-record-per-piece)', 'reading only the pages the walk needs (their offsets are known only by walking the tree)']
-    why: 'Owner decision 2026-11-28 on issue #1802: test a sequential read-ahead before the index rebuild instead of a record format change. The walk waits on one scattered device read per record; a read in file order turns that into throughput, and the warm-up that follows (with the restart hand-over) then finds its values in memory.'
+    chosen: 'While the start-up index rebuild walks the records, read the cache file in file order into the page cache with eight positioned reads of 512 KiB at a time, stopped and joined when the walk ends (before the listener opens); the read-ahead times the walk alone for 50 ms from its first record and, after 16 MiB and at least 100 ms of its own reads, stops once when the walk alone is as fast; -disk-cache-rebuild-readahead, default true'
+    over: ['the walk alone (one read of about 4 KiB per record, one at a time, on a cold page cache)', 'reading the whole file always (2.2 GB of large raw records at 125 MiB/s: 7.2 -> 16.6 s, 20.1 s with 1 GiB of memory)', 'comparing the walk with the read-ahead while both run (the read-ahead takes the throughput and slows the walk it is compared with, so it never stopped)', 'one record per query for the metric buckets (issue #1802 item 2; see disk-reads-one-record-per-piece)', 'reading only the pages the walk needs (their offsets are known only by walking the tree)']
+    why: 'Owner decision 2026-11-28 on issue #1802: test a sequential read-ahead before the index rebuild instead of a record format change. The walk waits on one scattered device read per record; a read in file order turns that into throughput where records are small enough for it to pay, and the warm-up that follows (with the restart hand-over) then finds its values in memory.'
     evidence: |
-      2026-11-28. BenchmarkRestoreIndexRebuild, Apple M5 Pro SSD, GOMAXPROCS=4,
-      cold page cache (F_NOCACHE copy), n=6, host loaded by other builds:
-      26,000 records / 200 MiB 1.08 s -> 59 ms, 10,000 / 128 MiB 403 -> 24 ms,
-      2,000 / 512 MiB 152 -> 46 ms (repeated on the final code: 1.12 s -> 60
-      ms, 469 -> 28 ms, 158 -> 52 ms); warm page cache, two runs: 26,000
-      records 18.2 -> 19.5 ms and 19.3 -> 24.7 ms, 10,000 records 8.0 -> 9.2
-      ms, 2,000 records 2.0 -> 4.4 ms and 2.7 -> 8.9 ms (the read-ahead copies
-      pages already in memory), +4 MiB of buffers.
-      Real proxy starts on the same machine (5 each, interleaved): 26,000
-      records 1.10 s -> 0.05 s rebuild, 2,000 records 0.16 -> 0.04 s.
-      Emulated volumes (a local Linux VM, data disk throttled per container,
-      no latency added, not EBS; two runs per cell; rebuild, then ready with
-      the hand-over warm-up), s2: 50,000 records of 8 KiB (252 MB) at 125 MiB/s
-      and 3,000 IOPS 12.1 -> 1.9 s, ready 20.4 -> 2.1 s; at 375 MiB/s and 6,500
-      IOPS 5.6 -> 0.6 s, ready 9.4 -> 0.8 s; 19,000 records of the 2 GiB mix
-      (794 MB) at 125 MiB/s 5.9 -> 6.1 s (+3%: the walk reads 9% of the file),
-      ready 11.4 -> 6.7 s; at 375 MiB/s 2.7 -> 2.0 s, ready 4.6 -> 2.6 s. Bytes
-      read during the rebuild rise to the file size (73 -> 794 MB, 150 -> 252
-      MB), the container's memory.peak after the rebuild rises by that page
-      cache (103 -> 825 MB) and its peak over the restart stays the same (3.0
-      GB) with no memory events. With read latency (not emulated) the walk
-      alone waits it per read: 17,900 reads at 1 ms is about 18 s against
-      about 6.3 s for the file at 125 MiB/s (computed).
-    code: [internal/cache/disk_rebuild_readahead.go, internal/cache/disk.go, cmd/proxy/main.go]
-    tests: [TestRebuildReadahead_LeavesTheSameIndex, TestRebuildReadahead_ReadsTheFileAndStops, TestDiskFlagsPassStorageBudgets]
+      2026-11-28, commit 983d54efe. Emulated volumes (a local Linux VM, data
+      disk throttled per container, no latency added, not EBS; two runs per
+      cell; rebuild, then ready with the hand-over warm-up), s2: 50,000 records
+      of 8 KiB (252 MB) at 125 MiB/s and 3,000 IOPS 12.1 -> 4.4 s, ready 20.4
+      -> 4.6 s; at 375 MiB/s and 6,500 IOPS 5.6 -> 1.8 s, ready 9.4 -> 2.0 s;
+      unthrottled 1.14 -> 0.36 s; 19,000 records of the 2 GiB mix (794 MB) at
+      125 MiB/s 5.89 -> 5.89 s (stopped), ready 11.4 -> 11.2 s; at 375 MiB/s
+      2.70 -> 2.41 s, ready 4.59 -> 2.92 s; unthrottled 0.54 -> 0.27 s; 19,000
+      large raw records (2.2 GB), rebuild only, 6 GiB and 1 GiB of memory:
+      125 MiB/s 7.19 -> 7.29 s, 375 MiB/s 3.30 -> 3.39 s (stopped; the
+      probe's cost), no memory events. Apple M5 Pro SSD, GOMAXPROCS=4: real
+      proxy starts on a cold page cache (5 each) 26,000 records 1.04 s -> 0.10
+      s, 2,000 records of 256 KiB 0.16 -> 0.10 s; BenchmarkRestoreIndexRebuild
+      n=6 cold 26,000 records 1.135 s -> 110 ms, 10,000 404 -> 77 ms, 2,000
+      165 -> 103 ms (~, p=0.065); warm 20.8 vs 21.9 ms, 8.9 vs 8.5 ms, 2.2 vs
+      2.2 ms (all ~), B/op +3 KiB warm and +4 MiB cold (the buffers). Reading
+      the whole file without the stop (commit 36348635a) made the large raw
+      records 2-3 times slower and cost 2-6 ms on a warm page cache.
+    code: [internal/cache/disk_rebuild_readahead.go, internal/cache/disk.go, internal/cache/disk_lru.go, cmd/proxy/main.go]
+    tests: [TestRebuildReadahead_LeavesTheSameIndex, TestRebuildReadahead_ReadsTheFileAndStops, TestRebuildReadahead_StopsWhenTheWalkIsAhead, TestRebuildReadahead_FastDeviceNeverStops, TestDiskFlagsPassStorageBudgets]
     quality: 'The rebuild keeps, drops and orders exactly the records it does without the read-ahead (same index, bytes, evictions and stored records from identical copies); the read-ahead only reads, ends with the walk and joins its goroutines; a file it cannot open means no read-ahead.'
-    performance: 'BenchmarkRestoreIndexRebuild/readahead=false|true (internal/cache/restore_bench_test.go, LVP_RESTORE_COLD=1, LVP_RESTORE_REBUILD_ENTRIES, LVP_RESTORE_BENCH_MB), which reports readahead-share (bytes read over file size).'
+    performance: 'BenchmarkRestoreIndexRebuild/readahead=false|true (internal/cache/restore_bench_test.go, LVP_RESTORE_COLD=1, LVP_RESTORE_REBUILD_ENTRIES, LVP_RESTORE_BENCH_MB), which reports readahead-share (bytes read over file size). Residual: where it stops, the probe costs about 0.1 s; during a hand-over load the read-ahead waits for the walk.'
     pending: true
   - id: disk-reads-one-record-per-piece
     chosen: 'Keep one disk record per cached piece (one metric bucket range, one patterns window, one answer), looked up side by side by the request that needs them; no record or read that batches the buckets of a query'
