@@ -65,6 +65,16 @@ compare:
     and off the step grid). With -range-metric-step-mode=off the
     limit error main answers; a request that fits with the mode off is the
     same bytes from the same VictoriaLogs requests in adaptive mode.
+gap:
+  status: fixed
+  fixed_by: '#1854'
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy step_adapt.go (the step layer) and read_budget.go (effectiveStep)'
+  loki: 'answers 200 at the requested step: its engine evaluates each step from the lines, so a short range at a fine step with a long window is no read limit'
+  proxy: 'answered its own read bound (400 limit reached while evaluating the query, or 500 rpc error: code = ResourceExhausted) before the fix; now answers Loki''s answer at the closest step that fits, with Loki''s warnings field'
+  planned_test: 'TestEffectiveStep, FuzzEffectiveStep, TestStepLayer_* (internal/proxy); TestRangeStepAdaptMatchesLoki (internal/querycorpus); visual scenes explore-step-adapt and explore-step-adapt-quantile, judged against Loki at the effective step (bench/visual compare.py)'
+  clusters: []
 loki_parity: |
   Loki answers at the requested step (its engine evaluates each step from
   the lines). The proxy answers Loki's answer at a coarser step, the

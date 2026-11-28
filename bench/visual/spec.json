@@ -116,6 +116,9 @@
    ],
    "covers": [
     "limits/range-metric-step-adapt"
+   ],
+   "fixes": [
+    "limits/range-metric-step-adapt"
    ]
   },
   {
@@ -129,6 +132,9 @@
     "5m"
    ],
    "covers": [
+    "limits/range-metric-step-adapt"
+   ],
+   "fixes": [
     "limits/range-metric-step-adapt"
    ]
   },

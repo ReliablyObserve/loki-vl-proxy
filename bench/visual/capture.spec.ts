@@ -649,6 +649,71 @@ async function recordAnswer(rs: Response, over: (rq: Request) => Promise<void>, 
                           ...(digest ? { body_digest: digest } : {}) } : {}) };
 }
 
+// An answer the PR proxy gave at a raised step (the step layer, internal/proxy/step_adapt.go) carries Loki's warning
+// "step raised from R to E to fit the query limits" in its frame notices and the X-Proxy-Step-Adjusted header "R;E"
+// on the proxy's own answer. compare.py judges such an answer against Loki's answer to the same query at the
+// effective step E, anchored as the proxy anchors it (the multiples of E inside the requested range moved onto the R
+// grid). stepReferences records that Loki answer, and the proxy's header for the same request, next to the Loki
+// capture (loki.json: step_references); a page without a PR answer at a raised step records none.
+const STEP_NOTICE = /^step raised from (\S+) to (\S+) to fit the query limits$/;
+
+function lokiDurationMs(s: string): number {
+  const units: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000, y: 31_536_000_000 };
+  let total = 0, rest = s;
+  for (const m of s.matchAll(/(\d+)(ms|s|m|h|d|w|y)/g)) { total += parseInt(m[1]) * units[m[2]]; rest = rest.replace(m[0], ""); }
+  return rest === "" ? total : NaN;
+}
+
+async function stepReferences(browser: any, p: PageSpec, r: string) {
+  const ddir = path.join(OUT, "data", p.id, r);
+  const pr = dss.find((d) => d.id === "pr"), loki = dss.find((d) => d.id === "loki");
+  const prFile = path.join(ddir, "pr.json"), lokiFile = path.join(ddir, "loki.json");
+  if (!pr || !loki || !fs.existsSync(prFile) || !fs.existsSync(lokiFile)) return;
+  const prCapture = JSON.parse(fs.readFileSync(prFile, "utf8"));
+  const refs: any[] = [];
+  const ctx = await browser.newContext();
+  try {
+    for (const rec of prCapture.records || []) {
+      if (!String(rec.url || "").startsWith("/api/ds/query") || !rec.request?.queries) continue;
+      for (const q of rec.request.queries) {
+        const res = rec.response?.results?.[q.refId];
+        const notices = (res?.frames || []).flatMap((f: any) => f.schema?.meta?.notices || []).map((n: any) => n.text);
+        const m = notices.map((t: string) => STEP_NOTICE.exec(t)).find(Boolean);
+        if (!m) continue;
+        const step = lokiDurationMs(m[1]), eff = lokiDurationMs(m[2]);
+        const from = Number(rec.request.from), to = Number(rec.request.to);
+        // The proxy's own answer to the same request: its X-Proxy-Step-Adjusted header, through Grafana's data source proxy.
+        const direct = new URLSearchParams({ query: q.expr, start: String(BigInt(from) * 1_000_000n), end: String(BigInt(to) * 1_000_000n), step: m[1] });
+        let marker = "";
+        try {
+          const rs = await ctx.request.get(`/api/datasources/proxy/uid/${pr.uid}/loki/api/v1/query_range?${direct}`, { timeout: 120_000 });
+          marker = rs.headers()["x-proxy-step-adjusted"] || "";
+        } catch { marker = ""; }
+        // Loki's answer at the effective step on the effective bounds: the requested bounds moved down onto the R
+        // grid (the proxy's step alignment), then inside the range onto the multiples of E.
+        const ref = { ...q, datasource: { type: "loki", uid: loki.uid }, step: m[2] };
+        delete ref.datasourceId;
+        const effFrom = Math.ceil(Math.floor(from / step) * step / eff) * eff, effTo = Math.floor(Math.floor(to / step) * step / eff) * eff;
+        const body = { queries: [ref], from: String(effFrom), to: String(effTo) };
+        let response: any = null, status = 0;
+        try {
+          const rs = await ctx.request.post("/api/ds/query", { data: body, timeout: 300_000 });
+          status = rs.status();
+          response = await rs.json();
+        } catch { response = null; }
+        refs.push({ refId: q.refId, expr: q.expr, from: rec.request.from, to: rec.request.to, notice: m[0],
+          requested_step_ms: step, effective_step_ms: eff, marker, request: body, status, response });
+      }
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (!refs.length) return;
+  const lokiCapture = JSON.parse(fs.readFileSync(lokiFile, "utf8"));
+  lokiCapture.step_references = refs;
+  fs.writeFileSync(lokiFile, JSON.stringify(lokiCapture));
+}
+
 for (const p of spec.pages as PageSpec[]) {
   if (process.env.VP_WARMUP === "1") break;
   if (pagesOnly && !pagesOnly.has(p.id)) continue;
@@ -759,6 +824,7 @@ for (const p of spec.pages as PageSpec[]) {
         }
         }
       }
+      await stepReferences(browser, p, r);
     });
   }
 }

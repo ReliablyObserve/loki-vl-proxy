@@ -776,7 +776,97 @@ def stats_numbers(body):
     return ", ".join(f"{k} {body.get(k)}" for k in ("streams", "chunks", "entries", "bytes"))
 
 
-def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, bodies=None):
+# An answer the PR proxy gave at a raised step (its step layer: internal/proxy/step_adapt.go, registry case
+# limits/range-metric-step-adapt) carries Loki's warning "step raised from R to E to fit the query limits" in its frame
+# notices. Such an answer is judged against Loki's answer to the same query at the effective step E on the effective
+# bounds, which capture.spec.ts records next to the Loki capture (loki.json: step_references, with the proxy's own
+# X-Proxy-Step-Adjusted header for the request). It passes only when the page declares the case (spec.json: fixes),
+# the proxy's header names the same two steps, every timestamp lies on the multiples of E and the answer equals that
+# Loki answer exactly (series, timestamps, values to the usual tolerance, the frame schema without the warning).
+STEP_NOTICE = re.compile(r"^step raised from (\S+) to (\S+) to fit the query limits$")
+STEP_ADAPT_CASE = "limits/range-metric-step-adapt"
+LOKI_DURATION = re.compile(r"(\d+)(ms|s|m|h|d|w|y)")
+LOKI_UNITS_MS = {"ms": 1, "s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000, "y": 31_536_000_000}
+
+
+def loki_duration_ms(text):
+    """A Loki duration ("19s80ms", "400ms", "1m") in milliseconds, or None."""
+    parts = LOKI_DURATION.findall(text or "")
+    if not parts or "".join(n + u for n, u in parts) != text:
+        return None
+    return sum(int(n) * LOKI_UNITS_MS[u] for n, u in parts)
+
+
+def step_notices(answer):
+    """The (requested, effective) steps of every step warning in one query's Grafana answer."""
+    found = set()
+    for fr in (answer or {}).get("frames") or []:
+        for n in ((fr.get("schema") or {}).get("meta") or {}).get("notices") or []:
+            m = STEP_NOTICE.match(str(n.get("text", "")))
+            if m:
+                found.add((m.group(1), m.group(2)))
+    return found
+
+
+def without_step_notice(answer, interval=None):
+    """The answer with its step warnings removed from every frame's notices (an emptied list removed too), and every
+    field's config.interval set to `interval` when given."""
+    out = json.loads(json.dumps(answer))
+    for fr in out.get("frames") or []:
+        if interval is not None:
+            for f in (fr.get("schema") or {}).get("fields") or []:
+                if (f.get("config") or {}).get("interval") is not None:
+                    f["config"]["interval"] = interval
+        meta = (fr.get("schema") or {}).get("meta") or {}
+        if "notices" in meta:
+            meta["notices"] = [n for n in meta["notices"] if not STEP_NOTICE.match(str(n.get("text", "")))]
+            if not meta["notices"]:
+                del meta["notices"]
+    return out
+
+
+def judge_step_adjusted(key, answer, references, declared):
+    """None when the PR's answer to query `key` carries no step warning; else (verdict, failure), one of them set."""
+    steps = step_notices(answer)
+    if not steps:
+        return None
+    if not declared:
+        return None, f"answer at a raised step on a page that does not declare {STEP_ADAPT_CASE}"
+    if len(steps) != 1:
+        return None, f"frames carry different step warnings: {sorted(steps)}"
+    requested, effective = next(iter(steps))
+    eff_ms = loki_duration_ms(effective)
+    ref = next((r for r in references or () if r.get("refId") == key[1] and r.get("expr") == key[2]
+                and str(r.get("from")) == str(key[4]) and str(r.get("to")) == str(key[5])), None)
+    if ref is None:
+        return None, f"no Loki reference at the effective step {effective}"
+    if ref.get("marker") != f"{requested};{effective}":
+        return None, f"the proxy's X-Proxy-Step-Adjusted {ref.get('marker')!r} does not name {requested};{effective}"
+    if not eff_ms or ref.get("effective_step_ms") != eff_ms or ref.get("status") != 200 or not isinstance(ref.get("response"), dict):
+        return None, f"no usable Loki reference at the effective step {effective}"
+    # Grafana sets the time field's config.interval to the step it asked for: the requested step on the PR side, the
+    # effective step on the reference. Each must be that step; the two are then the same question.
+    req_ms = loki_duration_ms(requested)
+    for ans, want in ((answer, req_ms), *(((r, eff_ms) for r in (ref["response"].get("results") or {}).values()))):
+        for fr in (ans or {}).get("frames") or []:
+            for f in (fr.get("schema") or {}).get("fields") or []:
+                got = (f.get("config") or {}).get("interval")
+                if got is not None and got != want:
+                    return None, f"time field interval {got} is not the step {want} ms the answer was asked at"
+    pr = frames_of({"results": {key[1]: without_step_notice(answer, interval=eff_ms)}})
+    loki = frames_of(ref["response"])
+    for ident, value in pr.items():
+        if value[0] == "metric":
+            times = sorted(value[1])
+            if any(int(t) % eff_ms for t in times):
+                return None, f"{ident[2]}: timestamps are not on the grid of the effective step {effective}"
+    why = same(pr, loki)
+    if why:
+        return None, f"differs from Loki's answer at the effective step {effective}: {why}"
+    return f"answer at a raised step ({requested} -> {effective}) equals Loki's answer at {effective}", None
+
+
+def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, bodies=None, adjusted=None):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
     explain: (raw left, raw right[, Loki's first-pass answers by request]) of the records, to ask explain_vs_loki why a difference is by design; such a
@@ -784,7 +874,9 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
     vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series.
     raw: (raw left, raw right) when explain is not given, for bodies.
     bodies: a list that gets {request, left, right} (bounded; index/stats also `numbers`) for every resource request
-    that differs, at most BODIES_PER_ROW."""
+    that differs, at most BODIES_PER_ROW.
+    adjusted: (raw left answers, Loki's step references, whether the page declares STEP_ADAPT_CASE): a left answer at a
+    raised step is judged by judge_step_adjusted instead of being compared with the right side's answer."""
     raw = explain or raw
     keys = sorted(set(left) | set(right), key=str)
     n = ok = missing = 0
@@ -811,6 +903,16 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, b
                 continue
             n += 1
             xa, xb = la[i], lb[j]
+            judged = judge_step_adjusted(k, adjusted[0][k][i], adjusted[1], adjusted[2]) if adjusted and k[0] == "query" else None
+            if judged:
+                series += len(xa)
+                verdict, failure = judged
+                if verdict:
+                    ok += 1
+                    explained.append(tagged(f"{k[0]} {str(k[2:] or k[1])[:90]} -- explained: {verdict}", k))
+                else:
+                    diffs.append(tagged(f"{k[0]} {str(k[2:] or k[1])[:90]}: {failure}", k))
+                continue
             x, y = (nonzero(xa), nonzero(xb)) if lenient else (xa, xb)
             series += len(xa)
             if (("digest", "") in xa) != (("digest", "") in xb):
@@ -1171,6 +1273,9 @@ def main():
         if os.path.exists(first_loki):
             records(first_loki, earlier, {})
         sl, l = records(os.path.join(d, "loki.json"), raw["loki"], gap["loki"]) if has_loki else (True, {})
+        references = load_json(os.path.join(d, "loki.json")).get("step_references") or [] if has_loki else []
+        page_entry = next((x for x in spec["pages"] if x["id"] == page), {})
+        adjusted = (raw["pr"], references, STEP_ADAPT_CASE in (page_entry.get("fixes") or []))
         # A body the browser could not hand over (a very large answer) is a gap of the capture, not of the build. The PR
         # side is blamed for it only where the base read that request: a request unreadable on both sides is reported
         # (unreadable_both) and left uncompared; the PR still fails when it never settled or lost a body the base had.
@@ -1181,9 +1286,9 @@ def main():
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
         explained, lnondet = [], []
         if loki_ok:
-            ln, lok, _, _, _, _ = compare(p, l, vs_loki=True)
+            ln, lok, _, _, _, _ = compare(p, l, vs_loki=True, adjusted=adjusted)
             _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"], earlier), vs_loki=True,
-                                                        bodies=loki_bodies)
+                                                        bodies=loki_bodies, adjusted=adjusted)
             _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"], earlier), vs_loki=True)
             # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
             # Loki there) still counts against the base, so a fix towards Loki reads as improved.
@@ -1260,7 +1365,7 @@ def main():
                 for key in rejections["main"].keys() & answered["pr"] & answered["loki"]:
                     if key in rejections["pr"] or key in reference:
                         continue
-                    _, _, different, _, _, _ = compare({key: p[key]}, {key: l[key]}, vs_loki=True, lenient=True)
+                    _, _, different, _, _, _ = compare({key: p[key]}, {key: l[key]}, vs_loki=True, lenient=True, adjusted=adjusted)
                     if not different:
                         corrected.add(key)
             for side in ("main", "pr"):

@@ -159,6 +159,7 @@
     "limits/query-timeout-per-tenant | compare:exact",
     "limits/queue-rejection-not-a-backend-failure | compare:exact",
     "limits/range-metric-step-adapt | compare:exact",
+    "limits/range-metric-step-adapt | gap:fixed",
     "limits/range-metric-step-adapt | query",
     "limits/raw-metric-row-precheck | compare:exact",
     "limits/raw-metric-row-precheck | query",
