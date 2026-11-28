@@ -1,0 +1,94 @@
+id: observability-vl-savings
+kind: observability
+title: The proxy reports the VictoriaLogs work its reuse avoided and how each client request was served
+pending: true
+
+loki: |
+  Loki reports per-cache hits and the bytes its results cache returned, but
+  not the querier work a hit avoided; it has no backend to shield.
+
+victorialogs: |
+  VictoriaLogs counts the queries it receives; it cannot see the ones a proxy
+  answered without asking it.
+
+proxy: |
+  Every VictoriaLogs call is measured once, where its body closes: one call,
+  its time to the end of the body, its decoded bytes and, for raw queries
+  (/select/logsql/query), its log rows. A client request is counted by how it
+  was served (loki_vl_proxy_served_request_duration_seconds{route,served} and
+  loki_vl_proxy_served_{response_bytes,vl_calls,vl_seconds,vl_bytes,vl_rows}_total):
+  cache (no VictoriaLogs call, a cache hit), shared (no VictoriaLogs call, an
+  identical request's answer or calls in flight), partial (VictoriaLogs calls
+  plus reused windows, stats buckets or shared calls), vl (VictoriaLogs calls,
+  nothing reused), local (neither) and error (4xx and 5xx).
+  A reused answer counts once, at the tier that answered it, in
+  loki_vl_proxy_vl_reuse_total{route,layer,tier,cost}: response (a whole client
+  answer), window (a query_range log window), stats_extent (stored stats
+  buckets an answer used), request_flight (an identical request's answer in
+  flight), held_failure, vl_call (a VictoriaLogs call shared in flight) and
+  burst (a Drilldown field read by another request's fused call). cost is
+  recorded when this replica measured the work that built the answer, and
+  that work is added to loki_vl_proxy_vl_avoided_{calls,seconds,bytes,rows}_total;
+  it is unknown for an answer read from disk after a restart, read from a
+  peer, stats buckets and burst reads, which add no work. A replica serving a
+  peer read counts nothing, so a fleet counts each answer's work once.
+  The request line carries flow.served, flow.reuse.recorded,
+  flow.reuse.unknown and flow.vl.rows.
+
+implementation:
+  - internal/proxy/vl_reuse.go
+  - internal/proxy/query_translation.go
+  - internal/proxy/query_flow.go
+  - internal/proxy/middleware.go
+  - internal/proxy/error_flights.go
+  - internal/proxy/query_range_windowing.go
+  - internal/proxy/stats_extent_cache.go
+  - internal/proxy/drilldown_burst_coalescer.go
+  - internal/middleware/coalescer.go
+  - internal/metrics/vl_savings.go
+  - internal/cache/error_flights.go
+
+decisions:
+  - id: reuse-cost-recorded-at-build
+    chosen: 'The VictoriaLogs work measured while an answer was built, kept in a fixed in-process table under its cache key (full 64-bit hash, overwritten per slot), and counted as avoided when a client request reuses it; answers with no recorded build count as unknown'
+    over: ['hits times the mean cost of misses of the route (an estimate, wrong for mixed queries)', 'a cost field in the stored entry (changes the disk record and peer wire format)', 'counting at the cache lookup (counts lookups whose value is not used: freshness bypass, undecodable windows)', 'splitting a read cost over the stats buckets it stored (an invented apportioning)']
+    why: |
+      Owner 2026-11-28: show what reuse saves VictoriaLogs in calls, time,
+      bytes and rows, measured where it can be and labelled where it cannot,
+      with no double count across tiers, partial reuse or replicas. A whole
+      answer's build work is its request's own work up to the store, with the
+      work of calls it shared; a window's is the work done in its work scope.
+      Work avoided by reuse is never part of a build's work, so a replay with
+      the caches off makes the calls of the replay with them on plus the
+      avoided calls. Entries this replica did not build since it started have
+      no measured cost: they count as unknown, never as zero or a guess.
+    evidence: |
+      TestAvoidedCallsMatchTheCallsOfARunWithoutReuse (replay, cache and
+      coalescer on vs off: off calls = on calls + avoided calls, exactly),
+      TestResponseCacheReuseCountsTheBuildWork, TestWindowReuseCountsTheWindowsOwnWork,
+      TestCoalescedCallsCountTheSharedCallsWork, TestRequestFlightFollowersCountTheLeadersWork,
+      TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing.
+    code: [internal/proxy/vl_reuse.go, internal/metrics/vl_savings.go]
+    tests: [TestResponseCacheReuseCountsTheBuildWork, TestAvoidedCallsMatchTheCallsOfARunWithoutReuse, TestCoalescedCallsCountTheSharedCallsWork, TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing, TestBuildCostLedgerNeverAnswersAnotherKey, TestServedClass, TestWorkScopesNest, TestWindowReuseCountsTheWindowsOwnWork, TestRequestFlightFollowersCountTheLeadersWork, TestStatsExtentReuseIsCountedWithUnknownCost, TestBurstJoinerCountsAnUnknownCostReuse, TestCoalescerHooksSeeTheCallAndEachWaiter, TestCoalescerInheritedRetryIsNotASaving, TestSavingsMetricsExposition, TestSavingsMetricsEmpty]
+    quality: |
+      Counted layers: the response cache, query_range log windows, request
+      flights, held failures, shared VictoriaLogs calls (with recorded cost),
+      stats buckets and burst reads (unknown cost). Other caches (label,
+      detected, volume, patterns, inventory, probes) show in the served class
+      (cache) but not as reuse yet. The ledger holds 32768 keys (1.25 MiB);
+      an older key whose slot a newer one took reads as unknown.
+    performance:
+      tracked: ['BenchmarkRequestPath', 'BenchmarkRequestLogger', 'BenchmarkProxy_Series_CompatCacheHit', 'BenchmarkProxy_QueryRange_CacheHit']
+      bound: 'no size class change of the request telemetry (768 B); a reuse adds one ledger read (a hash of the key and a striped lock) and the counters; a cache hit allocates no more'
+    pending: true
+  - id: coalescer-saved-excludes-inherited-retries
+    chosen: 'loki_vl_proxy_coalesced_saved_total counts a follower only when it does not start the call again after an inherited cancellation; request_coalesced_success_total counts a follower of a stored answer only when the response cache answered it'
+    over: ['leaving the counters as they were']
+    why: |
+      The metric review found both counters overstating: a follower that
+      retried after the leader's deadline ran its own call, and a follower of
+      a stored answer whose cache read missed ran the request itself.
+    evidence: TestCoalescerInheritedRetryIsNotASaving
+    code: [internal/middleware/coalescer.go, internal/proxy/error_flights.go]
+    tests: [TestCoalescerInheritedRetryIsNotASaving, TestCoalescerStatsCountActualFollowers]
+    pending: true

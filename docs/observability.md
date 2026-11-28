@@ -821,7 +821,11 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_lookup_seconds` | histogram | `tier`, `result` | `Low` | time of one cache lookup by the tier that answered (`l1_memory`, `l2_disk`, `l3_peer`, `unknown` for a miss of the full stack) and `result` (`hit`, `miss`, `stale`); buckets from 10 microseconds; Prometheus scrape only |
 | `loki_vl_proxy_backend_read_bytes_total` | counter | `kind` | `Low` | consumed decoded VL HTTP body bytes recorded at close; fixed `raw`, `stats`, `metadata`, `other` kinds; not encoded network traffic or cache bytes; both Prometheus and OTLP |
 | `loki_vl_proxy_coalesced_total` | counter | none | `Low` | requests served from coalesced results |
-| `loki_vl_proxy_coalesced_saved_total` | counter | none | `Low` | backend requests saved by coalescing |
+| `loki_vl_proxy_coalesced_saved_total` | counter | none | `Low` | backend requests saved by coalescing: callers that got a shared call's answer (or its failure) without running it; a caller that starts the call again after an inherited cancellation is not counted |
+| `loki_vl_proxy_served_request_duration_seconds` | histogram | `route`, `served` | `Low` | client request latency by how the request was served; see [VictoriaLogs savings and speedup](#victorialogs-savings-and-speedup); Prometheus scrape (OTLP pushes its count as `loki_vl_proxy_served_requests_total`) |
+| `loki_vl_proxy_served_response_bytes_total`, `loki_vl_proxy_served_vl_calls_total`, `loki_vl_proxy_served_vl_seconds_total`, `loki_vl_proxy_served_vl_bytes_total`, `loki_vl_proxy_served_vl_rows_total` | counter | `route`, `served` | `Low` | bytes written to clients and the VictoriaLogs calls, time, decoded bytes and raw-query rows those requests made themselves, by how they were served; Prometheus and OTLP |
+| `loki_vl_proxy_vl_reuse_total` | counter | `route`, `layer`, `tier`, `cost` | `Low` | answers client requests reused instead of asking VictoriaLogs, counted once at the tier that answered; `cost` is `recorded` or `unknown`; Prometheus and OTLP |
+| `loki_vl_proxy_vl_avoided_calls_total`, `loki_vl_proxy_vl_avoided_seconds_total`, `loki_vl_proxy_vl_avoided_bytes_total`, `loki_vl_proxy_vl_avoided_rows_total` | counter | `route`, `layer`, `tier` | `Low` | the VictoriaLogs work measured when each reused answer with a recorded cost was built; Prometheus and OTLP |
 | `loki_vl_proxy_response_tuple_mode_total` | counter | `mode` | `Low` | emitted log tuple contract mode by client behavior (Prometheus scrape only today) |
 | `loki_vl_proxy_uptime_seconds` | gauge | none | `Low` | process uptime |
 | `loki_vl_proxy_active_requests` | gauge | none | `Low` | current in-flight requests |
@@ -1273,6 +1277,91 @@ attached tiers it reaches, in order, until one answers:
 - An `l3_peer` read is a lookup reaching the peer tier. No request is sent when this replica is the key's only owner or the owner's breaker is open, and lookups that wait on one in-flight peer fetch each count one read.
 - Work shared by several requests counts for the request whose context runs it; a request waiting for it counts only its own lookups.
 - Not counted: reads outside a client request (background refreshes and warm-ups, the restart and peer restore, requests peers send to this replica), reads after the request ended, the label and metadata inventory's internal presence checks, and the translation memo.
+
+### VictoriaLogs savings and speedup
+
+Every VictoriaLogs call is measured once, when its body closes: one call, its
+time to the end of the body, its decoded bytes and, for raw queries
+(`/select/logsql/query`), its log rows (one per line; stats and metadata calls
+add no rows).
+
+**How a request was served** (`served` label, one value per client request):
+
+| `served` | The request |
+|---|---|
+| `cache` | made no VictoriaLogs call and hit a cache |
+| `shared` | made no VictoriaLogs call: it got an identical request's answer, or its calls, while they were in flight |
+| `partial` | made VictoriaLogs calls and also reused windows, stats buckets or shared calls |
+| `vl` | made VictoriaLogs calls and reused nothing |
+| `local` | made no VictoriaLogs call and reused nothing (an answer the proxy holds or computes alone) |
+| `error` | answered 4xx or 5xx, kept apart so it never blurs a comparison |
+
+Compare the latency of `cache` and `shared` with `vl` within one route only:
+different routes do different work.
+
+**What reuse avoided.** A reused answer counts once in
+`loki_vl_proxy_vl_reuse_total`, at the tier that answered it:
+
+| `layer` | The reused answer | `cost` |
+|---|---|---|
+| `response` | a whole client answer from the response cache | recorded when this replica built it since it started |
+| `window` | one `query_range` log window | recorded when this replica built it since it started |
+| `request_flight` | the answer of an identical client request in flight (`tier="in_flight"`) | recorded (the leader's work) |
+| `held_failure` | a failure held for its class instead of asking again | recorded, unknown for a refusal held from a peer |
+| `vl_call` | one VictoriaLogs call shared with identical calls in flight (`tier="in_flight"`) | recorded (the call's work) |
+| `stats_extent` | stored stats buckets an answer read instead of asking for them, one per stored split used | unknown |
+| `burst` | a Logs Drilldown field count read by another request's fused call (`tier="in_flight"`) | unknown |
+
+For an answer with a recorded cost, the work measured while it was built is
+added to `loki_vl_proxy_vl_avoided_{calls,seconds,bytes,rows}_total`:
+
+- a whole answer's build work is the work its request made up to the store,
+  including the work of calls it shared with an identical request in flight;
+- a window's is the work made for that window;
+- work avoided by reuse is never part of a build's work, so a request's own
+  calls plus the work its reuse avoided never count one call twice.
+
+The cost is `unknown`, and adds no avoided work, when this replica never
+measured the build: an answer read from disk after a restart, read from a
+peer, pushed by a peer, or whose slot in the bounded cost table (32768 keys)
+a newer answer took; stats buckets (one read stores many splits, and its cost
+is not split over them) and burst reads. The replica that serves a peer read
+counts nothing, so summed over a fleet each answer's work is counted once.
+Avoided time is the time the calls took when the answers were built, not the
+time VictoriaLogs would take now.
+
+The caches not listed (labels, detected fields, volume, patterns, the label
+inventory, probe results) count in `served="cache"` but not yet in
+`loki_vl_proxy_vl_reuse_total`.
+
+Useful queries over a range (`$__range`):
+
+```promql
+# VictoriaLogs calls client requests made, and the calls reuse avoided (recorded cost only)
+sum(increase(loki_vl_proxy_served_vl_calls_total[$__range]))
+sum(increase(loki_vl_proxy_vl_avoided_calls_total[$__range]))
+
+# share of the calls that would otherwise have been sent
+sum(increase(loki_vl_proxy_vl_avoided_calls_total[$__range]))
+  / (sum(increase(loki_vl_proxy_served_vl_calls_total[$__range])) + sum(increase(loki_vl_proxy_vl_avoided_calls_total[$__range])))
+
+# reuse with an unknown cost, shown apart
+sum by (layer, tier) (increase(loki_vl_proxy_vl_reuse_total{cost="unknown"}[$__range]))
+
+# share of client requests answered without any VictoriaLogs call
+sum(increase(loki_vl_proxy_served_request_duration_seconds_count{served=~"cache|shared"}[$__range]))
+  / sum(increase(loki_vl_proxy_served_request_duration_seconds_count{served!="error"}[$__range]))
+
+# median latency by route and how the request was served
+histogram_quantile(0.5, sum by (route, served, le) (rate(loki_vl_proxy_served_request_duration_seconds_bucket[$__range])))
+```
+
+VictoriaLogs calls made outside client requests (health and capability probes,
+inventory refreshes, read-ahead, restores) are in
+`loki_vl_proxy_requests_total{system="vl"}` and not in the `served_vl_*`
+families. A comparison with Loki cannot be measured where no Loki runs next to
+the proxy; it comes from the generated benchmark reports
+([performance](performance.md)).
 
 ### PromQL Drilldowns For Slowness And Client Errors
 

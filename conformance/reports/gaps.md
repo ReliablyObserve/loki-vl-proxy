@@ -94,6 +94,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | observability | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | 7 | 4 | unknown |
 | observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 7 | 8 | unknown |
 | observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 8 | 5 | unknown |
+| observability | `observability-vl-savings` — The proxy reports the VictoriaLogs work its reuse avoided and how each client request was served | 11 | 3 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 11 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 5 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 15 | partial |

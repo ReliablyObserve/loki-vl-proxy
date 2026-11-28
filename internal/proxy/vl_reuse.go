@@ -197,6 +197,15 @@ func (p *Proxy) noteSharedWork(ctx context.Context, layer metrics.ReuseLayer, w 
 	p.noteReuse(ctx, layer, metrics.ReuseInFlight, w, recorded)
 }
 
+// servedClassNames are the served classes' names, held as interface values so the request line appends them
+// without converting (and allocating) each.
+var servedClassNames = func() (out [metrics.ServedError + 1]any) {
+	for c := range out {
+		out[c] = metrics.ServedClass(c).String()
+	}
+	return out
+}()
+
 // servedClass is how the request was served, from its status, its own VictoriaLogs calls, its cache hits and its
 // reuse.
 func servedClass(status, vlCalls, cacheHits int, reuse flowReuse) metrics.ServedClass {

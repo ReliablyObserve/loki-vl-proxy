@@ -186,7 +186,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
-		logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows, "flow.served", served.String(),
+		logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows, "flow.served", servedClassNames[served],
 			"flow.reuse.recorded", int(telemetry.reuse.recorded), "flow.reuse.unknown", int(telemetry.reuse.unknown))
 		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
