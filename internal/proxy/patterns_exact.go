@@ -167,3 +167,32 @@ func patternLineConsumer(miner *patternMiner, mine func(stream, level, msg strin
 func readPatternLines(r io.Reader, miner *patternMiner, levels logRowLevels, maxLines int) error {
 	return scanPatternLineRows(r, maxLines, levels, 0, patternLineConsumer(miner, patternLineSink(miner, nil)))
 }
+
+// patternRowFields are the fields a sampled pattern read keeps of each row: everything the row decoder reads
+// (extractLogPatternsStreamFilled): the time (_time, or time, timestamp, ts), the message (_msg, or message, msg,
+// line, log), the stream (_stream_id, or _stream, whose labels also give a stream-stored level) and the fields a
+// level is read from (patternCountsLevelFields). VictoriaLogs answers the read's limit with its newest rows, a sort
+// that holds every field of every row it keeps: a row with dozens of fields made the sort refuse a request
+// ("requires more than N MB of memory", #1821). Kept to these, its memory follows the messages, not the rows.
+var patternRowFields = func() []string {
+	fields := []string{"_time", "_msg", "_stream", patternExactStreamField, "time", "timestamp", "ts", "message", "msg", "line", "log"}
+	for _, field := range patternCountsLevelFields {
+		if strings.Contains(field, ".") {
+			field = logsql.QuoteValue(field)
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}()
+
+// patternRowsQuery is the LogsQL query of a sampled pattern read (the plain and the windowed reads of /patterns):
+// the translated query with a fields pipe of patternRowFields after its own pipes, built on the parsed query. A
+// query the LogsQL parser does not read back is sent as it is.
+func patternRowsQuery(logsqlQuery string) string {
+	q, err := logsql.Parse(logsqlQuery)
+	if err != nil || q == nil {
+		return logsqlQuery
+	}
+	q.Pipes = append(q.Pipes, logsql.PipeFields{Labels: patternRowFields})
+	return q.String()
+}

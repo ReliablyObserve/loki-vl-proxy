@@ -267,7 +267,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
+	params.Set("query", patternRowsQuery(logsqlQuery))
 	if s := startParam; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
@@ -510,7 +510,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 	var wg sync.WaitGroup
 
 	baseParams := url.Values{}
-	baseParams.Set("query", logsqlQuery)
+	baseParams.Set("query", patternRowsQuery(logsqlQuery))
 	// Bucketization for patterns is proxy-side. Forwarding step to VictoriaLogs
 	// raw log queries makes split subrequests align backward to prior step
 	// boundaries, which duplicates adjacent window buckets on deterministic data.
