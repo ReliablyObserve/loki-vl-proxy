@@ -185,6 +185,7 @@ func (dc *DiskCache) rebuildIndex() error {
 					}
 				}
 				size := int64(len(key)) + int64(len(value))
+				dc.rebuildWalked.Add(size)
 				k := string(key)
 				if err != nil || expiry <= clockNow().UnixNano() || !dc.fitsEntry(k, size) || !dc.fitsIndex(k, size) {
 					if err := cursor.Delete(); err != nil {

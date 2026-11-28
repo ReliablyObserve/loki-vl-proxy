@@ -86,6 +86,69 @@ allocating and reject malformed records. The checksum detects corruption; it
 is not authentication or encryption. Protect the cache directory and use the
 storage platform’s encryption controls where required.
 
+## Reads
+
+Each cached piece is its own record: one metric bucket range of a query
+(`stats-extent`), one patterns window, one whole answer. A lookup that misses
+memory reads one record in its own read transaction and decodes it outside
+that transaction. A request that needs several stored pieces of one query reads
+them side by side (one lookup each, at the same time), and a hit is promoted to
+memory with the expiry it has left. Nothing is read ahead of a request: a disk
+hit does not fetch the neighbouring buckets of the same query or the other
+panels of the same Drilldown page.
+
+Measured on 2026-11-28 (main `640431dfc`):
+
+- Setup:
+  - the proxy as a host process with the disk cache on, against an in-process
+    VictoriaLogs v1.54.0 holding 540,000 JSON rows over 25 h;
+  - Grafana-shaped Drilldown (landing, logs, labels, fields) and Explore (logs,
+    metric) page loads, each page sent as one burst of its panel requests, at
+    1h, 6h and 24h;
+  - macOS arm64 SSD, `GOMAXPROCS=4`, on a host loaded by other builds (load
+    average about 11).
+- A request reads the disk only when memory lacks an entry the disk holds:
+  after a restart without the [restart hand-over](#restart-hand-over), or when
+  memory is too small for the working set.
+- In steady state (repeats, refreshes) the disk answered nothing.
+- After a restart without the hand-over a request made 3 to 8 disk hits; with
+  the hand-over on, 1 request in 81 read the disk.
+- With memory at 2 MiB a repeat made 3 to 9 disk hits per request.
+- One record read took 10 to 15 µs at the median.
+- The disk time of a request (the reads on its critical path) was 0.1 ms at the
+  median and 0.2 to 2.5 ms at p90, with a warm and a cold page cache.
+- Disk time follows bytes, not the number of reads. The largest share was the
+  24h Drilldown patterns request: 11 window records of about 800 KB, 32 ms with
+  a warm page cache and 139 ms with a cold one.
+- Request times of the same pass varied fourfold between passes with the
+  VictoriaLogs calls a restart needs again (entries kept in memory only).
+
+Two ways to make reads coarser were measured and not adopted:
+
+- **One record, or one read, for the buckets of a query.** Simulated on the
+  traces of these runs:
+  - it saves 36% of the disk reads but at most 1.4 to 6.9 ms in 5 to 6 s of
+    request time (under 0.2%), because the buckets of a query are already read
+    at the same time;
+  - estimated with every read taking 1 ms or 3 ms, it shortens the disk time
+    by about 2%;
+  - a batched record of 24 buckets of 8 KB took 384 µs to read after a restart
+    with a cold page cache, against 131 µs for the 24 separate records
+    (macOS, 16 KiB bbolt pages), because the start-up index rebuild has already
+    read the small records' pages;
+  - it would also rewrite the whole record whenever a bucket settles, put all
+    buckets of a query on one peer, and read a 7d query's record (168 buckets,
+    about 1.3 MB) whole for a request that needs two of them.
+- **Prefetch of neighbours on a disk hit.**
+  - The next bucket of a refreshed window is inside `-query-range-freshness`
+    and was never stored.
+  - The previous bucket was already hit by an earlier lookup 0 to 8 times in
+    81 requests, each a single read of 10 to 15 µs done alongside the others.
+  - The other panels of a Drilldown page are queries the client builds per
+    label and field, which the cache cannot derive from the selector, and they
+    arrive in the same burst as the panel that hit.
+  - The restart hand-over already removes the after-restart disk reads.
+
 ## Restart hand-over
 
 Off by default. With `-cache-shutdown-flush-timeout` (a time budget) a graceful
@@ -429,9 +492,8 @@ Before a restart, the time is about the larger of:
   `BenchmarkRestoreWarm` measures on your hardware (`zstd` decoding runs on one
   core at a time).
 
-Add the index rebuild, which runs before the proxy listens and grows with the
-number of records (one read per record on a cold disk), and give the startup
-probe room for both. A warm-up that cannot finish in time is not lost work: the
+Add the index rebuild, which runs before the proxy listens (see
+[Index rebuild](#index-rebuild)), and give the startup probe room for both. A warm-up that cannot finish in time is not lost work: the
 hottest entries are restored first.
 
 While it runs, the log has a `response cache warm-up started` line (the plan,
@@ -468,13 +530,80 @@ this on your disk: `LVP_RESTORE_BENCH_MB` sets the decoded size,
 fails below 400 MiB/s of warm-up (2 GiB in about 5 s: the whole local-SSD ready
 target below, spent on the warm-up alone).
 
+### Index rebuild
+
+At start, before the listener opens, the disk tier rebuilds its recency index:
+it walks every record in key order and reads each record's header. On a cold
+page cache that walk waits for one read of about 4 KiB per record, scattered
+over the file. With `-disk-cache-rebuild-readahead` (default `true`) the proxy
+reads the file into the page cache in file order while the walk runs:
+
+- eight positioned reads of 512 KiB at a time, each buffer allocated on its
+  first read (4 MiB at most);
+- stopped and joined when the walk ends, so it never runs while the replica
+  answers queries or peers;
+- the walk finds most pages already read, and the device serves large
+  sequential reads instead of one random read per record.
+
+It only reads and never changes what the rebuild keeps, drops or orders.
+
+Reading the whole file pays only when it is faster than the walk alone. With
+large records the walk reads a few KiB of each and passes the file's bytes
+faster than a throughput-bound read of all of them, and under memory pressure
+the pages read ahead are reclaimed before the walk reaches them. Without a
+check, a 2.2 GB file of large records at 125 MiB/s rebuilt in 16.6 s instead of
+7.2 s, and in 20.1 s with 1 GiB of container memory. So the read-ahead decides
+once:
+
+- it waits until the walk has passed its first record, then times the walk
+  alone for 50 ms;
+- it then reads, and after 16 MiB and at least 100 ms compares its rate with
+  the walk's;
+- it stops when the walk alone is as fast.
+
+A rebuild that ends within the 50 ms (a warm page cache) reads nothing ahead.
+
+The `disk cache index rebuilt` log line reports `readahead_bytes` and
+`readahead_stopped_early`. The bytes read ahead stay in the page cache, which
+the kernel can reclaim; a container's memory accounting counts them, up to the
+file's size, until then. With the restart hand-over the warm-up then reads
+those values from memory instead of the disk.
+
+Measured on 2026-11-28 with commit `983d54efe`. The emulated runs used the
+harness of the targets below: a local Linux VM with its data disk throttled per
+container and **no latency added**, so they are not EBS. Two runs per cell;
+"ready" is rebuild plus warm-up with the hand-over, "stopped" means the
+read-ahead stopped itself:
+
+| File, storage | Rebuild off → on | Ready off → on |
+|---|---:|---:|
+| 50,000 records of 8 KiB (252 MB, `s2`), VM unthrottled | 1.14 → 0.36 s | 1.34 → 0.51 s |
+| the same, 125 MiB/s and 3,000 IOPS | 12.1 → 4.4 s | 20.4 → 4.6 s |
+| the same, 375 MiB/s and 6,500 IOPS | 5.6 → 1.8 s | 9.4 → 2.0 s |
+| 19,000 records, 2 GiB mix (794 MB, `s2`), VM unthrottled | 0.54 → 0.27 s | 1.10 → 0.76 s |
+| the same, 125 MiB/s and 3,000 IOPS (stopped) | 5.89 → 5.89 s | 11.4 → 11.2 s |
+| the same, 375 MiB/s and 6,500 IOPS | 2.70 → 2.41 s | 4.59 → 2.92 s |
+| 19,000 large records (2.2 GB, `raw`), 125 MiB/s, 6 GiB or 1 GiB of memory (stopped) | 7.19 → 7.29 s | |
+| the same, 375 MiB/s (stopped) | 3.30 → 3.39 s | |
+| Apple M5 Pro SSD, real proxy start, 26,000 records (433 MB), 5 starts | 1.04 → 0.10 s | |
+| the same, 2,000 records of 256 KiB (541 MB) | 0.16 → 0.10 s | |
+
+Where it stops, the probe costs about 0.1 s (1.4 to 2.6% of the rebuild). With
+a warm page cache the rebuild is unchanged (`BenchmarkRestoreIndexRebuild`:
+21.9 against 20.8 ms and 2.2 against 2.2 ms, not significant). During a
+hand-over load the read-ahead waits for the walk, so it does not shorten that
+phase. On a volume with read latency the walk without the read-ahead waits that
+latency on each read (17,900 reads at 1 ms is about 18 s); this is computed,
+not measured. `-disk-cache-rebuild-readahead=false` keeps the walk alone.
+
 ### Restore time targets by storage
 
 A restarted replica is ready after two phases, one after the other:
 
 1. **index rebuild**, before the listener opens: one read of about 4 KiB per
    record on disk, one at a time. Its time follows the number of records and the
-   volume's read latency. The startup probe covers it.
+   volume's read latency; the [read-ahead](#index-rebuild) (default) shortens
+   it when reading the whole file is faster. The startup probe covers it.
 2. **warm-up**, bounded by `-cache-startup-warm-timeout`: reading and decoding
    the hot set. Its time follows throughput, IOPS and, about eight times less
    than the rebuild, latency (eight reads in flight).
@@ -539,6 +668,13 @@ the stored size (5.6 s and 11.1 s).
 | 2 GiB `raw`, gp3 default | 22 + 18 = 40 s | 66 + 23 = 89 s |
 | 4 GiB `raw`, gp3 default | 43 + 39 = 82 s | 130 + 50 = 180 s |
 
+These estimates and the targets above were made without the
+[index rebuild read-ahead](#index-rebuild), and they still apply with it off.
+With it on, the rebuild is no slower than without it beyond its probe (about
+0.1 s), and the warm-up reads from memory what the read-ahead already read. The
+targets therefore remain upper bounds. They have not been re-measured with
+latency.
+
 ### Sizing
 
 | What to set | 2 GiB restored | 4 GiB restored |
@@ -555,8 +691,9 @@ the stored size (5.6 s and 11.1 s).
 
 The volume must be larger than the cache file, which holds everything the disk
 tier keeps, not only the hot set. Throughput and IOPS shorten the warm-up. The
-index rebuild gets shorter only with fewer records (`-disk-cache-max-entries`,
-`-disk-cache-max-bytes`) or a volume with lower read latency: in the emulation a
+index rebuild gets shorter with fewer records (`-disk-cache-max-entries`,
+`-disk-cache-max-bytes`), a volume with lower read latency, or, with the
+read-ahead on and records small enough for it to pay, more throughput. In the emulation without the read-ahead, a
 10 GiB file of 94,000 records, 1.9 GiB of them hot, rebuilt in 32 s at 3,000
 IOPS and in an estimated 288 s at 3 ms a read.
 
