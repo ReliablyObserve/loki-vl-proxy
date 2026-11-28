@@ -389,21 +389,33 @@ func BenchmarkRestoreIndexRebuild(b *testing.B) {
 	}
 	path := filepath.Join(dir, "rebuild-run.db")
 	defer os.Remove(path)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		copyRestoreFile(b, template, path, cold)
-		b.StartTimer()
-		dc, err := NewDiskCache(restoreDiskConfig(path, "raw"))
-		if err != nil {
-			b.Fatal(err)
-		}
-		b.StopTimer()
-		if held, _ := dc.Size(); held != entries {
-			b.Fatalf("rebuilt %d of %d", held, entries)
-		}
-		_ = dc.Close()
-		b.StartTimer()
+	for _, readahead := range []bool{false, true} {
+		b.Run(fmt.Sprintf("readahead=%t", readahead), func(b *testing.B) {
+			cfg := restoreDiskConfig(path, "raw")
+			cfg.RebuildReadahead = readahead
+			var readBytes, fileBytes int64
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				copyRestoreFile(b, template, path, cold)
+				b.StartTimer()
+				dc, err := NewDiskCache(cfg)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.StopTimer()
+				if held, _ := dc.Size(); held != entries {
+					b.Fatalf("rebuilt %d of %d", held, entries)
+				}
+				readBytes += dc.rebuildReadahead
+				if info, err := os.Stat(path); err == nil {
+					fileBytes += info.Size()
+				}
+				_ = dc.Close()
+				b.StartTimer()
+			}
+			b.ReportMetric(float64(entries), "entries")
+			b.ReportMetric(float64(readBytes)/float64(max(fileBytes, 1)), "readahead-share")
+		})
 	}
-	b.ReportMetric(float64(entries), "entries")
 }

@@ -186,6 +186,7 @@
     "cache-restart-handover": [
       "cmd/proxy/answer_cache_ttl_test.go",
       "cmd/proxy/cache_handover_scope_test.go",
+      "internal/cache/disk_rebuild_readahead_test.go",
       "internal/cache/handover_peak_test.go",
       "internal/cache/handover_test.go",
       "internal/cache/peer_bulk_governor_test.go",
@@ -3453,6 +3454,9 @@
     ],
     "internal/cache/cache_test.go": [
       "shutdown-releases-background-work"
+    ],
+    "internal/cache/disk_rebuild_readahead_test.go": [
+      "cache-restart-handover"
     ],
     "internal/cache/error_flights_test.go": [
       "semantics/error-cache-bounded-memory",
@@ -7626,7 +7630,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 921,
+  "tests_with_markers": 922,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

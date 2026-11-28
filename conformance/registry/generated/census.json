@@ -1518,6 +1518,7 @@
     "cmd/proxy/tenant_routing_test.go | tenant-query-limits",
     "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
+    "internal/cache/disk_rebuild_readahead_test.go | cache-restart-handover",
     "internal/cache/error_flights_test.go | semantics/error-cache-bounded-memory",
     "internal/cache/error_flights_test.go | semantics/error-cache-classes-and-ttl",
     "internal/cache/error_flights_test.go | semantics/error-coalescing-request-flights",
@@ -3882,7 +3883,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 918,
+      "go": 919,
       "playwright": 3
     },
     "page_kinds": {
