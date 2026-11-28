@@ -287,14 +287,15 @@ type SeriesIdentityRead struct{ q Query }
 
 // ReadSeriesIdentity parses text, a query about to be sent to VictoriaLogs, as the outbound guard does
 // (GuardReservedFieldCase): ok is false for a query that reads no series per stream or holds an identity already,
-// and err is the parser's error for a text the proxy's parser does not read.
+// and err is the parser's error for a text the proxy's parser does not read. With ok false, r still names the query's
+// filters (Filter), whose fields a request may list ahead of its reads of a series per stream.
 func ReadSeriesIdentity(text string) (r SeriesIdentityRead, ok bool, err error) {
 	q, err := Parse(text)
 	if err != nil {
 		return SeriesIdentityRead{}, false, err
 	}
 	if !ReadsStreamIdentity(*q) || holdsSeriesMetadata(*q) {
-		return SeriesIdentityRead{}, false, nil
+		return SeriesIdentityRead{q: Query{Filter: q.Filter}}, false, nil
 	}
 	return SeriesIdentityRead{q: *q}, true, nil
 }

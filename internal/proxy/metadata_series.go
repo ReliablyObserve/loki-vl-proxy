@@ -51,6 +51,38 @@ type metadataSeriesMemo struct {
 	hists   map[string][]rowHistogram
 	// rebuilt are the reads the request rebuilt, by their rebuilt text.
 	rebuilt map[string]logsql.SeriesIdentityRead
+	// listing are the filters whose fields the request lists ahead of its reads (prefetchSeriesMetadata): a read of
+	// such a filter waits for that listing instead of listing again.
+	listing map[string]chan struct{}
+}
+
+// startListing marks filter as listed ahead of the request's reads, or reports false when it is already.
+func (m *metadataSeriesMemo) startListing(filter string) (chan struct{}, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.listing[filter]; ok || len(m.listing) >= 4 {
+		return nil, false
+	}
+	if m.listing == nil {
+		m.listing = map[string]chan struct{}{}
+	}
+	ch := make(chan struct{})
+	m.listing[filter] = ch
+	return ch, true
+}
+
+// awaitListing waits for a listing of filter started ahead of the request's reads, if one runs.
+func (m *metadataSeriesMemo) awaitListing(ctx context.Context, filter string) {
+	m.mu.Lock()
+	ch := m.listing[filter]
+	m.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+	}
 }
 
 // noteRebuilt keeps the read a text was rebuilt from (a few per request: the request's reads share their texts).
@@ -174,6 +206,9 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		return nil, fmt.Errorf("%w: %w", errMetadataSeriesUnrebuilt, err)
 	}
 	if !ok {
+		// A read before the request's reads of a series per stream (the level probe, a row count) starts the listing
+		// of their filter, which they would otherwise wait for one after another.
+		p.prefetchSeriesMetadata(ctx, memo, read, params)
 		return params, nil
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
@@ -210,9 +245,44 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 // stream fields and all fields VictoriaLogs lists for them there (field_names and stream_field_names, both cached),
 // or the identity the request listed already over a window that holds this one.
 func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, read logsql.SeriesIdentityRead, from, to int64) (logsql.SeriesMetadata, bool, error) {
+	memo.awaitListing(ctx, read.Filter())
+	return p.listSeriesMetadata(ctx, memo, read, from, to)
+}
+
+// prefetchSeriesMetadata lists, in the background of the request, the identity of the rows the filter of read (a
+// read of the request that takes no identity) matches in its window widened to whole hours, with their row counts:
+// the request's later reads of a series per stream over that filter find both in the memo.
+func (p *Proxy) prefetchSeriesMetadata(ctx context.Context, memo *metadataSeriesMemo, read logsql.SeriesIdentityRead, params url.Values) {
+	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
+	to, okTo := parseFlexibleUnixNanos(params.Get("end"))
+	filter := read.Filter()
+	if !okFrom || !okTo || to <= from || filter == "" || filter == "*" {
+		return
+	}
+	if _, ok := memo.find(filter, from, to); ok {
+		return
+	}
+	done, ok := memo.startListing(filter)
+	if !ok {
+		return
+	}
+	go func() {
+		defer close(done)
+		// The row counts it reads are kept per hour (seriesMetadataRowsCached), so a read over a slightly different
+		// window of the same hours reads them from there.
+		_, _, _ = p.listSeriesMetadata(ctx, memo, read, from, to)
+	}()
+}
+
+// listSeriesMetadata is seriesMetadataFor without waiting for a listing started ahead.
+func (p *Proxy) listSeriesMetadata(ctx context.Context, memo *metadataSeriesMemo, read logsql.SeriesIdentityRead, from, to int64) (logsql.SeriesMetadata, bool, error) {
 	filter := read.Filter()
 	if e, ok := memo.find(filter, from, to); ok {
 		return e.spec, e.ok, nil
+	}
+	if done, mine := memo.startListing(filter); mine {
+		// The request's other reads of the filter (its row counts among them) wait for this listing.
+		defer close(done)
 	}
 	scope := p.contextScopeFingerprint(ctx)
 	if e, ok := p.seriesSpecs.find(scope, filter, from, to, time.Now()); ok {
@@ -221,8 +291,10 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 	}
 	align := metadataSeriesDiscoveryAlign.Nanoseconds()
 	lo := from / align * align
-	// An hour past the window's last hour: a window that moves on reads the same listing until it is an hour later.
-	hi := (to+align-1)/align*align + align
+	// An hour past the window's last hour: a window that moves on reads the same listing until it is an hour later. A
+	// window ending a nanosecond into an hour (VictoriaLogs' exclusive end past Loki's inclusive one) ends in the hour
+	// before.
+	hi := (to-1+align-1)/align*align + align
 	params := url.Values{}
 	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
@@ -423,6 +495,7 @@ func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesId
 		return 0, errMetadataSeriesNoWindow
 	}
 	filter := read.Filter()
+	memo.awaitListing(ctx, filter)
 	hist, ok := memo.histogram(filter, from, to)
 	if !ok {
 		var err error
@@ -558,12 +631,14 @@ func (p *Proxy) seriesMetadataRowHistogram(ctx context.Context, read logsql.Seri
 		return rowHistogram{}, err
 	}
 	defer resp.Body.Close()
-	body, err := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return rowHistogram{}, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
+	}
+	// A count per minute of the window: its answer grows with the window's minutes, not with its rows.
+	body, err := readBodyLimited(resp.Body, metadataSeriesHistogramBytes(len(h.hours)))
 	if err != nil {
 		return rowHistogram{}, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return rowHistogram{}, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 	var answer struct {
 		Data struct {
@@ -739,6 +814,12 @@ func (c *seriesSpecCache) add(scope string, e metadataSeriesEntry, expires time.
 		}
 	}
 	c.entries[key] = append(kept, seriesSpecEntry{metadataSeriesEntry: e, expires: expires})
+}
+
+// metadataSeriesHistogramBytes bounds the answer of a row count of minutes minutes: about 40 bytes a minute in
+// VictoriaLogs' matrix, kept to 128 per minute and 64 KiB at least.
+func metadataSeriesHistogramBytes(minutes int) int64 {
+	return max(int64(minutes)*128, 64<<10)
 }
 
 // metadataSeriesKeyPart keeps the response keys of answers read with the identity apart (responseProfileCacheKey).

@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -252,5 +254,59 @@ func TestMetadataSeriesKeysAndReadLimit(t *testing.T) {
 	offFolded, _ := withMatrixFold(off.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), []foldLevel{{}})
 	if got := off.statsReadSeriesLimit(offFolded); got != off.resolvedMaxStatsQuerySeries(offFolded) {
 		t.Errorf("flag off folded read: %d", got)
+	}
+}
+
+// The row counts of a long window are a count per minute: their answer passes the error-body bound (6 h: about
+// 15 KB) and is read whole.
+func TestMetadataSeriesRowHistogramReadsLongWindows(t *testing.T) {
+	from, to := int64(1_700_000_000_000_000_000), int64(1_700_000_000_000_000_000)+int64(6*time.Hour)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b strings.Builder
+		b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[`)
+		for at, i := from, 0; at < to; at, i = at+int64(time.Minute), i+1 {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `[%d,"%d"]`, at/int64(time.Second), 1000+i)
+		}
+		b.WriteString(`]}]}}`)
+		_, _ = w.Write([]byte(b.String()))
+	}))
+	defer srv.Close()
+	p := smTestProxy(t, srv.URL, true)
+	read, ok, err := logsql.ReadSeriesIdentity(`app:="a" | stats by (_stream) count()`)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	h, err := p.seriesMetadataRowHistogram(context.Background(), read, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows := h.rows(from, to); rows < 360*1000 {
+		t.Fatalf("rows %d", rows)
+	}
+}
+
+// A read of the request that takes no identity (the level probe) starts the listing of its filter, and the request's
+// reads of a series per stream over that filter wait for it instead of listing again.
+func TestMetadataSeriesListsAheadOfTheReads(t *testing.T) {
+	vl := &smFakeVL{}
+	srv := httptest.NewServer(vl)
+	defer srv.Close()
+	on := smTestProxy(t, srv.URL, true)
+	ctx := on.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
+	probe := smStatsParams(`app:="a" | stats count() as c`)
+	if got := smParams(t, on, ctx, "/select/logsql/query", probe); got.Get("query") != probe.Get("query") {
+		t.Fatalf("probe rebuilt: %s", got.Get("query"))
+	}
+	read := smStatsParams(`app:="a" | stats by (_stream, level) count()`)
+	if got := smParams(t, on, ctx, "/select/logsql/stats_query_range", read).Get("query"); !strings.Contains(got, "set_stream_fields") {
+		t.Fatalf("read not rebuilt: %s", got)
+	}
+	vl.mu.Lock()
+	defer vl.mu.Unlock()
+	if vl.listings != 2 {
+		t.Fatalf("%d listings, want field_names and stream_field_names once", vl.listings)
 	}
 }
