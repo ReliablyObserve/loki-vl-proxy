@@ -18,6 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
@@ -636,7 +637,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			p.leadFlight(endpoint, w, r, lead, run)
 			return
 		}
-		outcome, answer, ok := f.Wait(r.Context())
+		outcome, answer, ok := p.waitFlight(r, f)
 		if !ok {
 			// This client went away while it waited: its own cancellation.
 			status := p.fail(w, r, r.Context().Err())
@@ -672,6 +673,18 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 	run(w, r, nil)
 }
 
+// waitFlight waits for the flight f a request follows, a waiter of the context
+// its leader runs on while it waits (leadFlight); ok is false when the
+// request went away first.
+func (p *Proxy) waitFlight(r *http.Request, f *cache.Flight) (cache.Outcome, *cache.Answer, bool) {
+	if v, found := p.flightShares.Load(f); found {
+		if shared := v.(*mw.SharedContext); shared.Join() {
+			defer shared.Leave()
+		}
+	}
+	return f.Wait(r.Context())
+}
+
 // serveWindowFreeProbe runs r through the probe flight of its window-free key
 // wk; it reports whether r was answered (as the probe, or by the probe's
 // window-free failure).
@@ -688,7 +701,7 @@ func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWrit
 		p.leadFlight(endpoint, w, r, probe, run)
 		return true
 	}
-	outcome, answer, ok := f.Wait(r.Context())
+	outcome, answer, ok := p.waitFlight(r, f)
 	if !ok {
 		status := p.fail(w, r, r.Context().Err())
 		p.metrics.RecordRequestWithRoute(endpoint, route, status, time.Since(start))
@@ -724,6 +737,20 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 		pol        cache.Policy
 		windowFree bool
 	)
+	// The handler runs on a context the flight's requests share: the leader's
+	// client going away leaves it, and it is cancelled when the last request
+	// waiting on it went away, so a follower is not left to start the run
+	// again because the request that started it was cancelled. It keeps the
+	// leader's deadline.
+	shared := mw.NewSharedContext(r.Context(), true)
+	p.flightShares.Store(f, shared)
+	stopLeave := context.AfterFunc(r.Context(), shared.Leave)
+	defer func() {
+		stopLeave()
+		p.flightShares.Delete(f)
+		shared.Close()
+	}()
+	r = r.WithContext(shared.Context())
 	defer func() {
 		// A panic in the handler ends the flight too: its followers run on their own.
 		answer, ttl := p.errorFlights.Finish(key, f, outcome, build, pol)
@@ -741,7 +768,9 @@ func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Reque
 	}()
 	run(w, r, lead)
 	if r.Context().Err() != nil {
-		outcome = cache.OutcomeUnshared // the leader's own cancellation or deadline: nothing to hand
+		// Every request of the flight went away, or the leader's deadline
+		// passed: nothing to hand.
+		outcome = cache.OutcomeUnshared
 		return
 	}
 	code := lead.code

@@ -773,10 +773,24 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	baseQuery = defaultFieldDetectionQuery(baseQuery)
 
 	probeKey := baseQuery + "\x00" + start + "\x00" + end
-	v, _, _ := p.parserProbeGroup.Do(probeKey, func() (interface{}, error) {
-		return p.probePreferredParser(ctx, baseQuery, start, end), nil
-	})
-	preferred := v.(string)
+	// Requests that need the same probe at the same moment share it, read under
+	// the context of the one that started it. When that request went away, the
+	// read was cancelled and gave no verdict: a request that only followed it and
+	// is still alive probes again (twice at most) rather than take the missing
+	// verdict as its own.
+	var preferred string
+	for attempt := 0; ; attempt++ {
+		led := false
+		v, err, _ := p.parserProbeGroup.Do(probeKey, func() (interface{}, error) {
+			led = true
+			return p.probePreferredParser(ctx, baseQuery, start, end), ctx.Err()
+		})
+		if err != nil && !led && attempt < 2 && ctx.Err() == nil {
+			continue
+		}
+		preferred, _ = v.(string)
+		break
+	}
 
 	switch preferred {
 	case "json":
