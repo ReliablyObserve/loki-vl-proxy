@@ -35,5 +35,4 @@ gap:
   proxy: 'per-level volumes'
   planned_test: 'differential run row volume by detected_level'
   clusters:
-    - 5e3fbf46
     - b126c04b

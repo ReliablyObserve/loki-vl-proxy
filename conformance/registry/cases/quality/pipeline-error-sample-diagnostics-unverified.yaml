@@ -46,10 +46,7 @@ gap:
   planned_test: Extend the existing typed query matrix, recorded Loki oracle and bench/parity comparison for these
     exact source-controlled facets; no separate catalog.
   clusters:
-    - 23d7dfae
     - 7fc3e71e
-    - 8645a4a2
     - 88232a18
     - a84865e8
-    - d02d4633
     - d86f9503

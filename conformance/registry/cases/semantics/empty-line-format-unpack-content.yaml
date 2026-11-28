@@ -63,5 +63,4 @@ gap:
   proxy: The original parity snapshot records the status/content difference above; no fix is claimed.
   planned_test: Extend the existing registry-driven Loki/VictoriaLogs replay and API comparison with the recorded
     request facets; preserve original data and full error/result evidence.
-  clusters:
-    - 135ee50e
+  clusters: []

@@ -189,8 +189,6 @@ gap:
   planned_test: 'TestCompat_TwoParsersOnMixedFormats (categorized log replies and strict logfmt)'
   clusters:
     - 3de57bdc
-    - '197df8a8'
-    - 'd16e557c'
 
 perf:
   max_ratio: 2.0

@@ -187,14 +187,10 @@ gap:
     - '31ad26b3'
     - '40431eed'
     - '40fd67bb'
-    - '42907701'
     - '4abe4525'
-    - '8016ce9d'
     - 'e7d1f38f'
-    - 'f2294f1b'
     - 'f5f3d3bc'
     - 'faf50493'
-    - 'ff5a5d1e'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

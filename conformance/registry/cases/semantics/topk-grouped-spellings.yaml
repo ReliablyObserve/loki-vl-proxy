@@ -62,5 +62,4 @@ gap:
   proxy: 'every spelling parsed; k series per step and group, bounded heap over the VictoriaLogs window stats'
   planned_test: 'TestCompat_TopkRangePerStep (test/e2e-compat, group semantics); TestTopKRangeDifferential, TestTopKRangeDifferentialRawEvaluator, TestTopKRangeResultBounds, TestTopKMatrixEdges, TestParseTopKPostAgg, TestInstantTopKPerGroup and TestInstantTopKByHandler (internal/proxy)'
   note: 'Measured on origin/main cf738b80. The e2e is written and not yet run against Loki 3.7.7 and VictoriaLogs.'
-  clusters:
-    - 23526b6c
+  clusters: []

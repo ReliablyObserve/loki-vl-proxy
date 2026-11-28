@@ -36,10 +36,4 @@ gap:
   loki: 'a number keeps the text of the line (5325 series on Loki against 5422 on the proxy, in this case)'
   proxy: 'normalised number text'
   planned_test: 'TestCompat_JSONNumberLabelText (test/e2e-compat, group drilldown)'
-  clusters:
-    - 056ee345
-    - 7938c66e
-    - 8c3eca09
-    - a8228433
-    - bd84536f
-    - c2523a5e
+  clusters: []

@@ -48,8 +48,4 @@ gap:
   loki: '| logfmt reads only the key=value pairs of the line (differential run of 2026-11-04, in this case)'
   proxy: 'the stored field of a JSON line is read as a logfmt key'
   planned_test: 'TestCompat_LogfmtOverJSONLine (test/e2e-compat, group semantics)'
-  clusters:
-    - 1b0728be
-    - 7fdea3f2
-    - d6e5e012
-    - e1dbc0fe
+  clusters: []

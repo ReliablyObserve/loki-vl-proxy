@@ -58,9 +58,7 @@ gap:
   loki: 'label_replace transforms the series of any vector expression below it, vector() included'
   proxy: 'the ranking evaluated by its route, relabelled by the calls'
   planned_test: 'TestLabelReplaceAroundRankingMatchesLoki (internal/querycorpus, Loki engine and VictoriaLogs oracles); TestCompat_LabelReplaceAroundRanking (test/e2e-compat, group core); TestRouteQueryOfARankingOrLabelReplace (internal/queryplan/lower); TestLabelReplaceAroundRankingRoute (internal/proxy)'
-  clusters:
-    - "616dee70"
-    - "e99afbef"
+  clusters: []
 
 perf:
   max_ratio: 2.0
