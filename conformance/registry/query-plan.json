@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.54 identity": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.54 no body scan": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.54 no body scan, stream fields, keepLine": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.54 stream fields": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.54 stream fields and labels": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.54 stream labels": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.54 stream labels keepLine": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.54 underscores": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.54 underscores keepLine": {
-      "rows": 2807,
-      "keys": 2752,
+      "rows": 2808,
+      "keys": 2753,
       "shared_texts": 55,
       "text_only": 0,
       "phrase_text": 0,
@@ -353,7 +353,7 @@
       "the plan does not route it: VectorAgg route pipeline": 254,
       "the plan does not route it: VectorAgg route rewrite": 2,
       "the plan does not route it: VectorAgg route unwrap filter": 1,
-      "the plan does not route it: VectorAgg route unwrap pipeline": 120,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 121,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
       "the plan does not route it: VectorAgg route unwrap rate": 22,
       "the plan does not route it: VectorAgg route unwrap rate_counter": 3,
@@ -549,19 +549,19 @@
     }
   },
   "predicate_parity": {
-    "rows": 2890,
-    "validated": 2766,
+    "rows": 2891,
+    "validated": 2767,
     "attributes": {
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2766,
+        "compared": 2767,
         "explained": []
       }
     }
   },
   "route_parity": {
-    "rows": 2766,
-    "runs": 27660,
+    "rows": 2767,
+    "runs": 27670,
     "profiles": [
       "instant",
       "step=range",
@@ -656,7 +656,7 @@
       "VectorAgg route operand": 80,
       "VectorAgg route pipeline": 2550,
       "VectorAgg route unwrap filter": 10,
-      "VectorAgg route unwrap pipeline": 1200,
+      "VectorAgg route unwrap pipeline": 1210,
       "VectorAgg route unwrap quantile": 80,
       "VectorAgg route unwrap rate": 220,
       "VectorAgg route unwrap rate_counter": 30,
@@ -666,7 +666,7 @@
       "VectorLit": 10
     },
     "statuses": {
-      "200": 26982,
+      "200": 26992,
       "400": 648,
       "500": 30
     },
@@ -677,7 +677,7 @@
       "24h chunk/RangeAgg": "dce166660885a913",
       "24h chunk/Rank": "a954aaa3324ecbdb",
       "24h chunk/Scalar": "b01ddfee0a162681",
-      "24h chunk/VectorAgg": "7117d01e906c5a49",
+      "24h chunk/VectorAgg": "c1743c82bd13cdf9",
       "24h chunk/VectorLit": "fafe78111335aec9",
       "instant/BinOp": "5ae724a0d94de5a4",
       "instant/LabelReplace": "4520707c188a634b",
@@ -685,7 +685,7 @@
       "instant/RangeAgg": "b493eabef830baad",
       "instant/Rank": "e6aa7be2997d1f30",
       "instant/Scalar": "058ee94c303a0c46",
-      "instant/VectorAgg": "5d635ba5e1172344",
+      "instant/VectorAgg": "9cad4388fdfb32cb",
       "instant/VectorLit": "29ac61516bcfbcbb",
       "step\u003crange/BinOp": "f22dddba37266523",
       "step\u003crange/LabelReplace": "06c483bc827e10f0",
@@ -693,7 +693,7 @@
       "step\u003crange/RangeAgg": "0e4ec9af6f79ecfb",
       "step\u003crange/Rank": "4f5e7534b7242613",
       "step\u003crange/Scalar": "b01ddfee0a162681",
-      "step\u003crange/VectorAgg": "8d836aaf6fe52d06",
+      "step\u003crange/VectorAgg": "a9928be1b72ef394",
       "step\u003crange/VectorLit": "fafe78111335aec9",
       "step=range/BinOp": "6bfe3115d6552625",
       "step=range/LabelReplace": "e3a681ba0a6439f9",
@@ -701,7 +701,7 @@
       "step=range/RangeAgg": "ff484fcad9b21a44",
       "step=range/Rank": "62e09c91cf89e68b",
       "step=range/Scalar": "b01ddfee0a162681",
-      "step=range/VectorAgg": "74270208bb5eb94a",
+      "step=range/VectorAgg": "f4de24a8f7e9e47e",
       "step=range/VectorLit": "fafe78111335aec9",
       "step\u003erange/BinOp": "eded465db27b725e",
       "step\u003erange/LabelReplace": "8aab4604d2290af5",
@@ -709,7 +709,7 @@
       "step\u003erange/RangeAgg": "962ccad8e4af3168",
       "step\u003erange/Rank": "a3eb816234c9a949",
       "step\u003erange/Scalar": "b01ddfee0a162681",
-      "step\u003erange/VectorAgg": "7bb9bba95867ef55",
+      "step\u003erange/VectorAgg": "f13853f12a91ce5d",
       "step\u003erange/VectorLit": "fafe78111335aec9"
     },
     "calls": {
@@ -717,41 +717,41 @@
       "24h chunk/LabelReplace": "f2c7d973dbf45b9f",
       "24h chunk/LogSelect": "8caafa61a722d17a",
       "24h chunk/RangeAgg": "3ed5f570db03b26f",
-      "24h chunk/Rank": "cd97867937d9e73e",
+      "24h chunk/Rank": "5df356c62f0b1383",
       "24h chunk/Scalar": "2c7012c3274c662d",
-      "24h chunk/VectorAgg": "85f9f39e5fdc6bd2",
+      "24h chunk/VectorAgg": "093115d9c818ac26",
       "24h chunk/VectorLit": "7aa978e4ba5a3f44",
       "instant/BinOp": "50dab74774f70d07",
       "instant/LabelReplace": "ca9b495d21da179f",
       "instant/LogSelect": "044cbe9a1d7e4afa",
       "instant/RangeAgg": "68cf69fb7dd2c5c6",
-      "instant/Rank": "cfaac3925137a5e0",
+      "instant/Rank": "615a39d6a6660be1",
       "instant/Scalar": "4989874b8a3c42dc",
-      "instant/VectorAgg": "67de76ec97e61247",
+      "instant/VectorAgg": "b13748490b538520",
       "instant/VectorLit": "0dc325c3d1510308",
       "step\u003crange/BinOp": "98fdcf06bf6c647d",
       "step\u003crange/LabelReplace": "1afe0603cbfe1c23",
       "step\u003crange/LogSelect": "db682d2429b537f0",
       "step\u003crange/RangeAgg": "c52ccab37130a552",
-      "step\u003crange/Rank": "edd0ecf6b441e4fb",
+      "step\u003crange/Rank": "2f69f1255363722d",
       "step\u003crange/Scalar": "6db69b6718a0b07a",
-      "step\u003crange/VectorAgg": "aa8021a3b36e7ecc",
+      "step\u003crange/VectorAgg": "b6013a8ae813d1b0",
       "step\u003crange/VectorLit": "58ad28055f0b3615",
       "step=range/BinOp": "e67205e8c683aecd",
       "step=range/LabelReplace": "ab09dd11073f8399",
       "step=range/LogSelect": "db682d2429b537f0",
       "step=range/RangeAgg": "5064b6baf35595c1",
-      "step=range/Rank": "521fa56c11fa1035",
+      "step=range/Rank": "f17f72458befa1f6",
       "step=range/Scalar": "6db69b6718a0b07a",
-      "step=range/VectorAgg": "28d1340855ad286f",
+      "step=range/VectorAgg": "d9537c80763e278b",
       "step=range/VectorLit": "58ad28055f0b3615",
       "step\u003erange/BinOp": "66092b8898990a68",
       "step\u003erange/LabelReplace": "9e9d0616e7aab49a",
       "step\u003erange/LogSelect": "db682d2429b537f0",
       "step\u003erange/RangeAgg": "919a3bfecfbabc2a",
-      "step\u003erange/Rank": "2232b42c5f0d5686",
+      "step\u003erange/Rank": "c7f315178cfa5d01",
       "step\u003erange/Scalar": "6db69b6718a0b07a",
-      "step\u003erange/VectorAgg": "068d30ca7b47a4dc",
+      "step\u003erange/VectorAgg": "5d27a4d5d53d57cc",
       "step\u003erange/VectorLit": "58ad28055f0b3615"
     },
     "vl_calls": {
@@ -792,8 +792,8 @@
         "repeat_runs": 0
       },
       "24h chunk/VectorAgg": {
-        "runs": 2368,
-        "cold": 4097,
+        "runs": 2370,
+        "cold": 4099,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -840,8 +840,8 @@
         "repeat_runs": 0
       },
       "instant/VectorAgg": {
-        "runs": 2368,
-        "cold": 3035,
+        "runs": 2370,
+        "cold": 3037,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -888,8 +888,8 @@
         "repeat_runs": 0
       },
       "step\u003crange/VectorAgg": {
-        "runs": 2368,
-        "cold": 4093,
+        "runs": 2370,
+        "cold": 4095,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -936,8 +936,8 @@
         "repeat_runs": 0
       },
       "step=range/VectorAgg": {
-        "runs": 2368,
-        "cold": 4080,
+        "runs": 2370,
+        "cold": 4082,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -984,8 +984,8 @@
         "repeat_runs": 0
       },
       "step\u003erange/VectorAgg": {
-        "runs": 2368,
-        "cold": 4082,
+        "runs": 2370,
+        "cold": 4084,
         "repeat": 0,
         "repeat_runs": 0
       },
@@ -998,9 +998,9 @@
     }
   },
   "shadow": {
-    "rows": 25707,
+    "rows": 25716,
     "profiles": 12,
-    "native": 23548,
+    "native": 23557,
     "native_proxy_evaluated": 4644,
     "native_loki_held": 1050,
     "mismatches": 0,

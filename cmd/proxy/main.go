@@ -140,6 +140,11 @@ type proxyRuntimeConfig struct {
 	patternsSelectorScope               bool
 	exactParserSeriesIdentity           bool
 	alignQueriesWithStep                bool
+	rangeMetricStepMode                 string
+	rangeMetricMinStep                  time.Duration
+	rangeMetricMaxStep                  time.Duration
+	rangeMetricStepBudgetBytes          int64
+	rangeMetricMaxPointsPerSeries       int
 	patternsCustomRaw                   string
 	patternsCustomFile                  string
 	queryRangeWindowing                 bool
@@ -594,6 +599,7 @@ func run(
 	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 1000, "Flush write buffer after N entries")
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
+	diskCacheRebuildReadahead := fs.Bool("disk-cache-rebuild-readahead", true, "While the start-up index rebuild runs, read the disk cache file in file order into the page cache (eight 512 KiB positioned reads at a time, stopped when the rebuild ends, before the listener opens), so a cold disk serves large sequential reads instead of one random read per record")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
 	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
 	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
@@ -722,6 +728,11 @@ func run(
 	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and run Loki's delete requests as VictoriaLogs delete tasks (VictoriaLogs needs -delete.enable). Requires -delete-api-auth-token: every delete request must carry it in X-Delete-Token or Authorization: Bearer, and the proxy refuses to start without one. When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
+	rangeMetricStepMode := fs.String("range-metric-step-mode", "adaptive", "How a range metric query_range request gets its step when a read at the requested step would pass a bound the proxy sets itself (-backend-max-buffered-response-bytes, -manual-range-metric-row-limit, -ordered-json-metric-max-bytes, -ordered-json-metric-max-samples, -binary-metric-max-operand-bytes, -multi-tenant-max-merged-response-bytes). adaptive (default): the request is served as sent; only when its answer is such a limit error is it served again at the closest step that fits: the smallest whole multiple of its step whose reads fit, or the finest fitting step when that multiple is more than twice coarser, anchored as Loki anchors a request at that step, with Loki's warnings field naming both steps; Loki's own limits and errors (series limit, 11,000 points, parse errors, backend failures, timeouts) are answered as before. floor: a step below -range-metric-min-step is raised to the smallest multiple of it at or above the floor before any read. off: the step the client sent, as before. Per tenant as range_metric_step_mode in -tenant-limits and -tenant-default-limits")
+	rangeMetricMinStep := fs.Duration("range-metric-min-step", 0, "Smallest step of a range metric query_range request in floor and adaptive modes (-range-metric-step-mode): a smaller step is raised to the smallest multiple of it at or above this value, with Loki's warning. 0 (default) sets no floor. Per tenant as range_metric_min_step")
+	rangeMetricMaxStep := fs.Duration("range-metric-max-step", 0, "Largest step the adaptive mode raises a range metric query_range request to (-range-metric-step-mode); a request that needs more answers its limit error as before. 0 (default): at most the request's range, two points at least. Per tenant as range_metric_max_step")
+	rangeMetricStepBudgetBytes := fs.Int64("range-metric-step-budget-bytes", 0, "Target bytes of one read after a read at the requested step passed -backend-max-buffered-response-bytes within its bucket bound: the adaptive mode picks a step whose read holds at most this share of the failed read's buckets. 0 (default): half of -backend-max-buffered-response-bytes, the margin the estimate needs")
+	rangeMetricMaxPointsPerSeries := fs.Int("range-metric-max-points-per-series", 0, "Buckets per series the adaptive mode (-range-metric-step-mode) aims a read at when a read at the requested step was past the bucket bound of the stats reads and read raw rows instead. 0 (default): 11,000, the bound itself; lower values pick coarser steps")
 	translateShadowSample := fs.Float64("translate-shadow-sample", 0, "Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off")
 	queryPlanLowering := fs.Bool("query-plan-lowering", true, "Translate the queries the typed query-plan lowering covers natively with it instead of the string translator: log queries with a stream selector, line filters, pattern filters (|> and !>) and label filters, no parser stage. The lowering writes the same VictoriaLogs query, byte for byte, under every translator option (held by the corpus shadow in CI), so answers, caches and VictoriaLogs requests do not change, except that a label called not, in, options, and, or, contains_all, contains_any, contains_common_case or equals_common_case is written quoted, which VictoriaLogs needs and the string translator leaves out; also a range function over an unwrapped label whose series a keep before the unwrap decides, which the lowering groups by the labels the keep leaves, as Loki does, where the string translator groups by the stream; also sum, max, min or avg over a range function taken per series of an unwrapped label after a json or logfmt parser with no keep, which the lowering groups by the stream and a hash of each line's parsed labels, Loki's series, where the string translator groups by the stream and each line; every other query, and any query the lowering cannot translate, goes to the string translator. Counted as result=flipped in loki_vl_proxy_lowering_shadow_total. false is the rollback: every query is translated by the string translator")
 	queryStatsMode := fs.String("query-stats-mode", "loki", "Accounting of the data.stats object of query, query_range, volume and volume_range answers (the Stats of Grafana's query inspector and the Logs Drilldown footer). loki (the default) emulates Loki's numbers: the lines and bytes of the pieces Loki would have read (a log query that fills its limit stops after the piece holding its last entry; lines estimated from the answer's entries when no volume answer of the panel is known; bytes as lines times the mean line size), Loki's splits and shards (1h pieces), cache hits as Loki reports them (log and instant answers replay the computation; metric query_range hits are results-cache hits). victorialogs reports what the proxy measured: the rows VictoriaLogs returned and their line bytes, a metric answer's own counts, VictoriaLogs calls as splits, nothing processed on a cache hit")
@@ -1036,6 +1047,8 @@ func run(
 			FlushInterval:  *diskCacheFlushInterval,
 			MinTTL:         *diskCacheMinTTL,
 			MaxBytes:       *diskCacheMaxBytes,
+
+			RebuildReadahead: *diskCacheRebuildReadahead,
 		},
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:                          envCfg.backendURL,
@@ -1107,6 +1120,11 @@ func run(
 			patternsSelectorScope:               *patternsScope == "selector",
 			exactParserSeriesIdentity:           *exactParserSeriesIdentity,
 			alignQueriesWithStep:                *alignQueriesWithStep,
+			rangeMetricStepMode:                 *rangeMetricStepMode,
+			rangeMetricMinStep:                  *rangeMetricMinStep,
+			rangeMetricMaxStep:                  *rangeMetricMaxStep,
+			rangeMetricStepBudgetBytes:          *rangeMetricStepBudgetBytes,
+			rangeMetricMaxPointsPerSeries:       *rangeMetricMaxPointsPerSeries,
 			patternsCustomRaw:                   *patternsCustomRaw,
 			patternsCustomFile:                  *patternsCustomFile,
 			queryRangeWindowing:                 *queryRangeWindowing,
@@ -1428,6 +1446,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 		"path", diskCfg.Path,
 		"compress", diskCfg.Compression,
 		"codec", diskCfg.Codec,
+		"rebuild_readahead", diskCfg.RebuildReadahead,
 		"max_bytes", diskCfg.MaxBytes,
 		"max_entries", diskCfg.MaxEntries,
 		"max_index_bytes", diskCfg.MaxIndexBytes,
@@ -2576,6 +2595,11 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsSelectorScope:              cfg.patternsSelectorScope,
 		ExactParserSeriesIdentity:          cfg.exactParserSeriesIdentity,
 		AlignQueriesWithStep:               cfg.alignQueriesWithStep,
+		RangeMetricStepMode:                cfg.rangeMetricStepMode,
+		RangeMetricMinStep:                 cfg.rangeMetricMinStep,
+		RangeMetricMaxStep:                 cfg.rangeMetricMaxStep,
+		RangeMetricStepBudgetBytes:         cfg.rangeMetricStepBudgetBytes,
+		RangeMetricMaxPointsPerSeries:      cfg.rangeMetricMaxPointsPerSeries,
 		PatternsCustom:                     customPatterns,
 		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
 		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,

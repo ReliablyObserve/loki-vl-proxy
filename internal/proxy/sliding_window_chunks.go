@@ -70,11 +70,15 @@ func (p *Proxy) rankSlidingWindowChunks(ctx context.Context, r *slidingRanker, s
 			continue
 		}
 		if err != nil {
+			if rows != nil {
+				noteReadRoute(ctx, readRouteStepIndependent) // a single step over the bound: a coarser step holds more
+			}
 			return err
 		}
 		// The series the ranking names are kept for the answer: they are bounded as the three grids of one read bound
 		// them (a seed and two grids of at most rowLimit rows each).
 		if len(stats.keys) > 3*rowLimit {
+			noteReadRoute(ctx, readRouteStepIndependent) // the series of the windows, whatever the step
 			return newRowLimitError(rowLimit, "series in the windows of one ranking", 0)
 		}
 		// The rows of the larger grid: the row bound holds each grid read on its own.

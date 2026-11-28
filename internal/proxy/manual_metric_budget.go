@@ -1298,6 +1298,6 @@ func (p *Proxy) writeBoundedBareParserMetric(w http.ResponseWriter, r *http.Requ
 		endpoint = "query_range"
 	}
 	elapsed := time.Since(requestStart)
-	p.metrics.RecordRequest(endpoint, status, elapsed)
+	p.recordRangeRequest(r.Context(), endpoint, status, elapsed)
 	p.queryTracker.Record(endpoint, query, elapsed, err != nil)
 }
