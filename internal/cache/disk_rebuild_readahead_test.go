@@ -88,19 +88,43 @@ func TestRebuildReadahead_LeavesTheSameIndex(t *testing.T) {
 	}
 }
 
+// walking stands for the rebuild's walk: it passes perMillisecond stored bytes
+// every millisecond until the test ends.
+func walking(t *testing.T, perMillisecond int64) *atomic.Int64 {
+	t.Helper()
+	var walked atomic.Int64
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				walked.Add(perMillisecond)
+			case <-done:
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() { close(done); <-stopped })
+	return &walked
+}
+
 // The read-ahead reads the whole file when it is given the time, stops at once
 // when stopped, joins every goroutine, and is a no-op for a file it cannot open.
 //
 // conformance: cache-restart-handover
 func TestRebuildReadahead_ReadsTheFileAndStops(t *testing.T) {
+	walked := walking(t, 1)
 	before := runtime.NumGoroutine()
-	var walked atomic.Int64
 	path := filepath.Join(t.TempDir(), "f")
 	size := int64(5*restoreReadaheadBuffer + 123)
 	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ra := startRebuildReadahead(path, &walked)
+	ra := startRebuildReadahead(path, walked)
 	<-ra.done // ends on its own once the file is read
 	if got, early := ra.stop(); got != size || early {
 		t.Fatalf("read %d of %d bytes, stopped early %t", got, size, early)
@@ -111,10 +135,10 @@ func TestRebuildReadahead_ReadsTheFileAndStops(t *testing.T) {
 	}
 	// Each reader finishes at most the read it is in when stop is called;
 	// stopped at once, it reads far less than the file.
-	if got, _ := startRebuildReadahead(big, &walked).stop(); got >= 256*restoreReadaheadBuffer {
+	if got, _ := startRebuildReadahead(big, walked).stop(); got >= 256*restoreReadaheadBuffer {
 		t.Fatalf("stopped at once but read the whole file (%d bytes)", got)
 	}
-	if got, _ := startRebuildReadahead(filepath.Join(t.TempDir(), "missing"), &walked).stop(); got != 0 {
+	if got, _ := startRebuildReadahead(filepath.Join(t.TempDir(), "missing"), walked).stop(); got != 0 {
 		t.Fatalf("missing file: read %d bytes", got)
 	}
 	for deadline := time.Now().Add(5 * time.Second); runtime.NumGoroutine() > before; time.Sleep(time.Millisecond) {
@@ -125,31 +149,29 @@ func TestRebuildReadahead_ReadsTheFileAndStops(t *testing.T) {
 }
 
 // Once it has read its probe the read-ahead decides once: it goes on to the end
-// of the file while the walk has passed fewer stored bytes than it read, and
-// stops, reading little more than the probe, when the walk is ahead (large
-// records, or pages reclaimed under memory pressure).
+// of the file while the walk alone passed stored bytes slower than it reads,
+// and stops, reading little more than the probe, when the walk alone is as fast
+// (large records, or pages reclaimed under memory pressure).
 //
 // conformance: cache-restart-handover
 func TestRebuildReadahead_StopsWhenTheWalkIsAhead(t *testing.T) {
 	// A local test file is read within the probe time, which never stops the
-	// read-ahead (TestRebuildReadahead_FastDeviceNeverStops); decide at once.
-	probeTime := rebuildReadaheadProbeTime
-	rebuildReadaheadProbeTime = 0
-	t.Cleanup(func() { rebuildReadaheadProbeTime = probeTime })
+	// read-ahead (TestRebuildReadahead_FastDeviceNeverStops); decide at once,
+	// after a short walk probe.
+	walkProbe, probeTime := rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime
+	rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime = time.Millisecond, 0
+	t.Cleanup(func() { rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime = walkProbe, probeTime })
 	path := filepath.Join(t.TempDir(), "f")
 	size := int64(3 * rebuildReadaheadProbeMin)
 	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var behind atomic.Int64
-	ra := startRebuildReadahead(path, &behind)
+	ra := startRebuildReadahead(path, walking(t, 1)) // a byte a millisecond
 	<-ra.done
 	if got, early := ra.stop(); got != size || early {
 		t.Fatalf("walk behind: read %d of %d bytes, stopped early %t", got, size, early)
 	}
-	var ahead atomic.Int64
-	ahead.Store(size) // the walk has passed every stored byte already
-	ra = startRebuildReadahead(path, &ahead)
+	ra = startRebuildReadahead(path, walking(t, 1<<40)) // far faster than any read
 	<-ra.done
 	got, early := ra.stop()
 	limit := int64(rebuildReadaheadProbeMin) + int64(2*restoreReadaheadReaders+1)*restoreReadaheadBuffer
@@ -171,9 +193,7 @@ func TestRebuildReadahead_FastDeviceNeverStops(t *testing.T) {
 	if err := os.WriteFile(path, make([]byte, size), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var ahead atomic.Int64
-	ahead.Store(size)
-	ra := startRebuildReadahead(path, &ahead)
+	ra := startRebuildReadahead(path, walking(t, 1<<40))
 	<-ra.done
 	if got, early := ra.stop(); got != size || early {
 		t.Fatalf("read %d of %d bytes, stopped early %t", got, size, early)

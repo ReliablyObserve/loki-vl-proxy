@@ -23,22 +23,26 @@ import (
 // The walk reads a few KiB of each record, so with large records it passes the
 // file's bytes faster than a throughput-bound read of all of them, and under
 // memory pressure the pages read ahead can be reclaimed before the walk gets
-// there. Once a probe of the file has been read and rebuildReadaheadProbeTime
-// has passed, the read-ahead compares, once, the stored bytes the walk has
-// passed with the bytes it has read, and stops when the walk is ahead. A
-// device that reads the whole file within that time never stops it (the
-// read-ahead's first reads are slower than its steady rate, so an earlier
-// comparison would stop it on fast disks where it pays most).
+// there. So the read-ahead first lets the walk run alone for
+// rebuildReadaheadWalkProbe from its first record and takes its rate (stored
+// bytes passed per second; measured alone, because the read-ahead takes the
+// volume's throughput and would slow the walk it is compared with). Once it has then read a probe of
+// the file over at least rebuildReadaheadProbeTime it compares its own rate
+// with the walk's, once, and stops when the walk alone is as fast. A device
+// that reads the whole file within that time is never stopped (the first
+// reads are slower than the steady rate, so an earlier comparison would stop
+// it on fast disks where it pays most).
 
 // rebuildReadaheadProbeMin is the least the read-ahead reads before it decides
-// whether to go on; 1/rebuildReadaheadProbeShare of the file when that is more.
-const (
-	rebuildReadaheadProbeMin   = 16 << 20
-	rebuildReadaheadProbeShare = 50 // 2%
-)
+// whether to go on.
+const rebuildReadaheadProbeMin = 16 << 20
 
-// rebuildReadaheadProbeTime is a variable for the tests only.
-var rebuildReadaheadProbeTime = 100 * time.Millisecond
+// rebuildReadaheadWalkProbe and rebuildReadaheadProbeTime are variables for
+// the tests only.
+var (
+	rebuildReadaheadWalkProbe = 50 * time.Millisecond
+	rebuildReadaheadProbeTime = 100 * time.Millisecond
+)
 
 // rebuildReadahead is one rebuild's read-ahead.
 type rebuildReadahead struct {
@@ -52,7 +56,7 @@ type rebuildReadahead struct {
 // walked is the stored bytes of the records the walk has passed. A file that
 // cannot be opened means no read-ahead.
 func startRebuildReadahead(path string, walked *atomic.Int64) *rebuildReadahead {
-	started := time.Now()
+	walkProbe, probeTime := rebuildReadaheadWalkProbe, rebuildReadaheadProbeTime
 	ctx, cancel := context.WithCancel(context.Background())
 	ra := &rebuildReadahead{cancel: cancel, done: make(chan struct{})}
 	file, err := os.Open(path)
@@ -67,17 +71,19 @@ func startRebuildReadahead(path string, walked *atomic.Int64) *rebuildReadahead 
 		return ra
 	}
 	size := info.Size()
-	probe := max(int64(rebuildReadaheadProbeMin), size/rebuildReadaheadProbeShare)
 	work := make(chan int64, restoreReadaheadReaders)
 	var readers sync.WaitGroup
 	for range restoreReadaheadReaders {
 		readers.Add(1)
 		go func() {
 			defer readers.Done()
-			buffer := make([]byte, restoreReadaheadBuffer)
+			var buffer []byte // allocated on the first read: a rebuild done within the walk probe holds none
 			for at := range work {
 				if ctx.Err() != nil {
 					return // stopped: the queued ranges are not read
+				}
+				if buffer == nil {
+					buffer = make([]byte, restoreReadaheadBuffer)
 				}
 				got, err := file.ReadAt(buffer[:min(size-at, restoreReadaheadBuffer)], at)
 				ra.read.Add(int64(got))
@@ -92,11 +98,29 @@ func startRebuildReadahead(path string, walked *atomic.Int64) *rebuildReadahead 
 		defer func() { _ = file.Close() }()
 		defer readers.Wait()
 		defer close(work)
+		// The walk's rate from its first record (the rebuild reads the
+		// hand-over's ranks before it walks), over walkProbe.
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		var walkFrom time.Time
+		var walkedFrom int64
+		for walkFrom.IsZero() || time.Since(walkFrom) < walkProbe {
+			select {
+			case <-tick.C:
+			case <-ctx.Done():
+				return
+			}
+			if n := walked.Load(); walkFrom.IsZero() && n > 0 {
+				walkFrom, walkedFrom = time.Now(), n
+			}
+		}
+		walkRate := float64(walked.Load()-walkedFrom) / float64(max(time.Since(walkFrom), time.Nanosecond))
+		readStart := time.Now()
 		decided := false
 		for at := int64(0); at < size && ctx.Err() == nil; at += restoreReadaheadBuffer {
-			if read := ra.read.Load(); !decided && read >= probe && time.Since(started) >= rebuildReadaheadProbeTime {
+			if read, elapsed := ra.read.Load(), time.Since(readStart); !decided && read >= rebuildReadaheadProbeMin && elapsed >= probeTime {
 				decided = true
-				if walked.Load() >= read {
+				if walkRate >= float64(read)/float64(elapsed) {
 					ra.stopped.Store(true)
 					return
 				}
