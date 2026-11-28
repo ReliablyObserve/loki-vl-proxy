@@ -353,7 +353,7 @@
       "the plan does not route it: VectorAgg route pipeline": 246,
       "the plan does not route it: VectorAgg route rewrite": 2,
       "the plan does not route it: VectorAgg route unwrap filter": 1,
-      "the plan does not route it: VectorAgg route unwrap pipeline": 120,
+      "the plan does not route it: VectorAgg route unwrap pipeline": 121,
       "the plan does not route it: VectorAgg route unwrap quantile": 8,
       "the plan does not route it: VectorAgg route unwrap rate": 22,
       "the plan does not route it: VectorAgg route unwrap rate_counter": 3,

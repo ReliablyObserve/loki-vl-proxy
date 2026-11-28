@@ -380,7 +380,16 @@ func (hw *stepHoldWriter) WriteHeader(code int) {
 		hw.held = true
 		return
 	}
+	plainIfUntyped(hw.ResponseWriter.Header())
 	hw.ResponseWriter.WriteHeader(code)
+}
+
+// plainIfUntyped names the type of an answer whose writer named none as what the server would send for it: Go's
+// content sniffing and the request logger's statusCapture both answer a Loki JSON body as text/plain; charset=utf-8.
+func plainIfUntyped(h http.Header) {
+	if h.Get("Content-Type") == "" {
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+	}
 }
 
 // stepHeldBodyMax bounds a held error body (Loki's error answers are short).
@@ -398,6 +407,9 @@ func (hw *stepHoldWriter) Write(b []byte) (int, error) {
 			hw.body = append(hw.body, b[:room]...)
 		}
 		return len(b), nil
+	}
+	if h := hw.ResponseWriter.Header(); h.Get("Content-Type") == "" {
+		h.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	return hw.ResponseWriter.Write(b)
 }
@@ -432,6 +444,9 @@ func (hw *stepHoldWriter) restoreHeaders() {
 func (hw *stepHoldWriter) flushHeld() {
 	if !hw.held {
 		return
+	}
+	if hw.ResponseWriter.Header().Get("Content-Type") == "" {
+		setReplayContentType(hw.ResponseWriter, hw.code)
 	}
 	hw.ResponseWriter.WriteHeader(hw.code)
 	_, _ = hw.ResponseWriter.Write(hw.body)
@@ -800,6 +815,9 @@ func (p *Proxy) writeStepAnswer(w http.ResponseWriter, out *stepAnswerWriter, wa
 	if warning != nil {
 		body = warning
 	}
+	if h.Get("Content-Type") == "" {
+		setReplayContentType(w, out.code)
+	}
 	w.WriteHeader(out.code)
 	_, _ = w.Write(body)
 }
@@ -855,7 +873,7 @@ func withLokiWarning(body []byte, text string) []byte {
 	if len(body) > 2 {
 		separator = []byte{','}
 	}
-	return bytes.Join([][]byte{[]byte(`{"warnings":[`), warning, []byte{']'}, separator, body[1:]}, nil)
+	return bytes.Join([][]byte{[]byte(`{"warnings":[`), warning, {']'}, separator, body[1:]}, nil)
 }
 
 // logStepAdjusted writes the log line of an adjusted answer.
