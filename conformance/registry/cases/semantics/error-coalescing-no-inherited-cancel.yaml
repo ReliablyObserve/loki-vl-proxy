@@ -7,8 +7,11 @@ consumer: any
 pending: true
 why: |
   Loki answers 499 or 504 only for a query whose own context was cancelled or
-  ran out of time. A shared run carries its leader's context; when the leader
-  goes away or times out, the followers that still wait must start again.
+  ran out of time. A shared run is the flight's (leadFlight, #1821): the leader's
+  client going away leaves it, and it is cancelled only when the last request
+  waiting on it went away, so followers get its answer from the one
+  VictoriaLogs call. It keeps the leader's deadline: when that ends the run,
+  the followers that still wait start again.
 request:
   scope: internal
   entry: serveFlight, Coalescer.do
@@ -19,6 +22,7 @@ request:
 compare:
   mode: exact
   expect: |
-    The leader answers 499; every follower gets the answer of one new call (2
-    VictoriaLogs calls in all); the coalescer's follower gets the new call's
-    answer, not context deadline exceeded.
+    The run goes on after the leader's client left: every follower gets its
+    answer from one VictoriaLogs call; the coalescer's follower whose leader's
+    deadline ended the call gets a new call's answer, not context deadline
+    exceeded.

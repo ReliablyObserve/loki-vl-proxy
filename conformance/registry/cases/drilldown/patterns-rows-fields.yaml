@@ -1,0 +1,53 @@
+id: drilldown/patterns-rows-fields
+title: The sampled /patterns read keeps only the fields mining reads, and a read VictoriaLogs refuses for memory is sent again with fewer rows (fixed)
+pending: true
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  When neither the exact tier nor the VictoriaLogs counts answer a /patterns request, the proxy samples the newest
+  lines of the range: a read with VictoriaLogs' `limit` (-patterns-max-backend-rows, 20000), which VictoriaLogs answers
+  with a sort of the newest rows (#1821: `sort by (_time) desc limit 20000`). The read asked for whole rows, and the
+  sort holds every field of every row it keeps: on an ingress access log with dozens of OpenTelemetry attributes
+  stored as fields, both zone vlselects refused it (`cannot calculate [sort by (_time) desc limit 20000], since it
+  requires more than 1146MB of memory`, 502 through vmauth), and the Patterns tab had no answer where Loki shows
+  patterns.
+
+  Fixed: the plain and the windowed sampled reads end with a fields pipe of what the row decoder reads
+  (patternRowFields: `_time`, `_msg`, `_stream`, `_stream_id`, the time and message fallback fields and the level
+  fields), built on the parsed query (patternRowsQuery), so the sort's memory follows the messages, not the rows.
+  The patterns mined are the patterns mined from whole rows, byte for byte, except for a row VictoriaLogs stores
+  without a message when the line scan for a level is on and no level field is kept: its level is read from the
+  line rebuilt from its kept fields, as the exact tier has always read it (TestPatternRowFieldsMissingMessageLevel).
+  A read VictoriaLogs still refuses for memory (isVLMemoryLimitMessage, any status) is sent again with half the
+  rows, at most three times and never below 1000 rows, counted as the internal operation patterns_rows
+  (backend_memory_limit for each refusal, reduced for a smaller read answered); a smaller read mines fewer, newer
+  lines, and its answer is not kept in the edge cache, the pattern cache, its snapshot or the window cache.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{service_name="ingress"}'
+    start: 'now-15m'
+    end: 'now'
+    step: '2s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data]
+  expect: |
+    200 with the patterns of the sampled lines; the VictoriaLogs read ends with the fields pipe; a refusal for memory
+    is answered from a smaller read.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/patterns.go readPatternRows, internal/proxy/patterns_exact.go patternRowsQuery'
+  loki: 'patterns from the pattern ingester'
+  proxy: 'patterns from the sampled lines, read with only the fields mining needs; fewer rows on a memory refusal'
+  planned_test: 'TestPatternRowFieldsMineAsWholeRows, TestPatternRowFieldsMissingMessageLevel, TestPatternRowsQueryKeepsTheFilter, TestPatternRowsMemoryRefusalReadsFewerRows, TestPatternRowsReducedAnswerIsNotKept, TestIsVLMemoryLimitMessage (internal/proxy)'
+  visual: none
+  visual_reason: 'filled after the stack proof'
+  clusters: []

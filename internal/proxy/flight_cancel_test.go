@@ -99,7 +99,7 @@ func startCancellable(mux *http.ServeMux, target string) (context.CancelFunc, <-
 // waiter's answer late by the leader's time. The run is now the flight's: it ends when the last request waiting
 // on it went away, and a request alone still cancels its read at once.
 //
-// conformance: semantics/client-cancel-ends-backend-reads, loki_api_v1_index_stats, loki_api_v1_query
+// conformance: semantics/client-cancellation-propagates, semantics/error-coalescing-no-inherited-cancel, loki_api_v1_index_stats, loki_api_v1_query
 func TestFlightRunIsCancelledByItsLastRequest(t *testing.T) {
 	now := time.Now()
 	targets := map[string]string{
@@ -184,7 +184,7 @@ func TestFlightRunIsCancelledByItsLastRequest(t *testing.T) {
 // that started it. When that request went away, the read was cancelled and a request that only followed it got no
 // verdict: its query kept both parser stages where it would have kept one. A follower still alive now probes again.
 //
-// conformance: semantics/client-cancel-ends-backend-reads, loki_api_v1_query
+// conformance: semantics/client-cancellation-propagates, loki_api_v1_query
 func TestParserProbeFollowerOutlivesItsLeader(t *testing.T) {
 	var mu sync.Mutex
 	probes, cancelled := 0, 0
