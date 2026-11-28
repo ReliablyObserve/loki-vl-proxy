@@ -362,26 +362,56 @@ func withWitnessGroup(rest string) (string, bool) {
 // reports whether a row was flagged (or the answer is too large to check), in
 // which case the request is sent again with the full chain. Otherwise the
 // witness field, empty in every group, is taken out of the labels.
-func (p *Proxy) levelWitnessResponse(resp *http.Response) (flagged bool, err error) {
+//
+// A body past the stats body bound is flagged too (the full chain's answer is read in its place), except for a read
+// whose caller reads its steps again in time chunks when it passes the bound (statsReadMeter.chunks): the full
+// chain's answer holds the same groups without the witness, so it would pass the bound as well, and the read ends
+// with the overflow at once instead of after a second read of the whole range.
+func (p *Proxy) levelWitnessResponse(ctx context.Context, resp *http.Response) (flagged bool, err error) {
 	if resp.StatusCode != http.StatusOK {
 		return false, nil
 	}
 	body, err := readBodyLimited(resp.Body, maxStatsBucketResponseBytes)
 	_ = resp.Body.Close()
+	if errors.Is(err, errBodyTooLarge) && statsReadChunks(ctx) {
+		return false, err
+	}
 	if errors.Is(err, errBodyTooLarge) || bytes.Contains(body, []byte(`"`+levelWitnessField+`":"1"`)) {
 		return true, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	empty := []byte(`"` + levelWitnessField + `":""`)
-	body = bytes.ReplaceAll(body, append([]byte(","), empty...), nil)
-	body = bytes.ReplaceAll(body, append(append([]byte(nil), empty...), ','), nil)
-	body = bytes.ReplaceAll(body, empty, nil)
+	body = withoutEmptyWitness(body)
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	resp.Header.Del("Content-Length")
 	return false, nil
+}
+
+// withoutEmptyWitness takes the empty witness label out of every group of body in one pass, with the comma that joins
+// it to the label before it, else to the one after it: as removing every `,"__lw":""`, then every `"__lw":"",`, then
+// every `"__lw":""` would, without a copy of the body per form.
+func withoutEmptyWitness(body []byte) []byte {
+	empty := []byte(`"` + levelWitnessField + `":""`)
+	at := bytes.Index(body, empty)
+	if at < 0 {
+		return body
+	}
+	out := make([]byte, 0, len(body))
+	for at >= 0 {
+		from, to := at, at+len(empty)
+		switch {
+		case from > 0 && body[from-1] == ',':
+			from--
+		case to < len(body) && body[to] == ',':
+			to++
+		}
+		out = append(out, body[:from]...)
+		body = body[to:]
+		at = bytes.Index(body, empty)
+	}
+	return append(out, body...)
 }
 
 // detectedLevelPresence returns the level fields and body keys the stats query
