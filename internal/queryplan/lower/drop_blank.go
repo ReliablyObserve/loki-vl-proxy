@@ -104,19 +104,14 @@ func dropHoistReader(sel *queryplan.LogSelect, i int, name string, metric bool) 
 }
 
 // filterAcceptsEmpty reports whether the string comparison e accepts the empty value, as Loki's label filter
-// compares it; false in ok for a comparison it does not decide.
+// compares it; false in ok for a comparison it does not decide. Only = and != are decided: a regexp would have to be
+// compiled for every request, the response key fence's included (WritesDropBlank), so its reader keeps the blanking.
 func filterAcceptsEmpty(e *logql.LabelFilterExpr) (empty, ok bool) {
 	switch e.Cmp {
 	case "=":
 		return e.Value == "", true
 	case "!=":
 		return e.Value != "", true
-	case "=~", "!~":
-		c, err := translate.NewLabelFilterCondition(e.Name, e.Cmp, e.Value)
-		if err != nil {
-			return false, false
-		}
-		return c.Matches(""), true
 	}
 	return false, false
 }
@@ -157,17 +152,17 @@ func dropHoistedFilter(sel *queryplan.LogSelect, j int, f logsql.FilterExpr, lab
 	return f
 }
 
-// dropSpares reports a filter e that reads the same rows with or without the drop's matchers R on its label, each an
-// equality on a non-empty value v (VictoriaLogs compares it exactly), as Loki's filter compares the values: where e
+// dropSpares reports a filter e (= or !=, dropHoistReader) that reads the same rows with or without the drop's
+// matchers R on its label, each an equality on a non-empty value v (VictoriaLogs compares it exactly): where e
 // rejects the empty value (F AND NOT R), e accepts no v, so no row e keeps has its label removed; where e accepts it
 // (R OR F), e accepts every v, so every removed row passes e anyway.
 func dropSpares(d *queryplan.Drop, e *logql.LabelFilterExpr, empty bool) bool {
-	cond, err := translate.NewLabelFilterCondition(e.Name, e.Cmp, e.Value)
-	if err != nil {
-		return false
-	}
 	for _, m := range d.Matchers {
-		if m.Name == e.Name && (m.Op != "=" || m.Value == "" || cond.Matches(m.Value) != empty) {
+		if m.Name != e.Name {
+			continue
+		}
+		accepts := (m.Value == e.Value) == (e.Cmp == "=")
+		if m.Op != "=" || m.Value == "" || accepts != empty {
 			return false
 		}
 	}

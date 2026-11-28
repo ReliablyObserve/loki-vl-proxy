@@ -43,10 +43,11 @@ func TestDropReadByLaterStage(t *testing.T) {
 		{query: `{app="a"} | drop level="w" | level=""`, want: []string{`app:="a" (level:="w" OR -level:*)`}, rewritten: true},
 		{query: `{app="a"} | drop code="5" | code!="7"`, none: true, want: []string{`app:="a" -code:="7"`}},
 		{query: `{app="a"} | drop code="5" | code!="5"`, want: []string{`app:="a" (code:="5" OR -code:="5")`}, rewritten: true},
-		{query: `{app="a"} | drop code="5", code="6" | code=~"[0-4]"`, none: true, want: []string{`app:="a" code:~`}},
+		{query: `{app="a"} | drop code="5", code="6" | code=~"[0-4]"`, want: []string{`"" as code`}},
 		{query: `{app="a"} | drop code=~"5.*" | code!="7"`, want: []string{`app:="a" (code:~"^(?s:5.*)$" OR -code:="7")`}, rewritten: true},
 		{query: `{app="a"} | drop code="5", code!="1" | code="5"`, want: []string{`code:="5" AND NOT (code:="5" OR -code:="1")`}, rewritten: true},
-		{query: `{app="a"} | drop code=~"5.." |= "x" | code=~"4.."`, want: []string{`code:~"^(?-s:4..)$" AND NOT code:~"^(?s:5..)$"`}, rewritten: true},
+		// A regexp filter keeps the blanking: deciding its form would compile it on every request.
+		{query: `{app="a"} | drop code=~"5.." |= "x" | code=~"4.."`, want: []string{`"" as code`}},
 		{query: `{app="a"} | drop level="warn" | level="nope"`, none: true, want: []string{`app:="a" level:="nope"`}},
 		{query: `{app="a"} | drop level="warn", level="info" | decolorize | level="nope"`, none: true, want: []string{`app:="a" | decolorize | filter level:="nope"`}},
 		// Nothing reads the name, or the plan leaves the field to its own reading.
