@@ -15,8 +15,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
 
-// flagStructuredMetadataSeriesMaxReadRows bounds the rows of one rebuilt VictoriaLogs read.
-const flagStructuredMetadataSeriesMaxReadRows = "-structured-metadata-series-max-read-rows"
+// flagMetadataSeriesMaxReadRows bounds the rows of one rebuilt VictoriaLogs read.
+const flagMetadataSeriesMaxReadRows = "-structured-metadata-series-max-read-rows"
 
 // Loki names a metric series by the stream labels and the entry's structured metadata, so a stream whose lines carry
 // a per-line trace_id is a series per line; the proxy's series is the stream (metric-identity/structured-metadata-
@@ -252,7 +252,7 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	req, ok := p.statsExtentRequestFor(ctx, params)
 	if !ok {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "over_rows_unsliced", time.Since(started))
-		return nil, true, lokierr.LimitReached(flagStructuredMetadataSeriesMaxReadRows, limit, &rowLimitError{limit: int(limit), unit: "rows in one VictoriaLogs read", matches: rows})
+		return nil, true, lokierr.LimitReached(flagMetadataSeriesMaxReadRows, limit, &rowLimitError{limit: int(limit), unit: "rows in one VictoriaLogs read", matches: rows})
 	}
 	gaps := metadataSeriesSlices(req.first, req.last, rows, limit)
 	fetchCtx := context.WithValue(context.WithValue(ctx, statsExtentFetchKey{}, true), statsExtentHeavyKey{}, true)

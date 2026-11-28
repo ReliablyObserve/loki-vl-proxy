@@ -125,3 +125,22 @@ func TestReadsStreamIdentity(t *testing.T) {
 		}
 	}
 }
+
+// A prefix copied or renamed to the top level (copy __lvp_p_* as *, which the parser identity writes) is read, so the
+// identity reaches the reads that hold it; a lone * after a name without a prefix is not.
+//
+// conformance: metric-identity/structured-metadata-splits-series
+func TestParseCopyPrefixToTop(t *testing.T) {
+	for _, q := range []string{`* | copy __lvp_p_* as *`, `* | rename a_* as *`} {
+		parsed, err := Parse(q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if got := parsed.String(); got != q {
+			t.Errorf("%s printed as %s", q, got)
+		}
+	}
+	if _, err := Parse(`* | copy a as *`); err == nil {
+		t.Error("copy a as * read")
+	}
+}

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("a:=\"b\" | format if (service_name:*) \"<service.name>\" as service_name_extracted | set_stream_fields a, service_name_extracted | stats by (_stream) count()")

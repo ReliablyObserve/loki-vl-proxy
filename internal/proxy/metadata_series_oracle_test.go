@@ -196,6 +196,9 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		front := &smFront{version: v.version, upstream: srv.URL}
 		fs := httptest.NewServer(front)
 		on, off := smOracleProxy(t, fs.URL, true), smOracleProxy(t, fs.URL, false)
+		// Every rebuilt read over 30 rows is read in slices of its buckets (slicedSeriesMetadataRead).
+		sliced := smOracleProxyWith(t, fs.URL, Config{StructuredMetadataSeriesIdentity: true, MetadataSeriesMaxReadRows: 30})
+		slicedSame, slicedRefused := 0, 0
 		matched, offDiffers, series := 0, 0, 0
 		for _, r := range requests {
 			want := loki[r.id]
@@ -220,6 +223,17 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 				continue
 			}
 			matched++
+			if part := doCompatProxyRequest(sliced, r.target, map[string]string{"X-Scope-OrgID": "0"}); part.Code == http.StatusBadRequest && strings.Contains(part.Body.String(), "limit reached") {
+				// A read over the bound whose buckets cannot be read apart (statsExtentQueryCacheable) answers Loki's limit
+				// error: never an unbounded read.
+				slicedRefused++
+			} else if part.Code != http.StatusOK {
+				t.Errorf("%s %s: sliced proxy answered %d %s", v.version, r.target, part.Code, part.Body.String())
+			} else if diff := compare(wantResult, smResult(t, part.Body.Bytes())); diff != "" {
+				t.Errorf("%s %s sliced:\n%s", v.version, r.target, diff)
+			} else {
+				slicedSame++
+			}
 			series += len(wantResult)
 			if base := doCompatProxyRequest(off, r.target, map[string]string{"X-Scope-OrgID": "0"}); compare(wantResult, smResult(t, base.Body.Bytes())) != "" {
 				offDiffers++
@@ -254,8 +268,11 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		}
 		// Every rebuilt read the proxy sent is one VictoriaLogs' parser reads back (its clone): the serve oracle answered
 		// each with 200, or the request above failed.
-		t.Logf("VictoriaLogs %s: %d of %d answers equal Loki's (%d series); without the flag %d differ; %d reads rebuilt",
-			v.version, matched, len(requests), series, offDiffers, rebuilt)
+		t.Logf("VictoriaLogs %s: %d of %d answers equal Loki's (%d series), %d read in slices (%d refused unsliced); without the flag %d differ; %d reads rebuilt",
+			v.version, matched, len(requests), series, slicedSame, slicedRefused, offDiffers, rebuilt)
+		if slicedSame < len(requests)*9/10 || slicedRefused > len(requests)/10 {
+			t.Errorf("%s: %d of %d sliced answers equal Loki's, %d refused", v.version, slicedSame, len(requests), slicedRefused)
+		}
 		if offDiffers == 0 {
 			t.Errorf("%s: no answer differs without the flag: the data set does not reach the identity", v.version)
 		}
@@ -271,6 +288,21 @@ func smSortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func smOracleProxyWith(t *testing.T, backend string, cfg Config) *Proxy {
+	t.Helper()
+	cfg.BackendURL, cfg.Cache, cfg.LogLevel = backend, cache.New(60*time.Second, 1000), "error"
+	cfg.BackendMinVersion, cfg.BackendVersionCheckTimeout = "v1.40.0", time.Second
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	return p
 }
 
 func smOracleProxy(t *testing.T, backend string, on bool) *Proxy {

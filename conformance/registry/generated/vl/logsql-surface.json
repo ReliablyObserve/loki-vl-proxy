@@ -433,8 +433,10 @@
       "name": "set_stream_fields",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/metadata_series.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -482,6 +484,7 @@
         "internal/proxy/drilldown_burst_coalescer.go",
         "internal/proxy/label_handlers.go",
         "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metadata_series.go",
         "internal/proxy/metric_agg.go",
         "internal/proxy/metric_binary.go",
         "internal/proxy/nested_vector_fold.go",
@@ -666,6 +669,7 @@
         "internal/proxy/label_handlers.go",
         "internal/proxy/manual_metric_budget.go",
         "internal/proxy/metadata_inventory.go",
+        "internal/proxy/metadata_series.go",
         "internal/proxy/metric_binary.go",
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/ordered_json_metric.go",

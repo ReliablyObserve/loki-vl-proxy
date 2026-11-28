@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (318), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (320), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -251,6 +251,13 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-slow-query-threshold` | duration | `3s` | `extraArgs.slow-query-threshold` | A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total&#123;system="loki"&#125; and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off |
 | `-slow-upstream-threshold` | duration | `2s` | `extraArgs.slow-upstream-threshold` | One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total&#123;system="vl"&#125; and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off |
 | `-translate-shadow-sample` | float64 | `0` | `extraArgs.translate-shadow-sample` | Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off |
+
+## other
+
+| Flag | Type | Default | Helm value | Description |
+|---|---|---|---|---|
+| `-structured-metadata-series-identity` | bool | `false` | `extraArgs.structured-metadata-series-identity` | Declare that every field VictoriaLogs stores for a row, other than its stream fields, is the row's Loki structured metadata (rows reach VictoriaLogs through the Loki push API or OTLP with the line stored as sent: no JSON or logfmt parsing at ingest, such as /insert/loki/api/v1/push?disable_message_parsing=1, and no jsonline or other writer adding fields). Metric queries then name their series as Loki does, by the stream labels and the line's structured metadata (Loki's names: sanitized, _extracted beside a stream label of the same name), so count, avg, min, max, stddev, stdvar, topk, bottomk, sort, quantile, without, binary operations and bare range functions read one value per Loki series: VictoriaLogs lists the fields of each read's window (field_names and stream_field_names, cached per hour) and rebuilds every row's _stream from them. Sums by labels read as before. A line with a per-line trace_id is a series of its own, on both sides: series counts, VictoriaLogs work and proxy memory grow with the lines of such streams, and a query past the series limit answers Loki's limit error. Where the declaration is false, a field parsed out of the line at ingest splits series Loki would not split. Off: a series per stream |
+| `-structured-metadata-series-max-read-rows` | int | `250000` | `extraArgs.structured-metadata-series-max-read-rows` | With -structured-metadata-series-identity: the rows one VictoriaLogs stats read that takes the identity may group. A read whose filter matches more rows in its window (one count per read) is sent in slices of its step buckets, one after another, each about half this many rows, and the answers are joined (exact: every bucket depends only on its own rows); a read over it whose buckets cannot be read apart answers Loki's limit error. It bounds VictoriaLogs' memory, which holds a stats group per series and bucket: a day of the bench generator's per-line trace_id in one read ran a 4 GiB VictoriaLogs out of memory, the sliced reads peaked at 0.9 GiB. Lower it for a smaller VictoriaLogs; 0 or less sends every read whole |
 
 ## peer cache
 

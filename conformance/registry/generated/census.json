@@ -1659,6 +1659,7 @@
     "internal/logsql/refusal_test.go | vl-stats-pipe-after-stats",
     "internal/logsql/refusal_test.go | vl-stats-range-pipe-before-stats",
     "internal/logsql/reserved_fields_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/logsql/series_metadata_test.go | metric-identity/structured-metadata-splits-series",
     "internal/logsql/stream_filter_any_test.go | semantics/service-name-stream-filter",
     "internal/logsql/stream_group_test.go | semantics/detected-level-stream-stats-without-level",
     "internal/lokierr/lokierr_test.go | architecture-syntax-package-layering",
@@ -2237,6 +2238,8 @@
     "internal/proxy/metadata_scan_sim_scenarios_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/metadata-scan-adaptive-limit",
+    "internal/proxy/metadata_series_oracle_test.go | metric-identity/structured-metadata-splits-series",
+    "internal/proxy/metadata_series_test.go | metric-identity/structured-metadata-splits-series",
     "internal/proxy/metric_sample_limit_bench_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
     "internal/proxy/metric_sample_limit_test.go | limits/every-cap-is-a-flag",
     "internal/proxy/metric_sample_limit_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
@@ -3846,7 +3849,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 906,
+      "go": 909,
       "playwright": 3
     },
     "page_kinds": {
@@ -3867,8 +3870,8 @@
     },
     "shape_covers_distinct": 119,
     "shapes_path_only": 10,
-    "unwired_items": 154,
-    "wired_items": 506
+    "unwired_items": 153,
+    "wired_items": 507
   },
   "gates": [
     "A/B shape selection",

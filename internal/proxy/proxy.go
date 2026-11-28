@@ -288,9 +288,9 @@ type Config struct {
 	// stream field is its structured metadata: a metric query's series are then Loki's, a series per stream and
 	// structured-metadata set (metadata_series.go). Zero value: a series per stream.
 	StructuredMetadataSeriesIdentity bool
-	// StructuredMetadataSeriesMaxReadRows bounds the rows of one VictoriaLogs read that takes the identity: a read
+	// MetadataSeriesMaxReadRows bounds the rows of one VictoriaLogs read that takes the identity: a read
 	// over it is sent in slices of its buckets (metadata_series.go). Zero: the default, 250000; negative: no slices.
-	StructuredMetadataSeriesMaxReadRows int
+	MetadataSeriesMaxReadRows int
 	// ServiceNameStreamRoute turns on the automatic service_name stream filter (service_name_route.go): a log query
 	// read narrowed to the streams that can hold its service, kept only when a VictoriaLogs read beside it finds no
 	// row the narrowing leaves out. -service-name-stream-route, off by default (as the zero value).
@@ -1677,7 +1677,7 @@ func New(cfg Config) (*Proxy, error) {
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		serviceNameStreamLabelOnly:            cfg.ServiceNameStreamLabelOnly,
 		structuredMetadataSeries:              cfg.StructuredMetadataSeriesIdentity,
-		seriesMetadataMaxReadRows:             seriesMetadataReadRowsOrDefault(cfg.StructuredMetadataSeriesMaxReadRows),
+		seriesMetadataMaxReadRows:             seriesMetadataReadRowsOrDefault(cfg.MetadataSeriesMaxReadRows),
 		serviceNameStreamRoute:                cfg.ServiceNameStreamRoute,
 		serviceNameRouteMinWindow:             cfg.ServiceNameStreamRouteMinWindow,
 		serviceNameRouteViolationTTL:          cfg.ServiceNameStreamRouteViolationTTL,
