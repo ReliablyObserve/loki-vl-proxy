@@ -211,7 +211,9 @@ metrics, which see every request whatever the log sampling.
 | `flow.cache.ms`, `flow.cache.bytes` | summed lookup time, and the bytes the cache returned on hits and stale reads |
 | `flow.cache.by_tier` | per tier (`l1_memory`, `l2_disk`, `l3_peer`, `unknown`) the `hits`, `misses` and `stale` counts. A read through every tier that misses is `unknown` (it consulted all of them); a memory-only read is `l1_memory` |
 | `flow.vl.calls`, `flow.vl.ms`, `flow.vl.bytes` | VictoriaLogs calls, their summed time from sending to the end of the response body (the slow-query definition, so body reading is included), and the decoded response bytes. `upstream.calls` and `upstream.duration_ms` keep their earlier meaning (time to the response headers) |
-| `flow.vl.rows` | on `slow_request` only: log rows read from VictoriaLogs raw query bodies (0 for stats and metadata calls, which return aggregates) |
+| `flow.vl.rows` | log rows read from VictoriaLogs raw query bodies (stats and metadata calls return aggregates and add none); always on `slow_request`, on the `request` line only when above 0 |
+| `flow.served` | on the `request` line: how the request was served (`cache`, `shared`, `partial`, `vl`, `local`, `error`), as in [VictoriaLogs savings and speedup](#victorialogs-savings-and-speedup) |
+| `flow.reuse.recorded`, `flow.reuse.unknown` | on the `request` line, only when the request reused an answer: the answers it reused with a recorded build cost and with an unknown one (each count stops at 255); the shared answers and calls in flight make `flow.served` `shared` or `partial` |
 | `flow.proxy.ms` | the request's own time: its duration minus `flow.vl.ms` and `flow.cache.ms`, never below 0. It includes the parse and translate time, which are not subtracted |
 | `flow.inventory.listings`, `flow.inventory.memory`, `flow.inventory.buckets_cached`, `flow.inventory.buckets_revalidated`, `flow.inventory.buckets_scanned`, `flow.inventory.edges` | only on a request whose label or label values listing the metadata inventory split into time buckets: the listings it planned, how many of them were answered from memory with no VictoriaLogs call, and the pieces of the others: day, hour, 5-minute and minute buckets read from the cache, confirmed by a row count, or read from VictoriaLogs (a piece a covering hour made the listing read again counts here too), and the unaligned edges, read from VictoriaLogs on every listing. A slow first `/labels` of a window shows its cost here: `buckets_scanned` and `edges` are its VictoriaLogs listing calls, besides the row counts of the scanned buckets |
 
@@ -1323,7 +1325,7 @@ added to `loki_vl_proxy_vl_avoided_{calls,seconds,bytes,rows}_total`:
 
 The cost is `unknown`, and adds no avoided work, when this replica never
 measured the build: an answer read from disk after a restart, read from a
-peer, pushed by a peer, or whose slot in the bounded cost table (32768 keys)
+peer, pushed by a peer, or whose slot in the bounded cost table (four slots per memory-tier entry of `-cache-max` and the response cache, at most 262144)
 a newer answer took; stats buckets (one read stores many splits, and its cost
 is not split over them) and burst reads. The replica that serves a peer read
 counts nothing, so summed over a fleet each answer's work is counted once.

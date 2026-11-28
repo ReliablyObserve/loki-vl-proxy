@@ -173,47 +173,50 @@ func TestAvoidedCallsMatchTheCallsOfARunWithoutReuse(t *testing.T) {
 //
 // conformance: observability-vl-savings
 func TestCoalescedCallsCountTheSharedCallsWork(t *testing.T) {
-	release := make(chan struct{})
-	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		<-release
-		_, _ = w.Write([]byte(`{"values":[]}`))
-	}))
-	defer srv.Close()
-	p := newTestProxy(t, srv.URL)
-	const n = 4
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/series", nil)
-			p.requestLogger("series", "/loki/api/v1/series", func(w http.ResponseWriter, r *http.Request) {
-				if _, err := p.vlGetCoalesced(r.Context(), "streams", "/select/logsql/streams", nil); err != nil {
-					t.Error(err)
-					return
-				}
-				w.WriteHeader(http.StatusOK)
-			}).ServeHTTP(httptest.NewRecorder(), req)
-		}()
-	}
-	for p.coalescer.ActiveShared.Load() == 0 && calls.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
-	time.Sleep(50 * time.Millisecond) // the other requests join the call in flight
-	close(release)
-	wg.Wait()
-	body := metricsBody(p)
-	sent := metricSum(t, body, "loki_vl_proxy_served_vl_calls_total", nil)
-	avoided := metricSum(t, body, "loki_vl_proxy_vl_avoided_calls_total", map[string]string{"layer": "vl_call", "tier": "in_flight"})
-	shared := metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "shared"})
-	if avoided < 1 || sent != float64(calls.Load()) || sent+avoided != n || shared != avoided {
-		t.Fatalf("sent %v (VictoriaLogs saw %d) + avoided %v != %d, shared requests %v", sent, calls.Load(), avoided, n, shared)
-	}
-	if avoided > 0 && metricSum(t, body, "loki_vl_proxy_vl_avoided_bytes_total", nil) != avoided*float64(len(`{"values":[]}`)) {
-		t.Fatalf("avoided bytes\n%s", body)
-	}
+	repeatUntilShared(t, func(t *testing.T) float64 {
+		release := make(chan struct{})
+		var calls atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			<-release
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		}))
+		t.Cleanup(srv.Close)
+		p := newTestProxy(t, srv.URL)
+		const n = 4
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/series", nil)
+				p.requestLogger("series", "/loki/api/v1/series", func(w http.ResponseWriter, r *http.Request) {
+					if _, err := p.vlGetCoalesced(r.Context(), "streams", "/select/logsql/streams", nil); err != nil {
+						t.Error(err)
+						return
+					}
+					w.WriteHeader(http.StatusOK)
+				}).ServeHTTP(httptest.NewRecorder(), req)
+			}()
+		}
+		for p.coalescer.ActiveShared.Load() == 0 && calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(50 * time.Millisecond) // the other requests join the call in flight
+		close(release)
+		wg.Wait()
+		body := metricsBody(p)
+		sent := metricSum(t, body, "loki_vl_proxy_served_vl_calls_total", nil)
+		avoided := metricSum(t, body, "loki_vl_proxy_vl_avoided_calls_total", map[string]string{"layer": "vl_call", "tier": "in_flight"})
+		shared := metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "shared"})
+		if sent != float64(calls.Load()) || sent+avoided != n || shared != avoided {
+			t.Fatalf("sent %v (VictoriaLogs saw %d) + avoided %v != %d, shared requests %v", sent, calls.Load(), avoided, n, shared)
+		}
+		if avoided > 0 && metricSum(t, body, "loki_vl_proxy_vl_avoided_bytes_total", nil) != avoided*float64(len(`{"values":[]}`)) {
+			t.Fatalf("avoided bytes\n%s", body)
+		}
+		return avoided
+	})
 }
 
 // A replica that reads an answer from a peer counts it as reused with an unknown cost (it never measured its
@@ -270,7 +273,7 @@ func TestPeerReadReuseHasUnknownCostAndTheOwnerCountsNothing(t *testing.T) {
 //
 // conformance: observability-vl-savings
 func TestBuildCostLedgerNeverAnswersAnotherKey(t *testing.T) {
-	l := newBuildCostLedger()
+	l := newBuildCostLedger(10000)
 	w := metrics.VLWork{Calls: 3, Duration: time.Second, Bytes: 10, Rows: 2}
 	l.put("a", w)
 	if got, ok := l.get("a"); !ok || got != w {
@@ -295,8 +298,14 @@ func TestBuildCostLedgerNeverAnswersAnotherKey(t *testing.T) {
 	if got, ok := l.get(other); !ok || got.Calls != 7 {
 		t.Fatalf("get other = %v %v", got, ok)
 	}
-	if len(l.slots) != buildCostSlots {
-		t.Fatalf("ledger grew to %d", len(l.slots))
+	if len(*l.slots.Load()) != 1<<16 {
+		t.Fatalf("ledger of %d slots for 10000 entries, want 65536", len(*l.slots.Load()))
+	}
+	if small, big := newBuildCostLedger(0), newBuildCostLedger(1<<30); small.size != buildCostMinSlots || big.size != buildCostMaxSlots {
+		t.Fatalf("ledger sizes %d and %d", small.size, big.size)
+	}
+	if _, ok := newBuildCostLedger(10).get("a"); ok {
+		t.Fatal("an empty ledger answered")
 	}
 	var nilLedger *buildCostLedger
 	nilLedger.put("a", w)
@@ -356,6 +365,18 @@ func TestWorkScopesNest(t *testing.T) {
 	if got := outer.work(); got != (metrics.VLWork{Calls: 2, Duration: 11 * time.Millisecond, Bytes: 101, Rows: 5}) {
 		t.Fatalf("outer %+v", got)
 	}
+}
+
+// repeatUntilShared runs a scenario of identical requests in flight until one of them shared another's work (the
+// scheduler decides whether a request joins before the first one ends), checking its counts on every run.
+func repeatUntilShared(t *testing.T, run func(t *testing.T) float64) {
+	t.Helper()
+	for attempt := 0; attempt < 10; attempt++ {
+		if run(t) >= 1 || t.Failed() {
+			return
+		}
+	}
+	t.Fatal("no request shared another's work in 10 runs")
 }
 
 // reuseCtx is the context of one client request of route.
@@ -448,49 +469,52 @@ func TestWindowReuseCountsTheWindowsOwnWork(t *testing.T) {
 //
 // conformance: observability-vl-savings
 func TestRequestFlightFollowersCountTheLeadersWork(t *testing.T) {
-	release := make(chan struct{})
-	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/streams" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		calls.Add(1)
-		<-release
-		_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\"}","hits":1}]}`))
-	}))
-	defer srv.Close()
-	// No response cache: identical requests still share one run (error_flights.go).
-	p, err := New(Config{BackendURL: srv.URL, Cache: cache.NewDisabled(), LogLevel: "error"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
-	const n = 3
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if rec := doCompatProxyRequest(p, seriesTarget("api"), nil); rec.Code != http.StatusOK {
-				t.Errorf("status %d", rec.Code)
+	repeatUntilShared(t, func(t *testing.T) float64 {
+		release := make(chan struct{})
+		var calls atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/select/logsql/streams" {
+				w.WriteHeader(http.StatusOK)
+				return
 			}
-		}()
-	}
-	for calls.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
-	time.Sleep(50 * time.Millisecond)
-	close(release)
-	wg.Wait()
-	body := metricsBody(p)
-	flight := map[string]string{"layer": "request_flight", "tier": "in_flight"}
-	followers := metricSum(t, body, "loki_vl_proxy_vl_reuse_total", flight)
-	if followers < 1 || metricSum(t, body, "loki_vl_proxy_vl_avoided_calls_total", flight) != followers ||
-		metricSum(t, body, "loki_vl_proxy_served_vl_calls_total", nil)+followers != n ||
-		metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "shared"}) != followers {
-		t.Fatalf("followers %v, VictoriaLogs calls %d\n%s", followers, calls.Load(), body)
-	}
+			calls.Add(1)
+			<-release
+			_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\"}","hits":1}]}`))
+		}))
+		t.Cleanup(srv.Close)
+		// No response cache: identical requests still share one run (error_flights.go).
+		p, err := New(Config{BackendURL: srv.URL, Cache: cache.NewDisabled(), LogLevel: "error"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+		const n = 3
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rec := doCompatProxyRequest(p, seriesTarget("api"), nil); rec.Code != http.StatusOK {
+					t.Errorf("status %d", rec.Code)
+				}
+			}()
+		}
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(50 * time.Millisecond)
+		close(release)
+		wg.Wait()
+		body := metricsBody(p)
+		flight := map[string]string{"layer": "request_flight", "tier": "in_flight"}
+		followers := metricSum(t, body, "loki_vl_proxy_vl_reuse_total", flight)
+		if metricSum(t, body, "loki_vl_proxy_vl_avoided_calls_total", flight) != followers ||
+			metricSum(t, body, "loki_vl_proxy_served_vl_calls_total", nil)+followers != n ||
+			metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "shared"}) != followers {
+			t.Fatalf("followers %v, VictoriaLogs calls %d\n%s", followers, calls.Load(), body)
+		}
+		return followers
+	})
 }
 
 // Stored stats buckets an answer reads instead of asking VictoriaLogs count as reuse of unknown cost, one per

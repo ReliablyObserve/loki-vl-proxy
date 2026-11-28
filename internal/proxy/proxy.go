@@ -1833,7 +1833,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
 	if _, _, on := cfg.Cache.Tiers(); on || cfg.CompatCache != nil {
-		p.buildCosts = newBuildCostLedger()
+		p.buildCosts = newBuildCostLedger(cfg.Cache.MaxEntries() + cfg.CompatCache.MaxEntries())
 	}
 	p.coalescer.OnShare = p.coalescedCallShared
 	if p.drilldownCoalescer != nil {

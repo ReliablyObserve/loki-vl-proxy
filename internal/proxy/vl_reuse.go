@@ -94,13 +94,14 @@ func (rt *requestTelemetry) buildWork() metrics.VLWork {
 	return w
 }
 
-// buildCostLedger holds the build work of cached answers by key, in a fixed table: a slot keeps the full 64-bit
-// hash of its key and is overwritten by a later key of the same slot, whose earlier answer then reads as unknown.
-// It never grows, and a lookup allocates nothing.
+// buildCostLedger holds the build work of cached answers by key, in a fixed table allocated on the first store:
+// a slot keeps the full 64-bit hash of its key and is overwritten by a later key of the same slot, whose earlier
+// answer then reads as unknown. It never grows, and a lookup allocates nothing.
 type buildCostLedger struct {
 	seed  maphash.Seed
-	mask  uint64
-	slots []buildCostSlot
+	size  int
+	once  sync.Once
+	slots atomic.Pointer[[]buildCostSlot] // nil until the first store
 	locks [64]sync.Mutex
 }
 
@@ -109,12 +110,20 @@ type buildCostSlot struct {
 	work metrics.VLWork
 }
 
-// buildCostSlots is the ledger's size: 32768 slots of 40 bytes (1.25 MiB), over three times the default
-// -cache-max entries.
-const buildCostSlots = 1 << 15
+// The ledger's size: four slots per memory-tier entry the caches may hold (-cache-max and the response cache's
+// bound), a power of two between 4096 and 262144 slots of 40 bytes (160 KiB to 10 MiB; 2.5 MiB with the default
+// -cache-max 10000).
+const (
+	buildCostMinSlots = 1 << 12
+	buildCostMaxSlots = 1 << 18
+)
 
-func newBuildCostLedger() *buildCostLedger {
-	return &buildCostLedger{seed: maphash.MakeSeed(), mask: buildCostSlots - 1, slots: make([]buildCostSlot, buildCostSlots)}
+func newBuildCostLedger(entries int) *buildCostLedger {
+	size := buildCostMinSlots
+	for size < 4*entries && size < buildCostMaxSlots {
+		size <<= 1
+	}
+	return &buildCostLedger{seed: maphash.MakeSeed(), size: size}
 }
 
 func (l *buildCostLedger) slot(key string) (uint64, uint64) {
@@ -122,17 +131,22 @@ func (l *buildCostLedger) slot(key string) (uint64, uint64) {
 	if h == 0 {
 		h = 1 // 0 marks an empty slot
 	}
-	return h, h & l.mask
+	return h, h & uint64(l.size-1)
 }
 
 func (l *buildCostLedger) put(key string, w metrics.VLWork) {
 	if l == nil || key == "" {
 		return
 	}
+	l.once.Do(func() {
+		slots := make([]buildCostSlot, l.size)
+		l.slots.Store(&slots)
+	})
+	slots := *l.slots.Load()
 	h, i := l.slot(key)
 	mu := &l.locks[i%uint64(len(l.locks))]
 	mu.Lock()
-	l.slots[i] = buildCostSlot{hash: h, work: w}
+	slots[i] = buildCostSlot{hash: h, work: w}
 	mu.Unlock()
 }
 
@@ -140,10 +154,14 @@ func (l *buildCostLedger) get(key string) (metrics.VLWork, bool) {
 	if l == nil || key == "" {
 		return metrics.VLWork{}, false
 	}
+	slots := l.slots.Load()
+	if slots == nil {
+		return metrics.VLWork{}, false
+	}
 	h, i := l.slot(key)
 	mu := &l.locks[i%uint64(len(l.locks))]
 	mu.Lock()
-	s := l.slots[i]
+	s := (*slots)[i]
 	mu.Unlock()
 	if s.hash != h {
 		return metrics.VLWork{}, false

@@ -32,8 +32,8 @@ proxy: |
   it is unknown for an answer read from disk after a restart, read from a
   peer, stats buckets and burst reads, which add no work. A replica serving a
   peer read counts nothing, so a fleet counts each answer's work once.
-  The request line carries flow.served, flow.reuse.recorded,
-  flow.reuse.unknown and flow.vl.rows.
+  The request line carries flow.served, and flow.vl.rows and
+  flow.reuse.recorded/flow.reuse.unknown when the request had them.
 
 implementation:
   - internal/proxy/vl_reuse.go
@@ -82,8 +82,10 @@ decisions:
       flights, held failures, shared VictoriaLogs calls (with recorded cost),
       stats buckets and burst reads (unknown cost). Other caches (label,
       detected, volume, patterns, inventory, probes) show in the served class
-      (cache) but not as reuse yet. The ledger holds 32768 keys (1.25 MiB);
-      an older key whose slot a newer one took reads as unknown.
+      (cache) but not as reuse yet. The ledger holds four slots per memory-tier
+      entry (-cache-max plus the response cache's bound, 4096 to 262144 slots,
+      2.5 MiB at the default), allocated on the first store; an older key
+      whose slot a newer one took reads as unknown.
     performance:
       tracked: ['BenchmarkRequestPath', 'BenchmarkRequestLogger', 'BenchmarkProxy_Series_CompatCacheHit', 'BenchmarkProxy_QueryRange_CacheHit', 'BenchmarkCacheReadWrapper', 'BenchmarkCoalescerCall', 'BenchmarkRecordServedAndReuse']
       bound: 'no added allocation on the request path, the cache hit or a shared call; the request telemetry keeps its 760 bytes; the request line buffer is 88 values (1408 B, one size class over 80); a reuse adds one ledger read (a hash of the key and a striped lock); recording a served request and a reuse costs about 50 ns and 0 allocations'
