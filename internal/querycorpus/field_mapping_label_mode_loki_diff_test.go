@@ -645,7 +645,10 @@ const (
 	// k8s_pod_name is renamed beside it; a Loki storing both names holds pod alone on such a stream.
 	fmKnownBothNative = "both mode: a stream storing the alias itself gains the -label-style name"
 	// fmKnownBothBaseGrouping: in the both mode a grouping by the -label-style name fills the field from the parsed
-	// alias key (pod) where the stream lacks the field, not from the parsed k8s_pod_name key.
+	// alias key (pod) where the stream lacks the field, not from the parsed k8s_pod_name key. These rows (and the alias
+	// mode's sum by (k8s_pod_name)) also hold a defect main has without a parser: a query_range at step = range
+	// answers a grouping by the -label-style name under the answer name (pod), the other request kinds under
+	// k8s_pod_name.
 	fmKnownBothBaseGrouping = "both mode: a grouping by the -label-style name reads the parsed alias where the stream lacks the field"
 )
 
