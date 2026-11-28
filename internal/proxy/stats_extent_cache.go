@@ -287,6 +287,11 @@ func (p *Proxy) statsExtentMiss(ctx context.Context, req *statsExtentRequest, la
 // last waiter leaves. The answer comes back read whole, as every caller of these reads takes it.
 func (p *Proxy) statsExtentPostShared(ctx context.Context, params url.Values) (*http.Response, error) {
 	key := "stats_extent:" + params.Encode() + ":scope:" + p.contextScopeFingerprint(ctx)
+	if statsReadChunks(ctx) {
+		// A read whose caller reads in chunks on an overflow ends at the bound (levelWitnessResponse): it is
+		// never shared with a caller that is sent the full chain again instead.
+		key += ":chunks"
+	}
 	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, func() bool { return true }, func(callCtx context.Context) (*http.Response, error) {
 		return p.vlPostHTTP(callCtx, statsQueryRangePath, params)
 	})

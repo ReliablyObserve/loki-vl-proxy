@@ -2431,6 +2431,7 @@
     ],
     "semantics/series-level-aggregation-bounded-memory": [
       "internal/proxy/matrix_fold_sink_test.go",
+      "internal/proxy/metric_series_entry_test.go",
       "internal/proxy/stream_window_chunks_test.go",
       "test/e2e-compat/series_level_aggregation_fine_step_test.go"
     ],
@@ -4743,6 +4744,9 @@
     "internal/proxy/metric_sample_limit_test.go": [
       "limits/every-cap-is-a-flag",
       "limits/metric-sample-cap-is-a-flag-and-memory-bound"
+    ],
+    "internal/proxy/metric_series_entry_test.go": [
+      "semantics/series-level-aggregation-bounded-memory"
     ],
     "internal/proxy/multitenant_subrequest_scope_test.go": [
       "tenant-numeric-routing"
@@ -7544,7 +7548,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 909,
+  "tests_with_markers": 910,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

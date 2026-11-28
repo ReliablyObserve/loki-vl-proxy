@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- A `count`, `min`, `max` or `avg` over a range function longer than its step, read as one series per stream (for example `sum by (service_name) (max by (service_name, app) (count_over_time({env="production"}[5m])))` over 24h at 20s), no longer reads its whole range a second time when that read passes the 64 MiB stats body bound. The detected_level witness check took the overflow for a stale level mask and sent the whole range again with the full level chain, read whole (123 MB on the bench seed) before it was thrown away too; such a read now ends with the overflow, and its steps are read in time chunks as before. The witness label is also taken out of an answer in one pass instead of three copies of the body. Such a read holds one series per stream (about 320,000 a day on the bench seed), and the labels of each are now built from the stream's labels parsed once, without the three copies and the second series key they cost: about 26% less time, 29% fewer bytes and 15 allocations instead of 23 per series (`BenchmarkBuildMetricSeriesEntry`), the same labels and keys.
+
 ## [2.383.0] - 2026-11-28
 
 ### Performance

@@ -2244,6 +2244,7 @@
     "internal/proxy/metric_sample_limit_bench_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
     "internal/proxy/metric_sample_limit_test.go | limits/every-cap-is-a-flag",
     "internal/proxy/metric_sample_limit_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
+    "internal/proxy/metric_series_entry_test.go | semantics/series-level-aggregation-bounded-memory",
     "internal/proxy/multitenant_subrequest_scope_test.go | tenant-numeric-routing",
     "internal/proxy/multitenant_tenant_failure_test.go | semantics/vl-refusal-is-plan-defect",
     "internal/proxy/multitenant_tenant_label_test.go | semantics/tenant-label-default-aliases",
@@ -3854,7 +3855,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 906,
+      "go": 907,
       "playwright": 3
     },
     "page_kinds": {
