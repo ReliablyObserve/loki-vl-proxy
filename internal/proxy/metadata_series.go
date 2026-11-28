@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -148,49 +149,51 @@ const metadataSeriesDiscoveryAlign = time.Hour
 
 // metadataSeriesParams returns params with the read's query rebuilt for Loki's series identity
 // (-structured-metadata-series-identity), or params as they are: the flag is off, the request is not a metric
-// request, the read is not a stats read of a series per stream, or its window holds no structured metadata. A read
-// whose fields cannot be listed is sent as it is and counted.
-func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params url.Values) url.Values {
+// request, the read is not a stats read of a series per stream, or its window holds no structured metadata. A read of
+// a series per stream that cannot take the identity (its text does not parse, it has no window, its fields cannot be
+// listed) answers errMetadataSeriesUnrebuilt: sent as it is it would answer a series per stream, not Loki's, and the
+// request's answer would be kept under the flag's response key.
+func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params url.Values) (url.Values, error) {
 	memo := metadataSeriesOf(ctx)
 	if memo == nil {
-		return params
+		return params, nil
 	}
 	switch path {
 	case "/select/logsql/stats_query_range", "/select/logsql/stats_query", "/select/logsql/query":
 	default:
-		return params
+		return params, nil
 	}
 	text := params.Get("query")
 	if text == "" {
-		return params
+		return params, nil
 	}
 	started := time.Now()
 	read, ok, err := logsql.ReadSeriesIdentity(text)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "unread", time.Since(started))
-		return params
+		return nil, fmt.Errorf("%w: %w", errMetadataSeriesUnrebuilt, err)
 	}
 	if !ok {
-		return params
+		return params, nil
 	}
 	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
 	to, okTo := parseFlexibleUnixNanos(params.Get("end"))
 	if !okFrom || !okTo || to < from {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_window", time.Since(started))
-		return params
+		return nil, fmt.Errorf("%w: %w", errMetadataSeriesUnrebuilt, errMetadataSeriesNoWindow)
 	}
 	spec, ok, err := p.seriesMetadataFor(ctx, memo, read, from, to)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "listing_failed", time.Since(started))
-		return params
+		return nil, fmt.Errorf("%w: %w", errMetadataSeriesUnrebuilt, err)
 	}
 	if !ok {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_metadata", time.Since(started))
-		return params
+		return params, nil
 	}
 	rebuilt, changed := read.With(spec)
 	if !changed {
-		return params
+		return params, nil
 	}
 	// The slicer finds the read it rebuilt by its text (slicedSeriesMetadataRead), with what it counts its rows by.
 	memo.noteRebuilt(rebuilt, read)
@@ -200,7 +203,7 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 	}
 	out["query"] = []string{rebuilt}
 	p.observeInternalOperation(ctx, "metadata_series_identity", "rebuilt", time.Since(started))
-	return out
+	return out, nil
 }
 
 // seriesMetadataFor is the series identity of the rows q's filters read in [from, to], widened to whole hours: the
@@ -306,7 +309,8 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 		return nil, false, nil
 	}
 	read, ok := metadataSeriesOf(ctx).rebuiltRead(params.Get("query"))
-	if !ok {
+	if !ok || !read.Groups() {
+		// A read of rows holds no group per series: -manual-range-metric-row-limit bounds it as without the flag.
 		return nil, false, nil
 	}
 	started := time.Now()
@@ -737,5 +741,12 @@ func (c *seriesSpecCache) add(scope string, e metadataSeriesEntry, expires time.
 	c.entries[key] = append(kept, seriesSpecEntry{metadataSeriesEntry: e, expires: expires})
 }
 
+// metadataSeriesKeyPart keeps the response keys of answers read with the identity apart (responseProfileCacheKey).
+const metadataSeriesKeyPart = "/sm-series2"
+
 // errMetadataSeriesNoWindow is a read whose start and end do not make a window.
 var errMetadataSeriesNoWindow = errors.New("metadata series read without a window")
+
+// errMetadataSeriesUnrebuilt is a read of a series per stream that could not take Loki's structured-metadata series
+// identity: the request fails rather than answer, and keep, a series per stream.
+var errMetadataSeriesUnrebuilt = errors.New("structured-metadata series identity unavailable for a read")

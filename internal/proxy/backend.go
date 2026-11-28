@@ -430,7 +430,11 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 			return p.vlGetInner(c, path, ps)
 		})
 	}
-	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, p.metadataSeriesParams(ctx, path, params)))))
+	params, err := p.metadataSeriesParams(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
+	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
 	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
@@ -547,7 +551,10 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		params, stripUnwrapCounter, _ = unwrapCheckFrom(ctx).countingStatsQuery(path, params)
 		params, stripJSONMarks, _ = jsonErrorCheckFrom(ctx).jsonCountingStatsQuery(ctx, path, params)
 		// Loki's structured-metadata series (metadata_series.go), ahead of the extent cache, which keys the rebuilt query.
-		params = p.metadataSeriesParams(ctx, path, params)
+		var err error
+		if params, err = p.metadataSeriesParams(ctx, path, params); err != nil {
+			return nil, err
+		}
 	}
 	if resp, ok, err := p.slicedSeriesMetadataRead(ctx, path, params); ok {
 		// A rebuilt read over more rows than VictoriaLogs should group at once, read in slices (metadata_series.go).

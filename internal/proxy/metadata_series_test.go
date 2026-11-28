@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +21,8 @@ type smFakeVL struct {
 	listings int
 	queries  []string
 	noMeta   bool
+	// failFields answers field_names with an error, failStats every stats read but the row count.
+	failFields, failStats bool
 }
 
 func (f *smFakeVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +33,10 @@ func (f *smFakeVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/select/logsql/field_names":
 		if r.Form.Get("query") == `app:="a"` {
 			f.listings++
+		}
+		if f.failFields {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		if f.noMeta {
 			_, _ = w.Write([]byte(`{"values":[{"value":"_msg","hits":2},{"value":"_time","hits":2},{"value":"app","hits":2}]}`))
@@ -45,6 +52,10 @@ func (f *smFakeVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.queries = append(f.queries, r.Form.Get("query"))
+	if f.failStats && r.URL.Path == "/select/logsql/stats_query_range" && !strings.HasSuffix(r.Form.Get("query"), "count() as rows") {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 }
 
@@ -77,7 +88,7 @@ func TestMetadataSeriesParams(t *testing.T) {
 	off := smTestProxy(t, srv.URL, false)
 	ctx := off.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`)
 	params := smStatsParams(perStream)
-	if got := off.metadataSeriesParams(ctx, "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
+	if got := smParams(t, off, ctx, "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("flag off: %s", got.Get("query"))
 	}
 	if metadataSeriesOf(ctx) != nil || off.statsReadSeriesLimit(ctx) != off.resolvedMaxStatsQuerySeries(ctx) {
@@ -89,7 +100,7 @@ func TestMetadataSeriesParams(t *testing.T) {
 	if on.withMetadataSeries(ctx, `count by (app) (count_over_time({a="b"}[5m]))`) != ctx {
 		t.Fatal("marked twice")
 	}
-	got := on.metadataSeriesParams(ctx, "/select/logsql/stats_query_range", params).Get("query")
+	got := smParams(t, on, ctx, "/select/logsql/stats_query_range", params).Get("query")
 	want := `app:="a" | format if (service_name:*) "<service.name>" as service_name_extracted | format if (service_name:"") "<service.name>" as service_name | set_stream_fields app, service_name, service_name_extracted, trace_id | stats by (_stream, level) count()`
 	if got != want {
 		t.Fatalf("flag on:\n got %s\nwant %s", got, want)
@@ -98,7 +109,7 @@ func TestMetadataSeriesParams(t *testing.T) {
 	// A chunk of the request's window reads the identity the request listed.
 	chunk := smStatsParams(perStream)
 	chunk.Set("start", "1700001800000000000")
-	if again := on.metadataSeriesParams(ctx, "/select/logsql/stats_query", chunk).Get("query"); again != want || vl.listings != listed || listed == 0 {
+	if again := smParams(t, on, ctx, "/select/logsql/stats_query", chunk).Get("query"); again != want || vl.listings != listed || listed == 0 {
 		t.Fatalf("chunk: %d listings, %s", vl.listings, again)
 	}
 	for _, c := range []struct {
@@ -107,16 +118,24 @@ func TestMetadataSeriesParams(t *testing.T) {
 	}{
 		{"/select/logsql/stats_query_range", smStatsParams(byLabel)},
 		{"/select/logsql/hits", smStatsParams(perStream)},
-		{"/select/logsql/stats_query_range", url.Values{"query": {perStream}}},
-		{"/select/logsql/stats_query_range", smStatsParams(`app:="a" | stats by (_stream) count( `)},
 		{"/select/logsql/stats_query_range", smStatsParams(want)},
 	} {
-		if got := on.metadataSeriesParams(ctx, c.path, c.p); got.Get("query") != c.p.Get("query") {
+		if got := smParams(t, on, ctx, c.path, c.p); got.Get("query") != c.p.Get("query") {
 			t.Errorf("%s %v: rebuilt to %s", c.path, c.p, got.Get("query"))
 		}
 	}
+	// A read of a series per stream that cannot take the identity fails: sent as it is, it would answer a series per
+	// stream under the flag's response key.
+	for _, c := range []url.Values{
+		{"query": {perStream}},
+		smStatsParams(`app:="a" | stats by (_stream) count( `),
+	} {
+		if got, err := on.metadataSeriesParams(ctx, "/select/logsql/stats_query_range", c); !errors.Is(err, errMetadataSeriesUnrebuilt) {
+			t.Errorf("%v: %v %v", c, got, err)
+		}
+	}
 	// A request that is not marked (no metric request) is sent as it is.
-	if got := on.metadataSeriesParams(context.Background(), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
+	if got := smParams(t, on, context.Background(), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("unmarked: %s", got.Get("query"))
 	}
 	// A window without structured metadata keeps the stream's identity.
@@ -124,14 +143,84 @@ func TestMetadataSeriesParams(t *testing.T) {
 	plainSrv := httptest.NewServer(plain)
 	defer plainSrv.Close()
 	p2 := smTestProxy(t, plainSrv.URL, true)
-	if got := p2.metadataSeriesParams(p2.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
+	if got := smParams(t, p2, p2.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
 		t.Fatalf("no metadata: %s", got.Get("query"))
 	}
-	// A listing that fails sends the read as it is.
+	// A listing that fails fails the read.
 	down := smTestProxy(t, "http://127.0.0.1:1", true)
-	if got := down.metadataSeriesParams(down.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); got.Get("query") != perStream {
-		t.Fatalf("listing failed: %s", got.Get("query"))
+	if got, err := down.metadataSeriesParams(down.withMetadataSeries(context.Background(), `count by (app) (count_over_time({a="b"}[5m]))`), "/select/logsql/stats_query_range", params); !errors.Is(err, errMetadataSeriesUnrebuilt) {
+		t.Fatalf("listing failed: %v %v", got, err)
 	}
+}
+
+// A request whose read cannot take the identity because its fields cannot be listed fails, and its failure is not
+// kept: the next request reads Loki's series.
+func TestMetadataSeriesListingFailureIsNotAnswered(t *testing.T) {
+	vl := &smFakeVL{failFields: true}
+	srv := httptest.NewServer(vl)
+	defer srv.Close()
+	on := smTestProxy(t, srv.URL, true)
+	target := "/loki/api/v1/query_range?" + url.Values{"query": {`count by (app) (count_over_time({app="a"}[5m]))`}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}}.Encode()
+	if got := doCompatProxyRequest(on, target, map[string]string{"X-Scope-OrgID": "0"}); got.Code == http.StatusOK {
+		t.Fatalf("listing failed, answered %d %s", got.Code, got.Body.String())
+	}
+	vl.mu.Lock()
+	for _, q := range vl.queries {
+		if !strings.Contains(q, "set_stream_fields") && strings.Contains(q, "_stream") {
+			t.Errorf("read sent without the identity: %s", q)
+		}
+	}
+	vl.failFields, vl.queries = false, nil
+	vl.mu.Unlock()
+	if got := doCompatProxyRequest(on, target, map[string]string{"X-Scope-OrgID": "0"}); got.Code != http.StatusOK {
+		t.Fatalf("after recovery: %d %s", got.Code, got.Body.String())
+	}
+	vl.mu.Lock()
+	defer vl.mu.Unlock()
+	rebuilt := 0
+	for _, q := range vl.queries {
+		if strings.Contains(q, "set_stream_fields") {
+			rebuilt++
+		}
+	}
+	if rebuilt == 0 {
+		t.Fatalf("after recovery no read carried the identity: %q", vl.queries)
+	}
+}
+
+// A request whose stats reads fail and whose answer the proxy then evaluates from rows reads the rows with Loki's
+// series identity: the evaluator of rows names a series by each row's _stream.
+func TestMetadataSeriesRowReadsTakeTheIdentity(t *testing.T) {
+	vl := &smFakeVL{failStats: true}
+	srv := httptest.NewServer(vl)
+	defer srv.Close()
+	on := smTestProxy(t, srv.URL, true)
+	target := "/loki/api/v1/query_range?" + url.Values{"query": {`count by (app) (count_over_time({app="a"}[5m]))`}, "start": {"1700000000"}, "end": {"1700003600"}, "step": {"60"}}.Encode()
+	_ = doCompatProxyRequest(on, target, map[string]string{"X-Scope-OrgID": "0"})
+	vl.mu.Lock()
+	defer vl.mu.Unlock()
+	rows := 0
+	for _, q := range vl.queries {
+		if strings.Contains(q, "| stats ") {
+			continue
+		}
+		rows++
+		if !strings.Contains(q, "set_stream_fields") {
+			t.Errorf("read of rows without the identity: %s", q)
+		}
+	}
+	if rows == 0 {
+		t.Fatalf("no read of rows: %q", vl.queries)
+	}
+}
+
+func smParams(t *testing.T, p *Proxy, ctx context.Context, path string, params url.Values) url.Values {
+	t.Helper()
+	got, err := p.metadataSeriesParams(ctx, path, params)
+	if err != nil {
+		t.Fatalf("%s %v: %v", path, params, err)
+	}
+	return got
 }
 
 // The response keys of query and query_range keep their bytes with the flag off and are kept apart with it on;
@@ -144,7 +233,7 @@ func TestMetadataSeriesKeysAndReadLimit(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=count_over_time(%7Ba%3D%22b%22%7D%5B5m%5D)", nil)
 	for _, endpoint := range []string{"query", "query_range"} {
 		k0, k1 := off.responseProfileCacheKey(r, endpoint), on.responseProfileCacheKey(r, endpoint)
-		if strings.Contains(k0, "/sm-series") || k1 != k0+"/sm-series" {
+		if strings.Contains(k0, "/sm-series") || k1 != k0+"/sm-series2" {
 			t.Errorf("%s: off %q on %q", endpoint, k0, k1)
 		}
 	}

@@ -76,6 +76,8 @@ func TestWithSeriesMetadata(t *testing.T) {
 			`app:="a" | unpack_json from _msg result_prefix "__j_" | delete __j_* | set_stream_fields app, trace_id | unpack_json | stats by (_stream) count()`},
 		{`app:="a" | delete trace_id | stats by (_stream) count()`,
 			`app:="a" | set_stream_fields app | delete trace_id | stats by (_stream) count()`},
+		{`app:="a" | format "<service.name>" as service_name keep_original_fields | fields _time, _stream, _msg | limit 1000001`,
+			`app:="a" | format "<service.name>" as service_name keep_original_fields | set_stream_fields app, trace_id | fields _time, _stream, _msg | limit 1000001`},
 		{`app:="a" | stats by (_stream) count() | delete trace_id`,
 			`app:="a" | set_stream_fields app, trace_id | stats by (_stream) count() | delete trace_id`},
 	}
@@ -109,10 +111,15 @@ func TestReadsStreamIdentity(t *testing.T) {
 		`app:="a" | stats by (_stream, level, detected_level) count() as __lvp_inner | stats by (app) count()`:                true,
 		`app:="a" | set_stream_fields __lvp_p_*, level, _stream | rename _stream as __lvp_sid | stats by (__lvp_sid) count()`: true,
 		`app:="a" | copy _stream as __s | stats by (__s) count()`:                                                             true,
-		`app:="a" | stats by (app) count()`:      false,
-		`app:="a" | stats count()`:               false,
-		`app:="a"`:                               false,
-		`app:="a" | fields _time, _stream, _msg`: false,
+		`app:="a" | stats by (app) count()`: false,
+		`app:="a" | stats count()`:          false,
+		// A read of rows keeps each row's _stream, by which the proxy's evaluator of rows names a series.
+		`app:="a"`:                                                              true,
+		`app:="a" | fields _time, _stream, _msg`:                                true,
+		`app:="a" | fields _time, _msg`:                                         false,
+		`app:="a" | delete _stream`:                                             false,
+		`app:="a" | uniq by (_stream)`:                                          false,
+		`app:="a" | top 3 by (_stream)`:                                         false,
 		`app:="a" | stats by (app) count() | stats by (_stream) count()`:        true,
 		`app:="a" | stats by (app) count() | rename _stream as x | sort by (x)`: false,
 	} {

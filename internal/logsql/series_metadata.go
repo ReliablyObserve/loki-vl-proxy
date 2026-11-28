@@ -122,8 +122,12 @@ func (s *SeriesMetadata) remember(name, f string) {
 
 // ReadsStreamIdentity reports a query whose stats read a series per stream: a stats pipe groups by _stream, or a pipe
 // before the last stats pipe reads the _stream field into a series identity (set_stream_fields over _stream, a rename
-// or copy of it). A log query, a query that groups by labels alone and a query without stats do not.
+// or copy of it). A read of rows that keeps each row's _stream (ReadsStreamRows) does too: the proxy's evaluator of
+// rows names a series by it. A query that groups by labels alone does not.
 func ReadsStreamIdentity(q Query) bool {
+	if ReadsStreamRows(q) {
+		return true
+	}
 	last := -1
 	for i, p := range q.Pipes {
 		if _, ok := p.(PipeStats); ok {
@@ -151,6 +155,27 @@ func ReadsStreamIdentity(q Query) bool {
 		}
 	}
 	return false
+}
+
+// ReadsStreamRows reports a read of rows, one per stored row, that keeps each row's _stream: no pipe folds or joins rows
+// (stats, top, uniq, a listing, a join), and no fields or delete pipe drops _stream.
+func ReadsStreamRows(q Query) bool {
+	for _, p := range q.Pipes {
+		switch p := p.(type) {
+		case PipeStats, PipeTop, PipeUniq, PipeFieldNames, PipeFieldValues, PipeFacets, PipeQueryStats, PipeRunningStats,
+			PipeTotalStats, PipeJoin, PipeUnion, PipeStreamContext, PipeGenerateSequence:
+			return false
+		case PipeFields:
+			if !slices.Contains(p.Labels, "_stream") {
+				return false
+			}
+		case PipeDelete:
+			if slices.Contains(p.Labels, "_stream") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // WithSeriesMetadata is q with the series identity s written into each row's _stream, ahead of the query's own
@@ -281,6 +306,9 @@ func (r SeriesIdentityRead) Filter() string { return Query{Filter: r.q.Filter}.S
 func (r SeriesIdentityRead) RowCount() string {
 	return Query{Filter: r.q.Filter, Pipes: []Pipe{PipeStats{Funcs: []StatsFuncAlias{{Func: Count{}, Alias: "rows"}}}}}.String()
 }
+
+// Groups reports a read whose rows VictoriaLogs groups (a stats pipe), not a read of rows (ReadsStreamRows).
+func (r SeriesIdentityRead) Groups() bool { return !ReadsStreamRows(r.q) }
 
 // With is the read's text with s written into it (WithSeriesMetadata), and false when s changes nothing.
 func (r SeriesIdentityRead) With(s SeriesMetadata) (string, bool) {

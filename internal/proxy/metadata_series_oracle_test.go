@@ -157,6 +157,13 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 			set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: id, Form: form.Encode()})
 		}
 	}
+	// A 7 s step over 3 h: a bucket grid of 1 s (the gcd of step and range), past 11,000 buckets with the range.
+	for qi, q := range smOracleQueries[:4] {
+		form := url.Values{"query": {q}, "start": {fmt.Sprint((smOracleEnd - 3*3600) / 7 * 7)}, "end": {fmt.Sprint((smOracleEnd - 600) / 7 * 7)}, "step": {"7"}}
+		id := fmt.Sprintf("w%d", qi)
+		requests = append(requests, request{id: id, target: "/loki/api/v1/query_range?" + form.Encode(), query: q})
+		set.Requests = append(set.Requests, oraclerun.EngineRequest{ID: id, Form: form.Encode()})
+	}
 	// The same rows under a series limit: a query whose Loki series pass it answers Loki's limit error, one whose
 	// series fit answers as without the limit.
 	limited := oraclerun.EngineDataSet{Streams: set.Streams, MaxSeries: smOracleSeriesLimit}
@@ -199,6 +206,11 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		// Every rebuilt read over 30 rows is read in slices of its buckets (slicedSeriesMetadataRead).
 		sliced := smOracleProxyWith(t, fs.URL, Config{StructuredMetadataSeriesIdentity: true, MetadataSeriesMaxReadRows: 30})
 		slicedSame, slicedRefused := 0, 0
+		// Every stats read fails behind rowsFront, so the proxy evaluates each answer it can from rows.
+		rowsFront := &smFront{version: v.version, upstream: srv.URL, failStats: true}
+		rowsSrv := httptest.NewServer(rowsFront)
+		fromRows := smOracleProxy(t, rowsSrv.URL, true)
+		rowsSame, rowsFailed := 0, 0
 		matched, offDiffers, series := 0, 0, 0
 		for _, r := range requests {
 			want := loki[r.id]
@@ -234,6 +246,13 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 			} else {
 				slicedSame++
 			}
+			if part := doCompatProxyRequest(fromRows, r.target, map[string]string{"X-Scope-OrgID": "0"}); part.Code != http.StatusOK {
+				rowsFailed++
+			} else if diff := compare(wantResult, smResult(t, part.Body.Bytes())); diff != "" {
+				t.Errorf("%s %s from rows:\n%s", v.version, r.target, diff)
+			} else {
+				rowsSame++
+			}
 			series += len(wantResult)
 			if base := doCompatProxyRequest(off, r.target, map[string]string{"X-Scope-OrgID": "0"}); compare(wantResult, smResult(t, base.Body.Bytes())) != "" {
 				offDiffers++
@@ -266,6 +285,13 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		front.mu.Lock()
 		folded := front.folded
 		front.mu.Unlock()
+		rowsFront.mu.Lock()
+		rowReads := rowsFront.rows
+		rowsFront.mu.Unlock()
+		// Every answer evaluated from rows is Loki's; each read of rows carried the identity.
+		if rowReads == 0 || rowsSame == 0 {
+			t.Errorf("%s: %d reads of rows carried the identity, %d answers from rows", v.version, rowReads, rowsSame)
+		}
 		if folded == 0 {
 			t.Errorf("%s: no read folded the stream identity's series", v.version)
 		}
@@ -282,10 +308,12 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		if slicedSame == 0 || slicedSame+slicedRefused != len(requests) {
 			t.Errorf("%s: %d of %d sliced answers equal Loki's, %d refused", v.version, slicedSame, len(requests), slicedRefused)
 		}
+		t.Logf("VictoriaLogs %s: with every stats read failing, %d answers from rows equal Loki's (%d reads of rows), %d failed", v.version, rowsSame, rowReads, rowsFailed)
 		if offDiffers == 0 {
 			t.Errorf("%s: no answer differs without the flag: the data set does not reach the identity", v.version)
 		}
 		fs.Close()
+		rowsSrv.Close()
 		srv.Stop()
 	}
 }
@@ -353,7 +381,9 @@ type smFront struct {
 	version, upstream string
 	mu                sync.Mutex
 	withIdentity      int
-	folded            int // reads of the stream identity's series fold (series_fold_stream.go)
+	folded            int  // reads of the stream identity's series fold (series_fold_stream.go)
+	rows              int  // reads of rows (the proxy's evaluator of rows)
+	failStats         bool // answers every stats_query_range read but the row count with an error
 }
 
 func (f *smFront) rebuilt() int {
@@ -381,9 +411,17 @@ func (f *smFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if form, err := url.ParseQuery(string(body)); err == nil && form.Get("query") != "" {
 		query = form.Get("query")
 	}
+	if f.failStats && r.URL.Path == statsQueryRangePath && !strings.HasSuffix(query, "count() as rows") {
+		// The stats reads fail, so the proxy evaluates the answer from rows.
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	if strings.Contains(query, "| set_stream_fields ") && !strings.Contains(query, "_stream |") {
 		f.mu.Lock()
 		f.withIdentity++
+		if r.URL.Path == "/select/logsql/query" && !strings.Contains(query, "| stats ") {
+			f.rows++
+		}
 		if strings.Contains(query, streamSeriesCopy) && strings.Contains(query, "unroll") {
 			f.folded++
 		}

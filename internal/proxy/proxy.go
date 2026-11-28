@@ -3412,9 +3412,11 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 	}
 	// A metric answer read with Loki's structured-metadata series (-structured-metadata-series-identity) is kept apart
 	// from one read without it; every key stays as it was while the flag is off, and for the queries the split cannot
-	// change (metadataSplitChanges), which read as without it.
+	// change (metadataSplitChanges), which read as without it. Version 2: a build before it answered a request whose
+	// answer the evaluator of rows built with a series per stream (reads of rows did not take the identity), so no
+	// answer kept by such a build on disk or on a peer is served.
 	if p.structuredMetadataSeries && query && metadataSplitChanges(r.FormValue("query")) {
-		dst = append(dst, "/sm-series"...)
+		dst = append(dst, metadataSeriesKeyPart...)
 	}
 	return dst
 }
