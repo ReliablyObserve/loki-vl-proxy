@@ -1,5 +1,5 @@
 id: semantics/ungrouped-sum-skips-unpack
-title: A sum with no clause of a count_over_time or a rate over `| unpack` reads no line for the unpack
+title: A sum with no clause or an empty by clause of a count_over_time or a rate over `| unpack` reads no line for the unpack
 pending: true
 proves:
   - parser-unpack
@@ -12,40 +12,51 @@ why: |
   label: it answers the count of the selected lines, also over lines that are
   no JSON object (recorded rule semantics/loki-pipeline-error-rules; the sums
   of TestUnpackSumMatchesLoki over job=bad). An unpack never drops a line, and
-  the drops the query plan allows after it change labels only.
+  the drops and keeps the query plan allows after it change labels only.
+  `sum by () (…)` is the same sum: Loki's empty grouping is one series.
 
   The string translator writes `| unpack_json` there, which makes VictoriaLogs
   parse every selected line. The query plan writes no stage from the unpack on
-  for this shape when the stages after the unpack are drops (lower.SkipsUnpack):
-  a count is `<filters> | stats count()`, a rate keeps the stream's series
-  (`stats by (_stream) count()`, then the division and the sum), as over the
-  unpack. The proxy serves it from the plan under the VectorAgg flip
-  (skipsUnpackConstruct, internal/proxy/query_lowering.go), also where a ranking
-  translates it as its operand.
+  for this shape when the stages after the unpack are drops, and for a count
+  also keeps (lower.SkipsUnpack): a count is `<filters> | stats count()`, a
+  rate keeps the stream's series (`stats by (_stream) count()`, then the
+  division and the sum), as over the unpack. The proxy serves it
+  from the plan under the VectorAgg flip (skipsUnpackConstruct,
+  internal/proxy/query_lowering.go), as the root, as an operand of a binary
+  operation or a label_replace call (lower.SkipsUnpackWrapped, under that
+  construct's flip too), and where a ranking (sort, sort_desc, topk, bottomk)
+  translates it as its operand; an instant ranking hands the stats routes the
+  sum as its operand, so it is answered from VictoriaLogs' stats, not raw rows
+  (unpackSumGrouping reads under the ranking).
 
-  Not rewritten (each delegated or written as before, and tested):
-  a by or without clause, `by ()` included (delegated as before); count, min,
-  max, avg or any other function over the range aggregation; bytes_over_time
-  and bytes_rate (Loki counts the bytes of `_entry`); absent_over_time (written
-  as before, with the presence query it is answered from: that query is a sum of
-  a count, and the proxy marks it so it keeps the unpack, absentPresenceKey,
-  TestAbsentOverTimePresenceKeepsTheUnpack); a keep after the unpack (the handlers group a rate behind it by
-  the kept labels: on 155k streams a stream-grouped rate without the unpack was
-  up to 1.35x slower than the translator's, so it keeps the unpack); an unwrap;
-  a label filter, label_format, line filter,
-  line_format, decolorize or another parser after the unpack; a second parser
-  anywhere; a log query. A sum of the shape under another aggregation, a
-  label_replace or a binary operation keeps the translator's text (the shadows
+  Not rewritten (each delegated or written as before, and tested): a by
+  clause with labels or a without clause, `without ()` included (delegated as
+  before); count, min, max, avg or any other function over the range
+  aggregation; bytes_over_time and bytes_rate (Loki counts the bytes of
+  `_entry`); absent_over_time (written as before, with the presence query it
+  is answered from: that query is a sum of a count, and the proxy marks it so
+  it keeps the unpack, absentPresenceKey,
+  TestAbsentOverTimePresenceKeepsTheUnpack); an unwrap; a label filter,
+  label_format, line filter, line_format, decolorize or another parser after
+  the unpack; a second parser anywhere; a log query; a rate behind a keep
+  (the handlers group it by the kept labels: grouped by the stream with no
+  unpack it was up to 1.35x slower than the translator's text on 155k
+  streams, and as one series, `stats count()` then the division, an instant
+  over a selector with no line answers a point where Loki answers none). A sum of the shape under
+  another aggregation (`max(sum(…))`) keeps the translator's text (the shadows
   hold the plan's text there as this case).
 
   Evidence: TestUnpackSumMatchesLoki (internal/querycorpus) runs the sums,
-  with filters before and drops and keeps after the unpack, offset, lines that
-  are no JSON object, packed lines whose keys are VictoriaLogs' own field
-  names, selectors with no line, and under `* 2`, a division, sort, topk,
-  label_replace and max, as instant and range requests (step equal
-  to, below and above the range) through the proxy's handlers against Loki's
-  engine and VictoriaLogs v1.49.0 and v1.54.0: every run answers Loki's series
-  and values. TestUnpackLowering and FuzzUnpackLowering hold the written text.
+  with filters before and drops and keeps after the unpack, an empty by and
+  without clause, offset, lines that are no JSON object, packed lines whose
+  keys are VictoriaLogs' own field names, selectors with no line, and under
+  `* 2`, `2 *`, a division, a sum with a grouped sum, sort, sort_desc, topk,
+  label_replace (also around a product) and max, as instant and range
+  requests (step equal to, below and above the range) through the proxy's
+  handlers against Loki's engine and VictoriaLogs v1.49.0 and v1.54.0: every
+  run answers Loki's series and values, and every served run sends no
+  unpack_json pipe and no raw-row read. TestUnpackLowering and
+  FuzzUnpackLowering hold the written text.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -63,13 +74,19 @@ compare:
     HTTP 200, one series with no labels, the number of lines per window as
     Loki answers, from one stats_query_range call with no unpack_json pipe.
 corpus:
-  size: 4
+  size: 10
   dimensions:
     shapes:
       - query: 'sum(count_over_time({app="x"} | unpack [5m]))'
       - query: 'sum(rate({app="x"} | unpack | drop a, b [5m]))'
       - query: 'sum(count_over_time({app="x"} |= "k" | unpack | drop a [5m] offset 1h))'
       - query: 'sum by (app) (count_over_time({app="x"} | unpack [5m]))'
+      - query: 'sum by () (count_over_time({app="x"} | unpack [5m]))'
+      - query: 'sum(count_over_time({app="x"} | unpack [5m])) * 2'
+      - query: 'label_replace(sum(rate({app="x"} | unpack | drop a [5m])), "dst", "x", "", "")'
+      - query: 'sort(sum(rate({app="x"} | unpack | keep a [5m])))'
+      - query: 'sum(rate({app="x"} | unpack | keep a [5m]))'
+      - query: 'sum without () (count_over_time({app="x"} | unpack [5m]))'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
