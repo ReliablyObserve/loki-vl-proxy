@@ -27,6 +27,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -1224,8 +1225,10 @@ func unpackMetricResponseKeyVersion(query string, other bool) string {
 // twoParserMetricResponseVersion fences the answers to a metric query naming both `| json` and `| logfmt` cached
 // before the parser probe removed the stage it does not keep from the parsed query
 // (semantics/parser-probe-drop-keeps-range): a range query whose removed stage was the last before its range
-// answered log streams with a 200.
-const twoParserMetricResponseVersion = "@two-parser-metric-v1:"
+// answered log streams with a 200 (v1). A sum with no label over both parsers ran the parser the probe kept, whose
+// unpack pipe let a JSON key named `_time` move the line (points missing where Loki counts them), and now runs no
+// parser (semantics/ungrouped-sum-skips-parsers, v2).
+const twoParserMetricResponseVersion = "@two-parser-metric-v2:"
 
 // twoParserMetricResponseKeyVersion is that fence: a text screen on the words the fence chain already read (jsonWord,
 // logfmtWord), so a query that names both parsers and a rate or an _over_time function is fenced whatever its shape
@@ -1233,6 +1236,22 @@ const twoParserMetricResponseVersion = "@two-parser-metric-v1:"
 func twoParserMetricResponseKeyVersion(jsonWord, logfmtWord bool, query string, other bool) string {
 	if jsonWord && logfmtWord && (containsWord(query, "rate", other) || containsWord(query, "_over_time", other)) {
 		return twoParserMetricResponseVersion
+	}
+	return ""
+}
+
+// skippedParsersResponseVersion fences the answers to a sum that needs no label over bare json and logfmt parsers
+// cached before the plan wrote it with no parser (semantics/ungrouped-sum-skips-parsers): VictoriaLogs' unpack pipe
+// let a key named `_time`, `_msg` or `_stream` replace the line's own field, so the count missed lines Loki counts
+// (recorded on main by TestParserSumMatchesLoki), with one parser as with both.
+const skippedParsersResponseVersion = "@parser-sum-skip-v1:"
+
+// skippedParsersResponseKeyVersion is that fence, read from the query's shared plan (lower.WritesSkippedParsers, the
+// json and logfmt rule only): every spelling of the shape, and no other query, changes its key.
+func skippedParsersResponseKeyVersion(query string) string {
+	plan := resolvedPlan(strings.TrimSpace(fenceVariablesResolved(query)))
+	if plan != nil && lower.WritesSkippedParsers(plan) && !lower.WritesSkippedUnpack(plan) {
+		return skippedParsersResponseVersion
 	}
 	return ""
 }
