@@ -588,3 +588,51 @@ func TestBurstJoinerCountsAnUnknownCostReuse(t *testing.T) {
 		t.Fatalf("joiners %d of 3 fields read by one fused call", joined.Load())
 	}
 }
+
+// Identical requests in flight behind a response cache: the leader stores its answer and the followers read it
+// from the cache once it ends. Each follower counts a response reuse with the leader's recorded work and is served
+// as shared (it waited for the leader), not as a cache hit's latency.
+//
+// conformance: observability-vl-savings
+func TestStoredAnswerFollowersAreServedAsShared(t *testing.T) {
+	repeatUntilShared(t, func(t *testing.T) float64 {
+		release := make(chan struct{})
+		var calls atomic.Int64
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/select/logsql/streams" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			calls.Add(1)
+			<-release
+			_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\"}","hits":1}]}`))
+		}))
+		t.Cleanup(srv.Close)
+		p := newCompatTestProxy(t, srv.URL)
+		const n = 3
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rec := doCompatProxyRequest(p, seriesTarget("api"), map[string]string{"X-Scope-OrgID": "team-a"}); rec.Code != http.StatusOK {
+					t.Errorf("status %d", rec.Code)
+				}
+			}()
+		}
+		for calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(20 * time.Millisecond)
+		close(release)
+		wg.Wait()
+		body := metricsBody(p)
+		shared := metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "shared"})
+		cached := metricSum(t, body, "loki_vl_proxy_served_request_duration_seconds_count", map[string]string{"served": "cache"})
+		reused := metricSum(t, body, "loki_vl_proxy_vl_reuse_total", map[string]string{"layer": "response", "cost": "recorded"})
+		if calls.Load() != 1 || shared+cached != n-1 || reused != n-1 || metricSum(t, body, "loki_vl_proxy_vl_avoided_calls_total", nil) != n-1 {
+			t.Fatalf("VictoriaLogs calls %d, shared %v, cache %v, reused %v\n%s", calls.Load(), shared, cached, reused, body)
+		}
+		return shared
+	})
+}

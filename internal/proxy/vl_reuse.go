@@ -194,6 +194,15 @@ func (p *Proxy) noteReuse(ctx context.Context, layer metrics.ReuseLayer, tier me
 	p.metrics.RecordVLReuse(meta.endpoint, meta.route, layer, tier, built, recorded)
 }
 
+// markShared marks the request of ctx as served by an identical request in flight.
+func markShared(ctx context.Context) {
+	if rt := getRequestTelemetry(ctx); rt != nil {
+		rt.mu.Lock()
+		rt.reuse.shared = true
+		rt.mu.Unlock()
+	}
+}
+
 // noteCachedReuse counts a reused cached answer stored under key, with its build work when the ledger has it.
 func (p *Proxy) noteCachedReuse(ctx context.Context, key string, layer metrics.ReuseLayer, tier string) {
 	w, ok := p.buildCosts.get(key)

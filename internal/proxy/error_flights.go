@@ -672,6 +672,8 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 			// response reuse); one whose read missed ran on its own.
 			if cacheResultOf(r.Context()) == "hit" {
 				p.errorFlightCounters.succeeded.Add(1)
+				// It waited for the leader: served as shared, not as a cache hit's latency.
+				markShared(r.Context())
 			}
 			return
 		case cache.OutcomeReleased:

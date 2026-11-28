@@ -1294,7 +1294,7 @@ add no rows).
 | `served` | The request |
 |---|---|
 | `cache` | made no VictoriaLogs call and hit a cache |
-| `shared` | made no VictoriaLogs call: it got an identical request's answer, or its calls, while they were in flight |
+| `shared` | made no VictoriaLogs call: it got an identical request's answer, or its calls, while they were in flight (a follower of a request whose answer the response cache stored reads it from the cache once the leader ends, and counts a `response` reuse) |
 | `partial` | made VictoriaLogs calls and also reused windows, stats buckets or shared calls |
 | `vl` | made VictoriaLogs calls and reused nothing |
 | `local` | made no VictoriaLogs call and reused nothing (an answer the proxy holds or computes alone) |
