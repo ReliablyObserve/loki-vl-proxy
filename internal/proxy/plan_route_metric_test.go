@@ -440,7 +440,25 @@ func routeOperandRun(q string, p *queryplan.Plan, route lower.MetricRoute, rp ro
 		return nil, nil, err
 	}
 	params.Set("query", routeQueryShape(text))
-	calls = append(calls, "/select/logsql/stats_query_range?"+params.Encode())
+	if route.StreamChunk > 0 && route.Window == lower.WindowBuckets {
+		// A read of one series per stream starts in time chunks: the first of StreamChunk of steps, each read from the
+		// range before its first step to its last, the next sized from what the one before held. The stub answers a
+		// read with one series or none, far below every bound, so the steps left are read at once, up to the most
+		// steps one read may hold (Loki's 11,000 points with the range before it). The level probe covers the whole
+		// request once.
+		count := int64(end.Sub(start)/req.Step) + 1
+		most := int64((11_000*route.Bucket-route.Range)/req.Step) + 1
+		size := min64(min64(count, most), max64(1, int64(route.StreamChunk/req.Step)))
+		for first := int64(0); first < count; {
+			last := min64(count-1, first+size-1)
+			from, to := start.Add(time.Duration(first)*req.Step), start.Add(time.Duration(last)*req.Step)
+			setSlidingStatsRangeParams(params, from.Add(-route.Range), to, route.Bucket)
+			calls = append(calls, "/select/logsql/stats_query_range?"+params.Encode())
+			first, size = last+1, min64(count-last-1, most)
+		}
+	} else {
+		calls = append(calls, "/select/logsql/stats_query_range?"+params.Encode())
+	}
 	if route.LevelProbe {
 		probe := url.Values{"query": {routeShapeFilters(route.Text) + routeLevelProbeShape}, "start": {routeTime(fetchStart)}, "end": {routeTime(end.Add(2))}, "timeout": {routeTimeout}}
 		calls = append(calls, "/select/logsql/query?"+probe.Encode())
@@ -748,6 +766,12 @@ func TestMetricRouteCatchesAWrongDecision(t *testing.T) {
 		{"sum of all streams flipped", func(r *lower.MetricRoute) {
 			if r.Window == lower.WindowBuckets || r.Window == lower.WindowPhase {
 				r.SumAll = !r.SumAll
+			}
+		}},
+		{"stream chunks read as one read", func(r *lower.MetricRoute) { r.StreamChunk = 0 }},
+		{"stream series read in chunks", func(r *lower.MetricRoute) {
+			if r.Window == lower.WindowBuckets && r.StreamChunk == 0 {
+				r.StreamChunk = time.Hour
 			}
 		}},
 		{"ranked grid read as stats buckets", func(r *lower.MetricRoute) { r.RankedGrid = false }},

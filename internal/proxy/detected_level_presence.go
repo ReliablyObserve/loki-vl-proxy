@@ -257,7 +257,12 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 		return params, nil
 	}
 	base := translate.DetectedLevelProbeBase(strings.TrimSpace(query[:at]))
-	mask := p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
+	var mask string
+	if span, _ := ctx.Value(levelProbeSpanKey{}).(*levelProbeSpan); span != nil {
+		mask = span.mask(ctx, p, base, from, to)
+	} else {
+		mask = p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
+	}
 	if mask == "" {
 		return params, nil
 	}
@@ -287,6 +292,49 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 		return out, nil
 	}
 	return out, &levelWitness{base: base}
+}
+
+// levelProbeSpanKey carries a levelProbeSpan in a context.
+type levelProbeSpanKey struct{}
+
+// levelProbeSpan is the window a request's reads are part of: the presence probe of each read covers it, so reads
+// of time chunks of one request (writeListedWindowChunks) probe the levels once, as the read over the whole window
+// would. The mask of the wider window holds every level field of the chunk's, so the pruned chain reads them all,
+// and the witness flags any other. The mask of the last base probed is kept for the request, a probe that failed
+// too (its reads send the full chain), so a failed probe is not sent again for every chunk.
+type levelProbeSpan struct {
+	from, to   time.Time
+	mu         sync.Mutex
+	probed     bool
+	base, last string
+}
+
+// withLevelProbeSpan returns ctx whose stats reads probe the levels over [from, to] (levelProbeSpan), given as a
+// read's start and end parameters are.
+func withLevelProbeSpan(ctx context.Context, from, to time.Time) context.Context {
+	return context.WithValue(ctx, levelProbeSpanKey{}, &levelProbeSpan{from: from, to: to})
+}
+
+// forget drops the mask of base kept for the request: a row it did not account for appeared, so the next read probes
+// again.
+func (s *levelProbeSpan) forget(base string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.base == base {
+		s.probed = false
+	}
+}
+
+// mask is the presence mask of base over the span and the read's own window [from, to] (Unix nanoseconds).
+func (s *levelProbeSpan) mask(ctx context.Context, p *Proxy, base string, from, to int64) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.probed && s.base == base {
+		return s.last
+	}
+	from, to = min64(from, s.from.UnixNano()), max64(to, s.to.UnixNano())
+	s.probed, s.base, s.last = true, base, p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
+	return s.last
 }
 
 type levelPrunedKey struct{}
@@ -445,6 +493,9 @@ func levelPresenceKey(ctx context.Context, base string) string {
 // dropLevelPresence forgets the mask of base: a row it did not account for
 // appeared.
 func (p *Proxy) dropLevelPresence(ctx context.Context, base string) {
+	if span, _ := ctx.Value(levelProbeSpanKey{}).(*levelProbeSpan); span != nil {
+		span.forget(base)
+	}
 	if p.cache != nil {
 		p.cache.Invalidate(p.windowProbeKey(ctx, levelPresenceKey(ctx, base)))
 	}

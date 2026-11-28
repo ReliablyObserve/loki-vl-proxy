@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -131,6 +132,26 @@ type listedChunkReads struct {
 	bucketsOK, counter, quantile bool
 	rawRows                      *bool
 	overflowed                   bool
+	// streams is a read of one series per stream (the stream is in its group) on a range longer than the step over
+	// more buckets than listedStreamReadBuckets: it is read in time chunks from the start, its first chunk one stats
+	// extent split (statsExtentSplit) of steps, so a read over the whole range is not sent only to pass the body
+	// bound and be read again in chunks (lower.MetricRoute StreamChunk predicts it).
+	streams bool
+}
+
+// listedStreamReadBuckets is the number of buckets past which a read of one series per stream starts in time chunks
+// (listedChunkReads.streams): at a 20 s bucket, about 5.7 hours. A shorter read is read whole, as before.
+const listedStreamReadBuckets = 1024
+
+// listedChunkFitLoad is the share of a read's bound under which the steps left of a read of one series per stream
+// are read at once rather than in chunks sized to listedChunkLoad.
+const listedChunkFitLoad = 0.8
+
+// streamSeriesRead reports a window metric read as one series per stream (the stream is in the read's group) over a
+// range longer than the step and more than listedStreamReadBuckets buckets, so each stream's buckets are read apart.
+func streamSeriesRead(spec statsCompatSpec, origSpec originalRangeMetricSpec, start, end time.Time, step, bucket time.Duration) bool {
+	return origSpec.Window > step && slices.Contains(spec.GroupBy, "_stream") &&
+		readGridBuckets(start, end, origSpec.Window, bucket) > listedStreamReadBuckets
 }
 
 // chunkable reports a request whose windows can be read in time chunks once its read over the whole range passed the
@@ -166,14 +187,18 @@ func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request,
 // whether it did.
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
-	if !reads.chunkable(r, statsAggFunc) || !reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
+	if !reads.chunkable(r, statsAggFunc) || !reads.overflowed && !reads.streams && !p.identityWindows(r.Context(), r.FormValue("query")) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
 	// A parser's series hash folds, in VictoriaLogs, the series that lie in one bucket (series_fold_read.go).
 	r = p.withSeriesFold(r, spec, manualFunc, fold)
-	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
+	initial := int64(0)
+	if reads.streams && !reads.overflowed {
+		initial = max(1, int64(statsExtentSplit/step))
+	}
+	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, initial, fold)
 	*reads.rawRows = whole
 	return handled
 }
@@ -182,7 +207,12 @@ func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, 
 // above) and reports handled; otherwise the bucket reads did not answer it (no route applies, or VictoriaLogs failed)
 // and the window evaluator goes on as without chunks, past the bucket reads when whole is set (they were tried over
 // the whole request already, so they are not sent again).
-func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, routes []statsBucketRoute, manualFunc string, start, end time.Time, step, window, bucket, shift time.Duration, fold *matrixFold) (handled, whole bool) {
+//
+// initial, when above zero, is a read of one series per stream started in chunks (listedChunkReads.streams): the
+// size of its first chunk when this replica measured none for the read, and the steps left are read at once when the
+// last read says they fit (listedChunkFits). Its detected_level presence is probed once, over the whole request
+// (withLevelProbeSpan), as the read over the whole range would probe it.
+func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, routes []statsBucketRoute, manualFunc string, start, end time.Time, step, window, bucket, shift time.Duration, initial int64, fold *matrixFold) (handled, whole bool) {
 	ctx := r.Context()
 	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
 	bucketSteps := listedChunkBucketSteps(step, window, bucket)
@@ -196,6 +226,15 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 	known, measured := p.listedChunkSize(ctx, sizeKey)
 	if measured {
 		size = min64(size, known)
+	} else if initial > 0 {
+		size = min64(size, initial)
+	}
+	if initial > 0 {
+		fetchStart := start.Add(-window)
+		if shift != 0 {
+			fetchStart = start.Add(-step)
+		}
+		ctx = withLevelProbeSpan(ctx, fetchStart, end.Add(time.Nanosecond))
 	}
 	// The tenant's series limit applies to the folded answer (capSeriesToLimit afterwards): a fold of one level
 	// whose groups pass it fails as that would, before more chunks are read.
@@ -256,6 +295,9 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		}
 		first = last + 1
 		size = nextListedChunkSize(read, bucketSteps, *meter, budget, int(maxStatsBucketResponseBytes))
+		if left := n - first; initial > 0 && left > size && left <= bucketSteps && listedChunkFits(read, left, *meter, budget, int(maxStatsBucketResponseBytes)) {
+			size = left
+		}
 	}
 	markQueryStepsRoute(ctx, "buckets-"+strconv.Itoa(route))
 	body, err := sink.finish(fold, maxBytes)
@@ -311,6 +353,19 @@ func nextListedChunkSize(read, bucketSteps int64, m statsReadMeter, budget, body
 		return bucketSteps
 	}
 	return max(1, int64(next))
+}
+
+// listedChunkFits reports whether the steps left, read at the rate of a chunk of read steps whose reads held m, use
+// at most listedChunkFitLoad of the tighter of the two bounds (nextListedChunkSize).
+func listedChunkFits(read, left int64, m statsReadMeter, budget, bodyBound int) bool {
+	load := 0.0
+	if budget > 0 {
+		load = float64(m.series) / float64(budget)
+	}
+	if bodyBound > 0 {
+		load = max(load, float64(m.bytes)/float64(bodyBound))
+	}
+	return read > 0 && load*float64(left)/float64(read) <= listedChunkFitLoad
 }
 
 // listedChunkSizeKey names the chunk size a read of query at step needed, in the tenant's scope.

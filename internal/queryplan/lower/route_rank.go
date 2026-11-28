@@ -97,6 +97,15 @@ func routeEvaluated(p *queryplan.Plan, prof Profile, req RouteRequest) (QueryRou
 		}
 		return QueryRoute{}, err
 	}
+	if rank != nil && (rank.Op == logql.VectorTopK || rank.Op == logql.VectorBottomK) {
+		// The handlers rank every series of a line count, a byte sum or their rates per step from the window stats
+		// (no fold of the vector aggregations), so the read is not started in chunks.
+		for i := range out.n {
+			if routeRangeOps[out.operands[i].Op] {
+				out.operands[i].StreamChunk = 0
+			}
+		}
+	}
 	if rank != nil && !out.Binary && out.n == 1 {
 		r := &out.operands[0]
 		// The handlers fold the series of a `without` under a ranking themselves: VictoriaLogs does not.

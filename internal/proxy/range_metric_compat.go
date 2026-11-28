@@ -820,7 +820,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// So is every other series identity whose read over the whole range passed the stats body bound on this replica
 	// (windowReadOverflowed), or passes it below.
 	chunkReads := listedChunkReads{bucketsOK: bucketsOK, counter: counterProof != nil, quantile: quantileCounts, rawRows: &forceRawLevelRows,
-		overflowed: p.windowReadOverflowed(r, step, bucket)}
+		overflowed: p.windowReadOverflowed(r, step, bucket), streams: streamSeriesRead(spec, origSpec, startTS, endTS, step, bucket)}
 	windowAggFunc := statsAggFunc
 	if p.listedWindowChunksRoute(w, r, chunkReads, spec, origSpec, manualFunc, windowAggFunc, startTS, endTS, step, bucket, sampleShift) {
 		return true

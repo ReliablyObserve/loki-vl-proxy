@@ -281,6 +281,9 @@ type statsView struct {
 	log   metricLog
 	chain bool
 	shape statsShape
+	// perStream says the stats pipe that reads the range function's value groups by the stream (its series are the
+	// stream's), for an aggregation over a label's values too.
+	perStream bool
 }
 
 // note records a stats pipe that groups by keys keys.
@@ -758,7 +761,7 @@ func unwrapVectorStats(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Pro
 	if without {
 		out = physical.Fold{Levels: []physical.FoldLevel{{Op: string(va.Op), Labels: raw, Without: true}}, In: out}
 	}
-	return out, statsView{log: log, chain: q.chain, shape: q.shape}, nil
+	return out, statsView{log: log, chain: q.chain, shape: q.shape, perStream: q.firstSet && hasField(q.firstBy, "_stream")}, nil
 }
 
 // vectorClause reads the by or without clause of a vector aggregation: the labels as VictoriaLogs names them (for a

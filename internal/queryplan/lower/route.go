@@ -53,6 +53,14 @@ const (
 // more, or with no bucket grid at all, the handlers evaluate the windows another way (raw rows, two bucket grids).
 const heavyRouteBuckets = 11_000
 
+// streamChunkBuckets is the number of buckets past which a read of one series per stream starts in time chunks
+// (MetricRoute.StreamChunk): at a 20s bucket, about 5.7 hours.
+const streamChunkBuckets = 1024
+
+// streamChunkSpan is the span of steps of the first time chunk of a read of one series per stream: one stats extent
+// split of the handlers' extent cache.
+const streamChunkSpan = time.Hour
+
 // MetricRoute is the route of a range or vector aggregation.
 type MetricRoute struct {
 	Window Window
@@ -100,6 +108,14 @@ type MetricRoute struct {
 	// grouped by labels: the ranking needs every series of each step, so the handlers read the windows as one grid of
 	// rows (a stats pipe by the window and the labels, through /select/logsql/query) instead of stats_query_range.
 	RankedGrid bool
+	// StreamChunk is the span of steps the first time chunk of a read of one series per stream starts with (one
+	// hour), or zero for a read of the whole range. A sliding window (WindowBuckets) read by the stream
+	// (the stats pipe that reads the range function's value groups by the stream) under vector aggregations the handlers fold series by series (streamFolded), over more than
+	// streamChunkBuckets buckets, holds a row per stream and bucket: on many short-lived streams a read of the whole
+	// range passes the stats body bound. The handlers read its windows in time chunks from the start, each folded as
+	// it is read: the first chunk holds StreamChunk of steps, and each later one is sized from what the read before it
+	// held (the steps left at once when they fit), so no read of the whole range is sent only to be read again.
+	StreamChunk time.Duration
 	// Text is the lowered stats query the route sends (the plan's text, before the route's own pipes).
 	Text string
 }
@@ -148,7 +164,7 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 	r := MetricRoute{Op: rng.Op, Range: rng.Range, Offset: rng.Offset}
 	// A without clause writes no grouping of its own: a query whose stats group by nothing keeps the stream's
 	// identity, as a range aggregation at the root does, for the proxy to fold the series.
-	unkeyed := false
+	unkeyed, perStream := false, false
 	var view statsView
 	switch v := p.Root.(type) {
 	case *queryplan.RangeAgg:
@@ -179,6 +195,7 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		view = w
 		r.Text, r.LevelProbe, r.Ungrouped = text, view.chain, view.shape.ungrouped
 		r.LabelGrouped, r.StreamGrouped = view.shape.labels, view.shape.stream
+		perStream = view.perStream
 		r.Counted = unwrapStage(rng.In) != nil
 		// Series add up whatever their identity for the sum of the additive functions: the sum of an average, a
 		// minimum or a maximum of each series is not the one of the lines of all of them.
@@ -201,8 +218,48 @@ func Route(p *queryplan.Plan, prof Profile, req RouteRequest) (MetricRoute, erro
 		if r.Fold = routeFold(v, rng, r.Window, view.log, prof); r.Fold != FoldNone && unkeyed {
 			r.Identity, r.LevelProbe, r.Ungrouped = true, true, false
 		}
+		if r.Window == WindowBuckets && perStream && !r.GroupPushed && !r.SumAll && streamFolded(v) && (req.Span+r.Range)/r.Bucket > streamChunkBuckets {
+			r.StreamChunk = streamChunkSpan
+		}
 	}
 	return r, nil
+}
+
+// streamFolded reports vector aggregations over a range aggregation that the handlers fold series by series as the
+// windows are read: sums, counts, extremes and averages, one of them reading one value per series (a count, a
+// minimum, a maximum or an average), a first or a last value under them, or more than one level; a range function
+// with a grouping of its own, or a without clause at the innermost level (or at the only one), is folded another way.
+func streamFolded(va *queryplan.VectorAgg) bool {
+	var levels []*queryplan.VectorAgg
+	seriesLevel := false
+	var n queryplan.Node = va
+	for {
+		v, ok := n.(*queryplan.VectorAgg)
+		if !ok {
+			break
+		}
+		switch v.Op {
+		case logql.VectorSum:
+		case logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
+			seriesLevel = true
+		default:
+			return false
+		}
+		levels = append(levels, v)
+		n = v.In
+	}
+	rng, ok := n.(*queryplan.RangeAgg)
+	if !ok || rng.By != nil {
+		return false
+	}
+	seriesLevel = seriesLevel || rng.Op == logql.RangeFirstOverTime || rng.Op == logql.RangeLastOverTime
+	for i, v := range levels {
+		// levels runs from the root down: the innermost is the last.
+		if v.By != nil && v.By.Without && (i == len(levels)-1 || len(levels) < 2) {
+			return false
+		}
+	}
+	return seriesLevel || len(levels) > 1
 }
 
 // QueryRoute is the route of a metric query: the routes of the range and vector aggregations the handlers evaluate
@@ -382,6 +439,7 @@ func (b builtVector) view() statsView {
 			v.shape.note(len(st.By))
 		}
 	}
+	v.perStream = v.shape.stream
 	return v
 }
 
