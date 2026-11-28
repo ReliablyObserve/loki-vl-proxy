@@ -176,6 +176,7 @@
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "internal/proxy/rank_binary_range_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
       "internal/proxy/reserved_field_test.go",
@@ -651,6 +652,7 @@
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/parser_probe_drop_loki_test.go",
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "internal/proxy/physical_sites_test.go",
       "internal/proxy/plan_spellings_loki_test.go",
       "internal/proxy/ranking_binary_operand_loki_test.go",
@@ -700,6 +702,7 @@
       "test/e2e-compat/parsed_surface_answers_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/parser_probe_drop_test.go",
+      "test/e2e-compat/parser_sum_metrics_test.go",
       "test/e2e-compat/pattern_line_filter_captures_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -767,6 +770,7 @@
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/parser_probe_drop_loki_test.go",
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "internal/proxy/physical_sites_test.go",
       "internal/proxy/plain_stream_labels_test.go",
       "internal/proxy/plan_spellings_loki_test.go",
@@ -860,6 +864,7 @@
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parsed_surface_answers_test.go",
       "test/e2e-compat/parser_probe_drop_test.go",
+      "test/e2e-compat/parser_sum_metrics_test.go",
       "test/e2e-compat/pattern_line_filter_captures_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -1823,6 +1828,7 @@
     ],
     "semantics/instant-parser-probe-window": [
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "test/e2e-compat/instant_parser_probe_window_test.go"
     ],
     "semantics/instant-result-type-missing": [
@@ -2198,6 +2204,7 @@
     ],
     "semantics/loki-pipeline-error-rules": [
       "internal/proxy/pipeline_error_rules_loki_test.go",
+      "internal/querycorpus/parser_sum_loki_diff_test.go",
       "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go"
     ],
     "semantics/lower-bound-exclusive": [
@@ -2747,19 +2754,30 @@
       "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/parser_probe_drop_loki_test.go",
       "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
       "internal/proxy/reprint_translation_test.go",
+      "internal/querycorpus/parser_sum_loki_diff_test.go",
       "internal/querycorpus/stream_grouped_parsers_loki_diff_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/instant_parser_probe_window_test.go",
+      "test/e2e-compat/parser_sum_metrics_test.go",
       "test/e2e-compat/stream_grouped_parsers_test.go"
     ],
     "semantics/unary-plus-literal-rejected": [
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/ungrouped-sum-skips-parsers": [
+      "internal/proxy/parser_probe_window_test.go",
+      "internal/proxy/parser_sum_probe_test.go",
+      "internal/querycorpus/parser_sum_loki_diff_test.go",
+      "internal/queryplan/lower/parser_skip_test.go",
+      "test/e2e-compat/parser_sum_metrics_test.go"
+    ],
     "semantics/ungrouped-sum-skips-unpack": [
       "internal/proxy/absent_over_time_test.go",
       "internal/proxy/unpack_sum_rate_test.go",
       "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "internal/queryplan/lower/parser_skip_test.go",
       "internal/queryplan/lower/unpack_test.go",
       "test/e2e-compat/unpack_metrics_test.go"
     ],
@@ -3416,7 +3434,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 781,
+  "registry_items": 782,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -5020,7 +5038,16 @@
       "semantics/instant-parser-probe-window",
       "semantics/log-range-default-window",
       "semantics/parser-probe-drop-keeps-range",
-      "semantics/two-parsers-keep-one"
+      "semantics/two-parsers-keep-one",
+      "semantics/ungrouped-sum-skips-parsers"
+    ],
+    "internal/proxy/parser_sum_probe_test.go": [
+      "cache-response-key-versions",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/instant-parser-probe-window",
+      "semantics/two-parsers-keep-one",
+      "semantics/ungrouped-sum-skips-parsers"
     ],
     "internal/proxy/pattern_cluster_test.go": [
       "drilldown/patterns-mined-differently",
@@ -6158,6 +6185,11 @@
     "internal/querycorpus/parser_metric_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/parser_sum_loki_diff_test.go": [
+      "semantics/loki-pipeline-error-rules",
+      "semantics/two-parsers-keep-one",
+      "semantics/ungrouped-sum-skips-parsers"
+    ],
     "internal/querycorpus/physical_codec_test.go": [
       "semantics/label-replace-new-label",
       "semantics/without-over-inner-aggregation-collapses"
@@ -6408,6 +6440,10 @@
     ],
     "internal/queryplan/lower/parser_labels_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/parser_skip_test.go": [
+      "semantics/ungrouped-sum-skips-parsers",
+      "semantics/ungrouped-sum-skips-unpack"
     ],
     "internal/queryplan/lower/parser_test.go": [
       "architecture-syntax-package-layering"
@@ -7242,6 +7278,12 @@
       "semantics/log-range-default-window",
       "semantics/parser-probe-drop-keeps-range"
     ],
+    "test/e2e-compat/parser_sum_metrics_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/two-parsers-keep-one",
+      "semantics/ungrouped-sum-skips-parsers"
+    ],
     "test/e2e-compat/pattern_line_filter_captures_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -7660,7 +7702,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 926,
+  "tests_with_markers": 930,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7817,5 +7859,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 513
+  "wired_items": 514
 }
