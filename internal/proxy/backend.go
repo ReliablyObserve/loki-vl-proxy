@@ -430,7 +430,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 			return p.vlGetInner(c, path, ps)
 		})
 	}
-	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, params))))
+	params = guardOutboundQuery(p.withBackendTimeoutArg(ctx, path, withExclusionParams(ctx, path, p.scopedTenantParams(ctx, p.metadataSeriesParams(ctx, path, params)))))
 	u := backendRequestURL(p.backend, path)
 	u.RawQuery = params.Encode()
 	querycorpus.RecordBackend(path, params.Get("query"))
@@ -546,6 +546,8 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); !fetch {
 		params, stripUnwrapCounter, _ = unwrapCheckFrom(ctx).countingStatsQuery(path, params)
 		params, stripJSONMarks, _ = jsonErrorCheckFrom(ctx).jsonCountingStatsQuery(ctx, path, params)
+		// Loki's structured-metadata series (metadata_series.go), ahead of the extent cache, which keys the rebuilt query.
+		params = p.metadataSeriesParams(ctx, path, params)
 	}
 	if resp, ok, err := p.statsExtentPost(ctx, path, params); ok {
 		if err == nil && stripUnwrapCounter != nil {

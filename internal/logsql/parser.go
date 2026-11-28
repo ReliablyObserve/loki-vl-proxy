@@ -1626,8 +1626,12 @@ func (p *parser) parseNamePairs(pipe string) ([][2]string, error) {
 		if p.isKeyword("as") {
 			p.advance()
 		}
-		dst, err := p.expectFieldName()
-		if err != nil {
+		var dst string
+		if p.peek().Typ == TokStar && strings.HasSuffix(src, "*") {
+			// A prefix moved to the top level (copy __lvp_p_* as *): VictoriaLogs drops the prefix.
+			p.advance()
+			dst = "*"
+		} else if dst, err = p.expectFieldName(); err != nil {
 			return nil, fmt.Errorf("logsql: pipe %s: %w", pipe, err)
 		}
 		pairs = append(pairs, [2]string{src, dst})
