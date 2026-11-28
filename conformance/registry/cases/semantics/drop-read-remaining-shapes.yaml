@@ -1,0 +1,29 @@
+id: semantics/drop-read-remaining-shapes
+title: 'Some stages after a drop or keep still read the removed value (open)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The plan does not blank the value where the query stays with the string
+  translator (a parser before a drop of a stream label, a label filter after a
+  decolorize stage), where a level field is read ahead of a later parser, or on
+  the derived service_name. A log query that filters on service_name after a
+  keep with a service_name matcher answers nothing.
+request:
+  scope: keep and drop stages
+  entry: "a label filter after a drop or keep stage in the shapes above"
+  setup: "a logfmt parser, a drop level equals warn stage and a level equals warn filter keep no line in Loki; a keep service_name equals a stage and the same filter keep one stream"
+compare:
+  mode: observed
+  fields: [streams.stream labels, values]
+  expect: "Loki's answer."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower drop_blank.go, keep_blank.go, parser.go streamReads'
+  loki: 'later stages read what the stage left'
+  proxy: 'the stored value, or no entry for service_name after a keep'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core)'
+  clusters: []

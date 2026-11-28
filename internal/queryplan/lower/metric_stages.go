@@ -30,11 +30,8 @@ func metricDropPipes(st *queryplan.Drop) ([]logsql.Pipe, error) {
 }
 
 // metricKeepPipes are the pipes of a keep stage of a metric row: a log query's, then the delete of level.
-func metricKeepPipes(st *queryplan.Keep, label func(string) string, prof Profile) ([]logsql.Pipe, error) {
-	ps, err := keepPipes(st, label, prof)
-	if err != nil {
-		return nil, err
-	}
+func metricKeepPipes(st *queryplan.Keep, label func(string) string) []logsql.Pipe {
+	ps := keepPipes(st, label)
 	var detected, level bool
 	note := func(n string) {
 		switch n {
@@ -53,7 +50,7 @@ func metricKeepPipes(st *queryplan.Keep, label func(string) string, prof Profile
 	if detected && !level {
 		ps = append(ps, logsql.PipeDelete{Labels: []string{"level"}})
 	}
-	return ps, nil
+	return ps
 }
 
 // anyClientString reports whether any text the client wrote in the log query satisfies f: the values and names of

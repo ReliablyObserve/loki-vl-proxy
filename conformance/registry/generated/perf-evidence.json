@@ -90079,6 +90079,7 @@
       "warm_p50": 0.009
     }
   ],
+  "semantics/drop-matcher-later-stage-reads-dropped-value": [],
   "semantics/extracted-suffix-collision": [
     {
       "baseline": "release",
@@ -99465,6 +99466,7 @@
       "warm_p50": 0.005
     }
   ],
+  "semantics/keep-derived-label-matcher-metric-series": [],
   "semantics/keep-leaves-labels-loki-drops": [
     {
       "baseline": "release",
@@ -100299,6 +100301,7 @@
       "warm_p50": 0.009
     }
   ],
+  "semantics/keep-names-and-matchers": [],
   "semantics/label-browser-cold-first-listing": [
     {
       "baseline": "release",

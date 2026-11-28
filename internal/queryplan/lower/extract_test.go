@@ -149,7 +149,7 @@ func FuzzExtractLowering(f *testing.F) {
 			return // a query every route rejects before it translates anything
 		}
 		for _, prof := range profiles {
-			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && !same {
+			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && !same && !queryWritesKeepBlank(q) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", prof.name, q, lowered, legacy)
 			}
 		}

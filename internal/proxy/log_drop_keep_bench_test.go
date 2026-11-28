@@ -31,13 +31,16 @@ var logDropKeepBenchQueries = map[string]string{
 	"keep":        `{app="checkout"} | keep level=~"warn|error", app`,
 	"json-drop":   `{app="checkout"} | json | drop order_id | keep level!="info"`,
 	"line-format": `{app="checkout"} | logfmt | line_format "{{.msg}}" | drop caller`,
+	"keep-bare":   `{app="checkout"} | keep level, app`,
+	"keep-mixed":  `{app="checkout"} | keep level="warn", app`,
+	"keep-read":   `{app="checkout"} | keep level="warn", app | level!="error"`,
 }
 
 // BenchmarkLogDropKeepResponse measures the conversion of a VictoriaLogs log
 // response of 500 rows for queries with drop and keep stages: the
 // post-processing reads its conditions once per response.
 func BenchmarkLogDropKeepResponse(b *testing.B) {
-	for _, name := range []string{"drop", "keep", "json-drop", "line-format"} {
+	for _, name := range []string{"drop", "keep", "json-drop", "line-format", "keep-bare", "keep-mixed", "keep-read"} {
 		query := logDropKeepBenchQueries[name]
 		body := detectedLevelBenchBody("logfmt")
 		b.Run(name, func(b *testing.B) {
@@ -62,7 +65,7 @@ func BenchmarkLogDropKeepConditions(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_, _, _, _ = extractDropKeepFromAST(query)
+				_, _, _ = extractDropKeepFromAST(query)
 				_ = p.lineFieldExposure(query)
 				_, _ = p.backendLogQuery(query)
 			}

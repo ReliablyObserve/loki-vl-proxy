@@ -165,7 +165,7 @@ func FuzzFormatLowering(f *testing.F) {
 			return
 		}
 		for _, prof := range profiles {
-			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && (!same || lowered != legacy) {
+			if lowered, legacy, _, same, delegated, ok := parserLowering(t, q, prof); ok && !delegated && (!same || lowered != legacy) && !queryWritesKeepBlank(q) {
 				t.Fatalf("%s: %s:\n lowered %s\n  string %s", prof.name, q, lowered, legacy)
 			}
 		}

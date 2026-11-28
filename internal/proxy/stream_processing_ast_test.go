@@ -15,7 +15,7 @@ type extractDropKeepFromASTResult struct {
 }
 
 func runExtract(query string) extractDropKeepFromASTResult {
-	dc, kc, bdf, bkf := extractDropKeepFromAST(query)
+	dc, kc, bdf, bkf := flatDropKeep(query)
 	return extractDropKeepFromASTResult{dc, kc, bdf, bkf}
 }
 

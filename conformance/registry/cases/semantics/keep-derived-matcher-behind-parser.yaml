@@ -1,0 +1,28 @@
+id: semantics/keep-derived-matcher-behind-parser
+title: 'A metric over a detected_level keep matcher behind a parser keeps unmatched levels (open)'
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Behind a parser, the metric row stays with the string translator, which does not
+  blank detected_level; a label filter behind a parser and a matcher keep also
+  leaves one series per stream.
+request:
+  scope: keep and drop stages
+  entry: "a count_over_time after logfmt and a keep detected_level equals info stage"
+  setup: "count_over_time with a detected_level keep matcher after logfmt"
+compare:
+  mode: observed
+  fields: [series labels, values]
+  expect: "Loki's answer."
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/queryplan/lower metric screen, internal/proxy/keep_series_grouping.go'
+  loki: 'the rejected level leaves the series'
+  proxy: 'the level stays on the series'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core)'
+  clusters: []

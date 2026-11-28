@@ -28,7 +28,7 @@ import (
 )
 
 // extractDropKeepFromAST is the keep/drop post-processing of a log query: the
-// conditional drop and keep matchers and the bare names of its drop and keep
+// conditional drop matchers and bare names of its drop stages and its keep
 // stages, read from the query's typed stages (its memoised parse,
 // parsedLogQuery, which the plan's LogSelect holds as its stages). A query that
 // is not a log query, or one the parser rejects, has none: the request
@@ -36,9 +36,8 @@ import (
 // read, and a metric query has no log pipeline of its own to post-process.
 func extractDropKeepFromAST(query string) (
 	dropConds []translate.DropCondition,
-	keepConds []translate.DropCondition,
 	bareDropFields []string,
-	bareKeepFields []string,
+	keeps keepRules,
 ) {
 	lq, err := parsedLogQuery(query)
 	if err != nil {
@@ -47,16 +46,14 @@ func extractDropKeepFromAST(query string) (
 	return dropKeepFromPipeline(lq.Pipeline)
 }
 
-// dropKeepFromPipeline extracts drop/keep conditions from a parsed pipeline.
+// dropKeepFromPipeline extracts the drop and keep stages of a parsed pipeline.
 func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
 	dropConds []translate.DropCondition,
-	keepConds []translate.DropCondition,
 	bareDropFields []string,
-	bareKeepFields []string,
+	keeps keepRules,
 ) {
 	for _, stage := range pipeline {
-		switch s := stage.(type) {
-		case *logqlpkg.DropStage:
+		if s, ok := stage.(*logqlpkg.DropStage); ok {
 			bareDropFields = append(bareDropFields, s.Labels...)
 			for _, m := range s.Matchers {
 				dc, e := translate.NewDropCondition(m.Name, m.Op, m.Value)
@@ -64,17 +61,9 @@ func dropKeepFromPipeline(pipeline []logqlpkg.Stage) (
 					dropConds = append(dropConds, dc)
 				}
 			}
-		case *logqlpkg.KeepStage:
-			bareKeepFields = append(bareKeepFields, s.Labels...)
-			for _, m := range s.Matchers {
-				dc, e := translate.NewDropCondition(m.Name, m.Op, m.Value)
-				if e == nil {
-					keepConds = append(keepConds, dc)
-				}
-			}
 		}
 	}
-	return
+	return dropConds, bareDropFields, keepRulesOf(pipeline)
 }
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
@@ -282,7 +271,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 	scanner.Buffer(make([]byte, 1024*1024), 8*1024*1024)
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
-	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
+	dropConditions, bareDropFields, keeps := extractDropKeepFromAST(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -304,7 +293,7 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 	mergeParsed := mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructuredMetadata)
 	mergeParsed, captureFields, mergeMetadata := exposure.streamLabelMerge(mergeParsed, captureFields, categorizedLabels, emitStructuredMetadata)
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
-	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
+	levelStages := newLevelDropKeep(bareDropFields, keeps)
 	for scanner.Scan() {
 		line := bytes.Trim(scanner.Bytes(), " \t\r") // the buffered decoder trims the same bytes
 		if len(line) == 0 {
@@ -336,14 +325,14 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 			continue
 		}
 
-		labels, structuredMetadata, parsedFields, drop := p.classifyEntryFieldsWithFlags(entry, streamLabels, classifyAsParsed, exposure, exposureCache, smBuf2, pfBuf2)
+		labels, structuredMetadata, parsedFields, drop := p.classifyEntryFieldsWithFlags(entry, streamLabels, classifyAsParsed, exposure, exposureCache, smBuf2, pfBuf2, keeps...)
 		if drop {
 			continue
 		}
 		if levelAsMetadata {
 			labels, structuredMetadata, parsedFields = moveLevelsToMetadata(labels, streamLabels, structuredMetadata, parsedFields, smBuf2, pfBuf2, classifyAsParsed)
 		}
-		if name := detectedLevelName(streamLabels); !levelStages.keeps(name) {
+		if name := detectedLevelName(streamLabels); !levelStages.keepsEntry(name, labels, structuredMetadata) {
 			delete(labels, name)
 			delete(structuredMetadata, name)
 		}
@@ -351,10 +340,8 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 		if len(dropConditions) > 0 {
 			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 		}
-		dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
-		if len(keepConditions) > 0 {
-			applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
-		}
+		dropEntryFields(bareDropFields, structuredMetadata, parsedFields)
+		keeps.entry(structuredMetadata, parsedFields, p.labelTranslator)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -367,16 +354,15 @@ func (p *Proxy) streamLogQuery(ctx context.Context, w http.ResponseWriter, resp 
 				translatedLabels = newLabels
 			}
 		}
-		if len(keepConditions) > 0 {
-			if _, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
+		// Apply bare-field drop to stream labels, then the keep stages.
+		// | drop f removes f from the stream label set unconditionally.
+		if len(bareDropFields) > 0 {
+			if _, newLabels, changed := applyBareDropToStreamLabels(bareDropFields, streamLabels, translatedLabels, p.labelTranslator); changed {
 				translatedLabels = newLabels
 			}
 		}
-		// Apply bare-field drop/keep to stream labels.
-		// | drop f removes f from the stream label set unconditionally.
-		// | keep f1, f2 removes any stream label NOT in the keep list.
-		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
-			if _, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, streamLabels, translatedLabels, p.labelTranslator); changed {
+		if len(keeps) > 0 {
+			if newLabels, changed := keeps.streamLabels(translatedLabels, p.labelTranslator); changed {
 				translatedLabels = newLabels
 			}
 		}
@@ -630,10 +616,21 @@ type cachedLogQueryStreamDescriptor struct {
 	streamLabels     map[string]string // labels parsed from _stream (shared, read-only)
 	rawLabels        map[string]string
 	translatedLabels map[string]string
+	// staged holds the stream labels after the query's drop and keep stages,
+	// read once per descriptor; nil for a query with no keep stage.
+	staged *stagedStreamLabels
 	// collisionLabels are the stream labels a parsed key collides with: the
 	// translated labels, and in -field-mapping-label-mode both every name the
 	// answer gives a mapped field the stream stores (bothCollisionLabels).
 	collisionLabels map[string]string
+}
+
+// stagedStreamLabels are a descriptor's translated labels after the drop and
+// keep stages, and whether the stages changed them.
+type stagedStreamLabels struct {
+	read    bool
+	labels  map[string]string
+	changed bool
 }
 
 // finalLabels are the stream labels the entries of the stream are classified
@@ -678,11 +675,11 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
 	// without emitStructuredMetadata or categorizedLabels (see resolveLogQueryStream).
 	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed || len(captureFields) > 0 || mergeMetadata || exposure.needsClassification()
-	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
+	dropConditions, bareDropFields, keeps := extractDropKeepFromAST(originalQuery)
 	// Loki returns detected_level with the stream labels, or as structured
 	// metadata when the categorize-labels metadata is emitted.
 	levelAsMetadata := categorizedLabels && emitStructuredMetadata
-	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
+	levelStages := newLevelDropKeep(bareDropFields, keeps)
 
 	var (
 		miner        *patternMiner
@@ -755,7 +752,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			rowFields = forRowMsg(rowLines, fjVal.GetStringBytes("_msg"))
 		}
 		msg := storedLogLineFromFJ(fjVal, rowStream.labels, rowFields, p.defaultMsgValue())
-		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
+		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure, keeps)
 
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
 		// logRowStreamDescriptor uses m[string([]byte)] (zero-alloc lookup)
@@ -783,16 +780,14 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
-			dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
-			if len(keepConditions) > 0 {
-				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
-			}
+			dropEntryFields(bareDropFields, structuredMetadata, parsedFields)
+			keeps.entry(structuredMetadata, parsedFields, p.labelTranslator)
 			if mergeMetadata {
 				parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf)
 			}
 		}
 		streamKey, streamLabels := resolveLogQueryStream(
-			desc, dropConditions, keepConditions, bareDropFields, bareKeepFields,
+			desc, dropConditions, bareDropFields, keeps,
 			parsedFields, mergeParsed, captureFields, p.labelTranslator,
 		)
 		se, ok := streamMap[streamKey]
@@ -871,7 +866,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 // visibleStoredLevelFJ is shared by the direct and windowed log converters.
 // It leaves the field available for detected_level while preventing an
 // unlisted line key from becoming a Loki response label.
-func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposure *lineFieldExposure) []byte {
+func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposure *lineFieldExposure, keeps keepRules) []byte {
 	level := row.GetStringBytes("level")
 	if len(level) == 0 {
 		return nil
@@ -881,6 +876,9 @@ func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposur
 	}
 	if _, onStream := streamLabels["level"]; onStream {
 		return level
+	}
+	if keeps.removesLevel(level) {
+		return nil
 	}
 	line := row.GetStringBytes(translate.StoredLineField)
 	if len(line) == 0 {
@@ -910,38 +908,29 @@ func mergesParsedStreamLabels(classifyAsParsed, categorizedLabels, emitStructure
 
 // resolveLogQueryStream returns the stream key and labels one log entry is
 // grouped under: the translated stream labels after stream-label | drop and
-// | keep mutations, extended with parser-extracted labels (when mergeParsed)
+// | keep stages, extended with parser-extracted labels (when mergeParsed)
 // and named regexp captures. The key is always canonicalLabelsKey of the
 // returned labels, so entries with identical emitted labels share a stream.
 // Every log-query path (single request, windowed fragments and their cache)
 // derives stream identity here so they cannot drift.
 func resolveLogQueryStream(
 	desc cachedLogQueryStreamDescriptor,
-	dropConditions, keepConditions []translate.DropCondition,
-	bareDropFields, bareKeepFields []string,
+	dropConditions []translate.DropCondition,
+	bareDropFields []string,
+	keeps keepRules,
 	parsedFields map[string]string,
 	mergeParsed bool,
 	captureFields map[string]bool,
 	lt *LabelTranslator,
 ) (string, map[string]string) {
-	streamLabels := desc.translatedLabels
-	changed := false
-	// Loki's | drop field=value removes the field from the label set when the
-	// value matches, including stream labels.
-	if len(dropConditions) > 0 {
-		if _, newLabels, ok := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, lt); ok {
-			streamLabels, changed = newLabels, true
-		}
-	}
-	if len(keepConditions) > 0 {
-		if _, newLabels, ok := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, lt); ok {
-			streamLabels, changed = newLabels, true
-		}
-	}
-	// | drop f removes f unconditionally; | keep f1, f2 removes any label not listed.
-	if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
-		if _, newLabels, ok := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, lt); ok {
-			streamLabels, changed = newLabels, true
+	var streamLabels map[string]string
+	var changed bool
+	if staged := desc.staged; staged != nil && staged.read {
+		streamLabels, changed = staged.labels, staged.changed
+	} else {
+		streamLabels, changed = stagedLabelsOf(desc, dropConditions, bareDropFields, keeps, lt)
+		if staged != nil {
+			*staged = stagedStreamLabels{read: true, labels: streamLabels, changed: changed}
 		}
 	}
 	if merged, ok := mergeExtractedStreamLabels(streamLabels, parsedFields, mergeParsed, captureFields); ok {
@@ -951,6 +940,38 @@ func resolveLogQueryStream(
 		return desc.key, streamLabels
 	}
 	return canonicalLabelsKey(streamLabels), streamLabels
+}
+
+// stagedLabelsOf is a descriptor's translated labels after the drop and keep
+// stages, and whether they changed.
+func stagedLabelsOf(
+	desc cachedLogQueryStreamDescriptor,
+	dropConditions []translate.DropCondition,
+	bareDropFields []string,
+	keeps keepRules,
+	lt *LabelTranslator,
+) (map[string]string, bool) {
+	streamLabels := desc.translatedLabels
+	changed := false
+	// Loki's | drop field=value removes the field from the label set when the
+	// value matches, including stream labels.
+	if len(dropConditions) > 0 {
+		if _, newLabels, ok := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, lt); ok {
+			streamLabels, changed = newLabels, true
+		}
+	}
+	// | drop f removes f unconditionally; | keep removes any label it does not keep.
+	if len(bareDropFields) > 0 {
+		if _, newLabels, ok := applyBareDropToStreamLabels(bareDropFields, desc.rawLabels, streamLabels, lt); ok {
+			streamLabels, changed = newLabels, true
+		}
+	}
+	if len(keeps) > 0 {
+		if newLabels, ok := keeps.streamLabels(streamLabels, lt); ok {
+			streamLabels, changed = newLabels, true
+		}
+	}
+	return streamLabels, changed
 }
 
 // mergeExtractedStreamLabels returns labels extended with parser-extracted
@@ -1131,29 +1152,37 @@ func patternLevel(d detectedLevel) string {
 // levelDropKeep records the bare | drop / | keep stages of a query for the
 // derived detected_level label, which VictoriaLogs never stores.
 type levelDropKeep struct {
-	dropFields, keepFields []string
+	dropFields []string
+	rules      keepRules
 }
 
-func newLevelDropKeep(bareDropFields, bareKeepFields []string) levelDropKeep {
-	return levelDropKeep{dropFields: bareDropFields, keepFields: bareKeepFields}
+func newLevelDropKeep(bareDropFields []string, keeps keepRules) levelDropKeep {
+	return levelDropKeep{dropFields: bareDropFields, rules: keeps}
 }
 
-// keeps reports whether the stages leave a label named name in place.
-func (k levelDropKeep) keeps(name string) bool {
+// keeps reports whether the stages leave a label named name with value in place.
+func (k levelDropKeep) keeps(name, value string) bool {
 	for _, f := range k.dropFields {
 		if f == name {
 			return false
 		}
 	}
-	if len(k.keepFields) == 0 {
-		return true
-	}
-	for _, f := range k.keepFields {
-		if f == name {
-			return true
+	for i := range k.rules {
+		if !k.rules[i].keeps(name, value) {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+// keepsEntry is keeps for the label of an entry that its stream labels or its
+// structured metadata hold under name.
+func (k levelDropKeep) keepsEntry(name string, labels, structuredMetadata map[string]string) bool {
+	value, ok := structuredMetadata[name]
+	if !ok {
+		value = labels[name]
+	}
+	return k.keeps(name, value)
 }
 
 // setDetectedLevelMetadata adds the derived detected_level to an entry's
@@ -1161,7 +1190,7 @@ func (k levelDropKeep) keeps(name string) bool {
 // | drop / | keep stage removes it.
 func setDetectedLevelMetadata(structuredMetadata, smBuf, streamLabels map[string]string, d detectedLevel, stages levelDropKeep) map[string]string {
 	name := detectedLevelName(streamLabels)
-	if !stages.keeps(name) {
+	if !stages.keeps(name, d.String()) {
 		return structuredMetadata
 	}
 	if structuredMetadata == nil {
@@ -1197,7 +1226,7 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 		if _, stored := s.labels["level"]; len(trimmedLevel) > 0 && !stored {
 			rawLabels["level"] = string(trimmedLevel)
 		}
-		if name := detectedLevelName(s.labels); stages.keeps(name) {
+		if name := detectedLevelName(s.labels); stages.keeps(name, d.String()) {
 			rawLabels[name] = d.String()
 		}
 	}
@@ -1208,7 +1237,12 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
 		ensureSyntheticServiceName(translatedLabels)
 	}
+	var staged *stagedStreamLabels
+	if len(stages.rules) > 0 {
+		staged = &stagedStreamLabels{}
+	}
 	desc := cachedLogQueryStreamDescriptor{
+		staged:           staged,
 		key:              canonicalLabelsKey(translatedLabels),
 		streamLabels:     s.labels,
 		rawLabels:        rawLabels,
@@ -1506,13 +1540,6 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels, stre
 	return sm, pf, false
 }
 
-// dropKeepEntryFields applies the bare `| drop` and `| keep` fields to the
-// entry's labels beyond what VictoriaLogs did (dropEntryFields, keepEntryFields).
-func dropKeepEntryFields(drop, keep []string, sm, pf map[string]string) {
-	dropEntryFields(drop, sm, pf)
-	keepEntryFields(keep, sm, pf)
-}
-
 // dropEntryFields removes the fields a bare `| drop f` names from the entry's
 // structured metadata and parsed labels: VictoriaLogs deletes the stored
 // field, which is not the one a parsed label Loki renamed f (name_extracted)
@@ -1604,57 +1631,15 @@ func applyDropConditionsToStreamLabels(conds []translate.DropCondition, rawLabel
 	return canonicalLabelsKey(newRaw), newTranslated, true
 }
 
-// applyBareFieldMutationToStreamLabels handles bare | drop and | keep stream-label mutations.
-// | drop fields: removes each bare-dropped field from the stream label set.
-// | keep fields: removes any stream label not in the keep list.
-// Returns the new stream key, translated labels map, and whether any change occurred.
-// applyKeepConditionsToStreamLabels mirrors applyDropConditionsToStreamLabels
-// for matcher-form keep: `| keep field=value` keeps the stream label only when
-// the value matches, stripping it otherwise.
-func applyKeepConditionsToStreamLabels(conds []translate.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
-	for _, dc := range conds {
-		field := dc.Field
-		if val, ok := rawLabels[field]; ok && !dc.Matches(val) {
-			changed = true
-			break
-		}
-		if lt != nil {
-			if vlField := lt.ToVL(field); vlField != field {
-				if val, ok := rawLabels[vlField]; ok && !dc.Matches(val) {
-					changed = true
-					break
-				}
-			}
-		}
-	}
-	if !changed {
-		return "", nil, false
-	}
-	newTranslated = cloneStringMap(translatedLabels)
-	newRaw := cloneStringMap(rawLabels)
-	for _, dc := range conds {
-		if val, ok := rawLabels[dc.Field]; ok && !dc.Matches(val) {
-			delete(newRaw, dc.Field)
-			delete(newTranslated, dc.Field)
-		}
-		if lt != nil {
-			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
-				if val, ok := rawLabels[vlField]; ok && !dc.Matches(val) {
-					delete(newRaw, vlField)
-					delete(newTranslated, dc.Field)
-				}
-			}
-		}
-	}
-	return canonicalLabelsKey(newRaw), newTranslated, true
-}
-
-func applyBareFieldMutationToStreamLabels(
-	dropFields, keepFields []string,
+// applyBareDropToStreamLabels removes each bare-dropped field from the stream
+// label set. Returns the new stream key, translated labels map, and whether any
+// change occurred.
+func applyBareDropToStreamLabels(
+	dropFields []string,
 	rawLabels, translatedLabels map[string]string,
 	lt *LabelTranslator,
 ) (newKey string, newTranslated map[string]string, changed bool) {
-	if len(dropFields) == 0 && len(keepFields) == 0 {
+	if len(dropFields) == 0 {
 		return "", nil, false
 	}
 
@@ -1667,34 +1652,11 @@ func applyBareFieldMutationToStreamLabels(
 		}
 	}
 
-	keepSet := make(map[string]struct{}, len(keepFields))
-	for _, f := range keepFields {
-		keepSet[f] = struct{}{}
-		if lt != nil && f != detectedLevelLabel {
-			keepSet[lt.ToVL(f)] = struct{}{}
-		}
-	}
-
 	// Determine which raw (VL dotted) labels to remove.
 	toRemove := make(map[string]struct{})
 	for rawKey := range rawLabels {
-		// Drop: remove if in drop set.
 		if _, ok := dropSet[rawKey]; ok {
 			toRemove[rawKey] = struct{}{}
-			continue
-		}
-		// Keep: remove if NOT in keep set (and keep set is non-empty).
-		if len(keepFields) > 0 && !isSpecialKeepLabel(rawKey) {
-			// Translate rawKey to loki label for keep-set lookup.
-			lokiKey := rawKey
-			if lt != nil {
-				lokiKey = lt.ToLoki(rawKey)
-			}
-			if _, ok := keepSet[rawKey]; !ok {
-				if _, ok2 := keepSet[lokiKey]; !ok2 {
-					toRemove[rawKey] = struct{}{}
-				}
-			}
 		}
 	}
 
@@ -1718,13 +1680,6 @@ func applyBareFieldMutationToStreamLabels(
 		if _, drop := dropSet[k]; drop {
 			continue
 		}
-		if len(keepFields) > 0 && !isSpecialKeepLabel(k) {
-			if _, keep := keepSet[k]; !keep {
-				if _, keep = keepSet[vlKey]; !keep {
-					continue
-				}
-			}
-		}
 		newTrans[k] = v
 	}
 	if len(toRemove) == 0 && len(newTrans) == len(translatedLabels) {
@@ -1736,37 +1691,38 @@ func applyBareFieldMutationToStreamLabels(
 	return key, newTrans, true
 }
 
+// streamLabels returns the translated stream labels the keep stages leave, and
+// whether any was removed. The input map is never mutated.
+func (rules keepRules) streamLabels(translatedLabels map[string]string, lt *LabelTranslator) (map[string]string, bool) {
+	var out map[string]string
+	for name, value := range translatedLabels {
+		stored := name
+		if lt != nil && name != detectedLevelLabel {
+			stored = lt.ToVL(name)
+		}
+		for i := range rules {
+			if rules[i].keepsSpelled(name, stored, value) {
+				continue
+			}
+			if out == nil {
+				out = cloneStringMap(translatedLabels)
+			}
+			delete(out, name)
+			break
+		}
+	}
+	if out == nil {
+		return translatedLabels, false
+	}
+	return out, true
+}
+
 func isSpecialKeepLabel(name string) bool {
 	switch name {
 	case "__error__", "__error_details__", "__preserve_error__":
 		return true
 	}
 	return false
-}
-
-// applyKeepConditions removes fields from sm/pf where a keep condition exists for that field
-// but the entry value does NOT satisfy the condition.
-// Loki's `| keep field=value` keeps the label only for entries where field matches value;
-// non-matching entries have the field stripped. Fields not covered by any condition are
-// unchanged — VL's field projection already handles bare-name keeps.
-func applyKeepConditions(conds []translate.DropCondition, sm, pf map[string]string) {
-	if len(conds) == 0 {
-		return
-	}
-	condByField := make(map[string]translate.DropCondition, len(conds))
-	for _, dc := range conds {
-		condByField[dc.Field] = dc
-	}
-	for field, val := range sm {
-		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
-			delete(sm, field)
-		}
-	}
-	for field, val := range pf {
-		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
-			delete(pf, field)
-		}
-	}
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
@@ -1976,7 +1932,7 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 // for tight per-entry loops where originalQuery and stream labels are constant.
 // classifyAsParsed and streamLabels must be pre-computed once before the loop.
 // drop reports that a label filter drops the row (lineFieldExposure.dropsRow).
-func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (labels, structuredMetadata, parsedFields map[string]string, drop bool) {
+func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposure *lineFieldExposure, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string, keeps ...keepRule) (labels, structuredMetadata, parsedFields map[string]string, drop bool) {
 	labels = make(map[string]string, len(streamLabels))
 	for k, v := range streamLabels {
 		labels[k] = v
@@ -1989,7 +1945,7 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		if storedLine == "" {
 			storedLine, _ = stringifyEntryValue(entry["_msg"])
 		}
-		if !exposure.hidesStoredLevelOf([]byte(storedLine)) {
+		if !exposure.hidesRowLevel(keeps, value, []byte(storedLine)) {
 			labels["level"] = value
 		}
 	}

@@ -151,15 +151,15 @@ func TestMetricDropAndKeepPipes(t *testing.T) {
 		{"drop names and matchers", func() ([]logsql.Pipe, error) {
 			return metricDropPipes(drop([]string{"a"}, logql.DropMatcher{Name: "b", Op: "=", Value: "x"}))
 		}, "| delete a"},
-		{"keep names", func() ([]logsql.Pipe, error) { return metricKeepPipes(keep([]string{"a", "b"}), nil, Profile{}) }, "| fields _time, _msg, _stream, a, b"},
+		{"keep names", func() ([]logsql.Pipe, error) { return metricKeepPipes(keep([]string{"a", "b"}), nil), nil }, "| fields _time, _msg, _stream, a, b"},
 		{"keep detected_level", func() ([]logsql.Pipe, error) {
-			return metricKeepPipes(keep([]string{"detected_level"}), nil, Profile{})
+			return metricKeepPipes(keep([]string{"detected_level"}), nil), nil
 		}, "| fields _time, _msg, _stream, detected_level, level | delete level"},
 		{"keep detected_level and level", func() ([]logsql.Pipe, error) {
-			return metricKeepPipes(keep([]string{"detected_level", "level"}), nil, Profile{})
+			return metricKeepPipes(keep([]string{"detected_level", "level"}), nil), nil
 		}, "| fields _time, _msg, _stream, detected_level, level"},
 		{"keep detected_level matcher", func() ([]logsql.Pipe, error) {
-			return metricKeepPipes(keep(nil, logql.DropMatcher{Name: "detected_level", Op: "=", Value: "x"}), nil, Profile{})
+			return metricKeepPipes(keep(nil, logql.DropMatcher{Name: "detected_level", Op: "=", Value: "x"}), nil), nil
 		}, "| fields _time, _msg, _stream, detected_level, level | delete level"},
 	} {
 		ps, err := c.got()
@@ -171,12 +171,13 @@ func TestMetricDropAndKeepPipes(t *testing.T) {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
-	// A matcher value the translator's splitting reads wrongly stays with it, as in a log query.
+	// A drop matcher value the translator's splitting reads wrongly stays with it, as in a log query.
 	if _, err := metricDropPipes(drop(nil, logql.DropMatcher{Name: "a", Op: "=", Value: `x"y`})); err == nil {
 		t.Error("drop matcher with a quote lowered")
 	}
-	if _, err := metricKeepPipes(keep(nil, logql.DropMatcher{Name: "a", Op: "=", Value: "x=y"}), nil, Profile{}); err == nil {
-		t.Error("keep matcher with an operator character lowered")
+	// A keep writes its matcher's name whatever the value holds (semantics/keep-names-and-matchers).
+	if got := text(metricKeepPipes(keep(nil, logql.DropMatcher{Name: "a", Op: "=", Value: `x="y`}), nil)); got != "| fields _time, _msg, _stream, a" {
+		t.Errorf("keep matcher with a quote and an operator character: %q", got)
 	}
 }
 

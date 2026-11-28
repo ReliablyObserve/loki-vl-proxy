@@ -118,6 +118,12 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					numeric++
 					continue
 				}
+				// A matcher keep before a stage that reads its name, or under a metric: the plan blanks the values Loki's
+				// keep removes, held to Loki by TestPlanMatchesLokiOnLogQueries and TestKeepMatchersMetricMatchLoki
+				// (semantics/keep-names-and-matchers).
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesKeepBlank(plan) && gotErr == nil && got != want {
+					continue
+				}
 				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.ReadsReservedField(plan, lower.Profile{}) && gotErr == nil {
 					reserved++
 					if got == want {
@@ -296,6 +302,10 @@ func FuzzMetricFlipGate(f *testing.F) {
 		// translator writes the literal's text (semantics/label-filter-numeric-equality): held to Loki by its
 		// differential, not to the translator's text.
 		if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesNumericEquality(plan) {
+			return
+		}
+		// So is a keep whose rejected matcher values the plan blanks (semantics/keep-names-and-matchers).
+		if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.WritesKeepBlank(plan) {
 			return
 		}
 		got, gotErr := on.translateQueryOpts(context.Background(), q, false)

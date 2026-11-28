@@ -16,34 +16,19 @@ import (
 //   - a parser and a stream label the string translator copies aside because the pipeline reads it;
 //   - a stage whose text the string translator reads differently from the typed stage (translate.JSONAliasCopies,
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
-func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, err error) {
+func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, restore []logsql.Pipe, err error) {
 	parsed := false
 	// keepLine is whether the first line_format still has to keep the stored line aside.
 	keepLine := prof.KeepLine
 	var names definedNames
 	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
-	// The query stays with it unless the label filters alone read it (streamValues); the construct is answered
-	// once the stages themselves are known to lower, so a query reports its first cause.
-	var streamErr error
-	if names := translate.StreamLabelNames(prof.Label); len(names) > 0 && hasParser(sel) {
-		if prof.metric {
-			// A metric query puts the stored value of every stream label back behind each parser (and so reads
-			// the label from its own field): the labels the pipeline reads make no difference.
-			read = names
-		} else if readsStreamLabel(sel, names) {
-			streamErr = &NotLoweredError{Construct: "LogSelect stream label after parser"}
-		} else if r, c := streamValues(sel, names); c != "" {
-			streamErr = &NotLoweredError{Construct: c}
-		} else {
-			read = r
-		}
-	}
+	read, streamErr := streamReads(sel, prof)
 	read = aliasStreamReads(sel, prof, read)
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
 		names.note(defs, i)
 		if stageNamesReservedField(st) {
-			return nil, nil, &NotLoweredError{Construct: reservedStageConstruct}
+			return nil, nil, nil, &NotLoweredError{Construct: reservedStageConstruct}
 		}
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
@@ -67,12 +52,17 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			} else {
 				ps, err = dropPipes(st)
 			}
-		case *queryplan.Keep:
-			if prof.metric {
-				ps, err = metricKeepPipes(st, names.label(prof.Label), prof)
-			} else {
-				ps, err = keepPipes(st, names.label(prof.Label), prof)
+			if err == nil {
+				blank, back := dropBlankPipes(sel, i, st, names.label(prof.Label), prof.metric)
+				// Level fields go back in the reverse order of their blanking.
+				ps, restore = append(ps, blank...), append(back, restore...)
 			}
+		case *queryplan.Keep:
+			var copies []string
+			if parsed && !prof.metric {
+				copies = read
+			}
+			ps = keepStagePipes(sel, i, st, names.label(prof.Label), prof.metric, copies)
 		case *queryplan.Decolorize:
 			ps = []logsql.Pipe{translate.Decolorize()}
 		case *queryplan.LineFormat:
@@ -91,7 +81,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			err = &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if len(ps) > 0 {
 			if built == nil {
@@ -101,9 +91,30 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 		}
 	}
 	if streamErr != nil {
-		return nil, nil, streamErr
+		return nil, nil, nil, streamErr
 	}
-	return built, read, nil
+	return built, read, restore, nil
+}
+
+// streamReads are the stream labels the pipeline of a query with a parser reads from their stored values, or why
+// the query stays with the string translator.
+func streamReads(sel *queryplan.LogSelect, prof Profile) (read []string, streamErr error) {
+	// The query stays with it unless the label filters alone read it (streamValues); the construct is answered
+	// once the stages themselves are known to lower, so a query reports its first cause.
+	if names := translate.StreamLabelNames(prof.Label); len(names) > 0 && hasParser(sel) {
+		if prof.metric {
+			// A metric query puts the stored value of every stream label back behind each parser (and so reads
+			// the label from its own field): the labels the pipeline reads make no difference.
+			read = names
+		} else if kept := keepStreamReads(sel, names); readsStreamLabel(sel, names, kept) {
+			streamErr = &NotLoweredError{Construct: "LogSelect stream label after parser"}
+		} else if r, c := streamValues(sel, names); c != "" {
+			streamErr = &NotLoweredError{Construct: c}
+		} else {
+			read = withNames(names, r, kept)
+		}
+	}
+	return read, streamErr
 }
 
 // hasParser reports whether the query has a json or logfmt parser stage.
@@ -191,21 +202,18 @@ func dropPipes(st *queryplan.Drop) ([]logsql.Pipe, error) {
 	return nil, nil
 }
 
-// keepPipes are the pipes of a keep stage over its names or its matchers' names. A keep that holds both loses the
-// order they were written in, and a matcher value with a quote or an operator character is read wrongly by the
-// string translator.
-func keepPipes(st *queryplan.Keep, label func(string) string, prof Profile) ([]logsql.Pipe, error) {
-	if len(st.Labels) > 0 && len(st.Matchers) > 0 {
-		return nil, &NotLoweredError{Construct: "LogSelect keep order"}
-	}
-	names := append([]string(nil), st.Labels...)
+// keepPipes are the pipes of a keep stage over its names and its matchers' names, in written order.
+func keepPipes(st *queryplan.Keep, label func(string) string) []logsql.Pipe {
+	names := make([]string, 0, len(st.Labels)+len(st.Matchers))
+	next := 0
 	for _, m := range st.Matchers {
-		if hasQuote(m.Value) || hasOperatorByte(m.Value) {
-			return nil, &NotLoweredError{Construct: "LogSelect keep matcher value"}
+		for ; next < m.Bare && next < len(st.Labels); next++ {
+			names = append(names, st.Labels[next])
 		}
 		names = append(names, m.Name)
 	}
-	return []logsql.Pipe{translate.KeepFields(names, label)}, nil
+	names = append(names, st.Labels[next:]...)
+	return []logsql.Pipe{translate.KeepFields(names, label)}
 }
 
 // hasQuote reports a quote character, which the string translator's comma splitting of a drop or keep list
@@ -219,23 +227,11 @@ func hasQuote(s string) bool {
 	return false
 }
 
-// hasOperatorByte reports a character of a matcher operator, which the string translator's reading of a keep
-// matcher takes for the operator.
-func hasOperatorByte(s string) bool {
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '=', '~', '!':
-			return true
-		}
-	}
-	return false
-}
-
 // readsStreamLabel reports whether a stage names one of the stream labels in a place the string translator
 // copies its stored value aside for: a drop or keep matcher's name, a json or logfmt extraction name (the label
 // filters that read one are streamValues'). It is wider than the translator's reading, never narrower: a query
-// it reports stays with the translator.
-func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
+// it reports stays with the translator. A keep matcher name in kept is read by the lowering itself (keepStreamReads).
+func readsStreamLabel(sel *queryplan.LogSelect, names, kept []string) bool {
 	if len(names) == 0 {
 		return false
 	}
@@ -258,7 +254,7 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 			}
 		case *queryplan.Keep:
 			for _, m := range st.Matchers {
-				if named(m.Name) {
+				if named(m.Name) && !slices.Contains(kept, m.Name) {
 					return true
 				}
 			}

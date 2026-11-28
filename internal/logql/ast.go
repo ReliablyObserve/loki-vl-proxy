@@ -257,6 +257,9 @@ type DropMatcher struct {
 	Name  string
 	Op    string // "=", "!=", "=~", "!~"
 	Value string
+	// Bare is how many of the stage's bare names are written before the matcher: with Labels and Matchers it
+	// holds the list in written order. It changes nothing the stage answers.
+	Bare int
 }
 
 func (m DropMatcher) String() string {
@@ -283,10 +286,14 @@ func dropKeepList(labels []string, matchers []DropMatcher) string {
 		return "\v"
 	}
 	parts := make([]string, 0, len(labels)+len(matchers))
-	parts = append(parts, labels...)
+	next := 0
 	for _, m := range matchers {
+		for ; next < m.Bare && next < len(labels); next++ {
+			parts = append(parts, labels[next])
+		}
 		parts = append(parts, m.String())
 	}
+	parts = append(parts, labels[next:]...)
 	return strings.Join(parts, ", ")
 }
 
