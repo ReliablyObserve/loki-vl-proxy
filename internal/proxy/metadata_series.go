@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -25,20 +26,58 @@ import (
 // Where the declaration is false (a field parsed out of the line at ingest, a jsonline or other writer's field), that
 // field splits the proxy's series where Loki's would not; an answer that sums the series is unchanged.
 
-// metadataSeriesKey marks a metric request whose reads take Loki's structured-metadata series identity.
+// metadataSeriesKey marks a metric request whose reads take Loki's structured-metadata series identity; its value is
+// the request's memo of the identities it listed.
 type metadataSeriesKey struct{}
+
+// metadataSeriesMemo holds the identities a request listed, by the filter its reads share: a read whose window lies in
+// a listed window takes that identity (a superset of its rows' fields), so the time chunks and the operands of one
+// request list the fields once. It holds a few entries per request and dies with it.
+type metadataSeriesMemo struct {
+	mu      sync.Mutex
+	entries []metadataSeriesEntry
+}
+
+type metadataSeriesEntry struct {
+	filter string
+	lo, hi int64
+	spec   logsql.SeriesMetadata
+	ok     bool
+}
+
+func (m *metadataSeriesMemo) find(filter string, from, to int64) (metadataSeriesEntry, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, e := range m.entries {
+		if e.filter == filter && e.lo <= from && to <= e.hi {
+			return e, true
+		}
+	}
+	return metadataSeriesEntry{}, false
+}
+
+func (m *metadataSeriesMemo) add(e metadataSeriesEntry) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.entries) < 16 {
+		m.entries = append(m.entries, e)
+	}
+}
 
 // withMetadataSeries marks ctx's reads for the identity when the operator declared it.
 func (p *Proxy) withMetadataSeries(ctx context.Context) context.Context {
 	if !p.structuredMetadataSeries {
 		return ctx
 	}
-	return context.WithValue(ctx, metadataSeriesKey{}, true)
+	if _, ok := ctx.Value(metadataSeriesKey{}).(*metadataSeriesMemo); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, metadataSeriesKey{}, &metadataSeriesMemo{})
 }
 
-func metadataSeriesOn(ctx context.Context) bool {
-	on, _ := ctx.Value(metadataSeriesKey{}).(bool)
-	return on
+func metadataSeriesOf(ctx context.Context) *metadataSeriesMemo {
+	m, _ := ctx.Value(metadataSeriesKey{}).(*metadataSeriesMemo)
+	return m
 }
 
 // metadataSeriesDiscoveryAlign widens a read's window to whole hours for the field listings: a superset of the
@@ -51,7 +90,8 @@ const metadataSeriesDiscoveryAlign = time.Hour
 // request, the read is not a stats read of a series per stream, or its window holds no structured metadata. A read
 // whose fields cannot be listed is sent as it is and counted.
 func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params url.Values) url.Values {
-	if !metadataSeriesOn(ctx) {
+	memo := metadataSeriesOf(ctx)
+	if memo == nil {
 		return params
 	}
 	switch path {
@@ -78,7 +118,7 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 		p.observeInternalOperation(ctx, "metadata_series_identity", "no_window", time.Since(started))
 		return params
 	}
-	spec, ok, err := p.seriesMetadataFor(ctx, *q, from, to)
+	spec, ok, err := p.seriesMetadataFor(ctx, memo, *q, from, to)
 	if err != nil {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "listing_failed", time.Since(started))
 		return params
@@ -101,14 +141,18 @@ func (p *Proxy) metadataSeriesParams(ctx context.Context, path string, params ur
 }
 
 // seriesMetadataFor is the series identity of the rows q's filters read in [from, to], widened to whole hours: the
-// stream fields and all fields VictoriaLogs lists for them there (field_names and stream_field_names, both cached).
-func (p *Proxy) seriesMetadataFor(ctx context.Context, q logsql.Query, from, to int64) (logsql.SeriesMetadata, bool, error) {
+// stream fields and all fields VictoriaLogs lists for them there (field_names and stream_field_names, both cached),
+// or the identity the request listed already over a window that holds this one.
+func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo, q logsql.Query, from, to int64) (logsql.SeriesMetadata, bool, error) {
+	filter := logsql.Query{Filter: q.Filter}.String()
+	if e, ok := memo.find(filter, from, to); ok {
+		return e.spec, e.ok, nil
+	}
 	align := metadataSeriesDiscoveryAlign.Nanoseconds()
 	lo := from / align * align
 	hi := (to + align - 1) / align * align
-	filter := logsql.Query{Filter: q.Filter}
 	params := url.Values{}
-	params.Set("query", filter.String())
+	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
 	params.Set("end", strconv.FormatInt(hi, 10))
 	fields, err := p.fetchAllFieldNamesCached(ctx, params)
@@ -120,5 +164,23 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, q logsql.Query, from, to 
 		return logsql.SeriesMetadata{}, false, err
 	}
 	spec, ok := logsql.NewSeriesMetadata(stream, fields, SanitizeLabelName)
+	memo.add(metadataSeriesEntry{filter: filter, lo: lo, hi: hi, spec: spec, ok: ok})
 	return spec, ok, nil
+}
+
+// statsReadSeriesLimit is the series a stats read may hold: the tenant's series limit (resolvedMaxStatsQuerySeries),
+// except for a read of a request whose answer the bucket matrix builder folds into its groups (matrixFold) while it
+// takes Loki's structured-metadata series. Such a read holds a series per stream and metadata set, often one per
+// line, which Loki folds before its limit applies (to the folded answer: the chunk fold and capSeriesToLimit hold
+// it there); the read is then bounded by -manual-range-metric-row-limit, as the proxy's other folded reads are, and
+// by the stats body bound, past which it is read again in time chunks.
+func (p *Proxy) statsReadSeriesLimit(ctx context.Context) int {
+	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	if metadataSeriesOf(ctx) == nil || matrixFoldFrom(ctx) == nil {
+		return limit
+	}
+	if rows, err := p.manualMetricRowBudget(); err == nil && (limit <= 0 || rows > limit) {
+		return rows
+	}
+	return limit
 }

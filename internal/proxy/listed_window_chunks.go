@@ -169,7 +169,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 	if n <= 0 || bucketSteps < 1 || len(fold.levels) == 0 {
 		return false, false
 	}
-	budget := p.resolvedMaxStatsQuerySeries(ctx)
+	budget := p.statsReadSeriesLimit(ctx)
 	maxBytes := p.limits().BufferedBackendBodyBytes
 	sizeKey := listedChunkSizeKey(ctx, r.FormValue("query"), step, bucket)
 	size := min64(n, bucketSteps)

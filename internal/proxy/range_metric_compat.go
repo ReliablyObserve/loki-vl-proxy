@@ -1795,7 +1795,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		return nil, nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	limit := p.statsReadSeriesLimit(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
 	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc)+fold.extraResults())
 	if err != nil {
