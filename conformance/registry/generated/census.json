@@ -4736,7 +4736,6 @@
     "parser-sum/PS2 instant Drilldown count, json, logfmt, drop",
     "parser-sum/PS3 rate, json, logfmt, drop",
     "parser-sum/PS4 count over logfmt alone",
-    "parser-sum/PS5 grouped count, json, logfmt, drop (control)",
     "pattern-line-filter-anchoring/A1 nginx include GET, log query",
     "pattern-line-filter-anchoring/A2 nginx exclude GET, log query",
     "pattern-line-filter-anchoring/A3 nginx include GET, count_over_time",

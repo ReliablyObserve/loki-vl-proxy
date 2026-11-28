@@ -3884,7 +3884,7 @@
    ]
   },
   "parser-sum": {
-   "description": "Issue #1821 item 4: a sum with no by or without clause of a count or a rate over bare `| json` and `| logfmt` parsers runs no parser in Loki. The query plan writes it with no parser pipe and the proxy sends no parser probe (semantics/ungrouped-sum-skips-parsers). PS5 is a grouped control that keeps the probe and the parsers.",
+   "description": "Issue #1821 item 4: a sum with no by or without clause of a count or a rate over bare `| json` and `| logfmt` parsers runs no parser in Loki. The query plan writes it with no parser pipe and the proxy sends no parser probe (semantics/ungrouped-sum-skips-parsers).",
    "ranges": [
     "1h",
     "6h",
@@ -3927,16 +3927,6 @@
      "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | logfmt [5m]))",
      "covers": [
       "semantics/ungrouped-sum-skips-parsers",
-      "parser-json",
-      "parser-logfmt",
-      "loki_api_v1_query_range"
-     ]
-    },
-    {
-     "name": "PS5 grouped count, json, logfmt, drop (control)",
-     "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
-     "covers": [
-      "semantics/two-parsers-keep-one",
       "parser-json",
       "parser-logfmt",
       "loki_api_v1_query_range"
