@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.387.0] - 2026-11-28
+
 ### Performance
 
 - The disk cache's start-up index rebuild reads the cache file in file order into the page cache while it runs, when that is faster than the rebuild alone (new flag `-disk-cache-rebuild-readahead`, default `true`, Helm `extraArgs`; issue #1802). On a cold page cache the rebuild waited for one scattered read of about 4 KiB per record; it now finds most pages already read, and the restart hand-over's warm-up then reads those values from memory. The read-ahead uses eight positioned reads of 512 KiB (buffers allocated on first use) and stops when the rebuild ends, before the listener opens, so no query or peer request waits behind it. It times the rebuild alone for 50 ms and stops itself, once, when the rebuild alone covers the file as fast as it reads it (large records, or pages reclaimed under memory pressure), so a cache of large records is not read whole for nothing. It never changes which records the rebuild keeps, drops or orders. The `disk cache index rebuilt` log line reports `readahead_bytes` and `readahead_stopped_early`. Measured on 2026-11-28 on a local Linux VM with its data disk throttled per container and no latency added (not EBS), rebuild and ready time with the hand-over: 50,000 records of 8 KiB at 125 MiB/s and 3,000 IOPS 12.1 to 4.4 s and 20.4 to 4.6 s, at 375 MiB/s and 6,500 IOPS 5.6 to 1.8 s and 9.4 to 2.0 s; the 2 GiB benchmark mix equal at 125 MiB/s (stopped) and 2.70 to 2.41 s, ready 4.59 to 2.92 s, at 375 MiB/s; 2.2 GB of large raw records stopped, 7.19 to 7.29 s (the probe's 0.1 s), also with 1 GiB of memory. A real proxy start on an Apple M5 Pro SSD with 26,000 records went from 1.04 s to 0.10 s. With a warm page cache the rebuild is unchanged. The bytes read ahead stay in the reclaimable page cache, which a container's memory accounting counts until the kernel reclaims them. `docs/disk-cache.md` has the tables.
+
+## [2.386.0] - 2026-11-28
 
 ### Fixed
 
