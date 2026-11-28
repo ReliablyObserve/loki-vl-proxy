@@ -1235,6 +1235,9 @@
     "semantics/typed-negative-filter-stage-composition-extra-entries | query",
     "semantics/unary-plus-literal-rejected | compare:observed",
     "semantics/unary-plus-literal-rejected | gap:open",
+    "semantics/ungrouped-sum-skips-unpack | compare:exact",
+    "semantics/ungrouped-sum-skips-unpack | perf",
+    "semantics/ungrouped-sum-skips-unpack | query",
     "semantics/unknown-pipeline-stage-error-text | compare:observed",
     "semantics/unknown-pipeline-stage-error-text | gap:open",
     "semantics/unpack-instant-grouped-sum-reads-every-line | compare:exact",
@@ -1695,6 +1698,7 @@
     "internal/proxy/absent_over_time_differential_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/absent_over_time_test.go | semantics/absent-over-time-semantics",
+    "internal/proxy/absent_over_time_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/proxy/absent_over_time_test.go | status-400",
     "internal/proxy/absent_reference_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_reference_test.go | window-bounds-and-step-alignment",
@@ -3067,6 +3071,7 @@
     "internal/querycorpus/typed_pair_blank_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/querycorpus/unpack_error_lines_test.go | semantics/unpack-parser-error-not-raised",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-instant-grouped-sum-reads-every-line",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "internal/querycorpus/unpack_sum_loki_diff_test.go | semantics/unpack-parser-error-not-raised",
@@ -3146,6 +3151,7 @@
     "internal/queryplan/lower/series_fold_test.go | semantics/unwrap-per-series-identity-raw-rows",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unpack_test.go | semantics/translator-writes-unpack-as-unpack-json",
+    "internal/queryplan/lower/unpack_test.go | semantics/ungrouped-sum-skips-unpack",
     "internal/queryplan/lower/unspaced_parser_test.go | semantics/translator-copies-unspaced-parser",
     "internal/queryplan/lower/unwrap_blank_test.go | semantics/translator-reads-only-space-between-tokens",
     "internal/queryplan/lower/unwrap_count_variance_test.go | semantics/count-over-stdvar-answers-variance",
@@ -3724,6 +3730,7 @@
     "test/e2e-compat/topk_range_per_step_test.go | semantics/topk-grouped-spellings",
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query",
     "test/e2e-compat/unpack_metrics_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/unpack_metrics_test.go | semantics/ungrouped-sum-skips-unpack",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-grouped-sum-reads-every-line",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unpack-instant-sum-rate-per-stream",
     "test/e2e-compat/unpack_metrics_test.go | semantics/unwrap-conversion-check-reads-unpack-unlike-loki",
@@ -3844,7 +3851,7 @@
       "any": 50,
       "api": 125,
       "drilldown": 67,
-      "explore": 270,
+      "explore": 271,
       "grafana-datasource": 4,
       "operator": 6
     },
@@ -3854,7 +3861,7 @@
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 147,
+      "explore": 148,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3868,10 +3875,10 @@
       "pipeline_error": 7,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 119,
+    "shape_covers_distinct": 120,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 507
+    "wired_items": 508
   },
   "gates": [
     "A/B shape selection",
@@ -3996,6 +4003,7 @@
     "explore-topk-without-keeps-labels",
     "explore-unpack-sum-absent",
     "explore-unpack-sum-count",
+    "explore-unpack-sum-rate",
     "explore-unwrap-conversion-error",
     "explore-unwrap-duration-seconds",
     "explore-unwrap-first-last-per-line",
@@ -4746,6 +4754,7 @@
     "unpack-sum/UP1 sum count_over_time over unpack",
     "unpack-sum/UP2 sum count_over_time over unpack and a drop, instant",
     "unpack-sum/UP3 sum absent_over_time over unpack with no stream",
+    "unpack-sum/UP4 sum rate over unpack and a drop",
     "unwrap-conversion-error/E1 json duration_ms sum by service",
     "unwrap-conversion-error/E2 json duration_ms p95 by service",
     "unwrap-conversion-error/E3 logfmt latency_ms rate, production",

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -569,4 +570,61 @@ func TestAbsentOverTimeMultiTenant(t *testing.T) {
 			t.Fatalf("%d %s", code, body)
 		}
 	})
+}
+
+// The presence query of an absent_over_time over an unpack keeps the unpack_json pipe, as before: the plan writes no
+// stage from the unpack on only for a client's sum of a count or a rate. On one proxy the client's sum, translated
+// first, does not lend its text to the presence query (the translation cache keeps them apart), nor the other way.
+//
+// conformance: semantics/ungrouped-sum-skips-unpack, semantics/absent-over-time-semantics
+func TestAbsentOverTimePresenceKeepsTheUnpack(t *testing.T) {
+	vl := &vlRecorder{answer: `{"status":"success","data":{"resultType":"matrix","result":[]}}`}
+	backend := httptest.NewServer(vl.handler())
+	defer backend.Close()
+	p := newTestProxy(t, backend.URL)
+	hdr := map[string]string{"X-Scope-OrgID": "0"}
+	// Each request has its own window, so no answer is read back from the response caches.
+	start := int64(1800000000)
+	sent := func(query string) []string {
+		t.Helper()
+		vl.mu.Lock()
+		vl.queries = nil
+		vl.mu.Unlock()
+		start += 3600
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(start, 10)}, "end": {strconv.FormatInt(start+240, 10)}, "step": {"60"}}
+		if res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), hdr); res.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", query, res.Code, res.Body.String())
+		}
+		vl.mu.Lock()
+		defer vl.mu.Unlock()
+		if len(vl.queries) == 0 {
+			t.Fatalf("%s: no stats call", query)
+		}
+		return append([]string(nil), vl.queries...)
+	}
+	for _, inner := range []string{`{app="a"} | unpack`, `{app="a"} |= "k" | unpack | drop b`} {
+		spec, ok := parseAbsentOverTimeCompatSpec(`absent_over_time(` + inner + ` [5m])`)
+		if !ok {
+			t.Fatalf("not recognised: %s", inner)
+		}
+		// The client's sum in the presence query's own spelling, so the two share a translation cache key but for the mark.
+		client := spec.presenceQuery()
+		for _, q := range sent(client) {
+			if strings.Contains(q, "unpack_json") {
+				t.Fatalf("%s: the client's sum reads the unpack: %s", client, q)
+			}
+		}
+		for _, query := range []string{`absent_over_time(` + inner + ` [5m])`, `sum(absent_over_time(` + inner + ` [5m]))`} {
+			for _, q := range sent(query) {
+				if !strings.Contains(q, "unpack_json") {
+					t.Fatalf("%s: the presence query lost the unpack: %s", query, q)
+				}
+			}
+		}
+		for _, q := range sent(client) {
+			if strings.Contains(q, "unpack_json") {
+				t.Fatalf("%s after the absence check: the client's sum reads the unpack: %s", client, q)
+			}
+		}
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // The Loki differential of metric queries over an unpack: real
@@ -55,6 +56,9 @@ var unpackSumKnown = func() map[string]unpackSumOpen {
 		`count_over_time({job="bad"} | unpack != "k" [1m])`:         {unpackSumCase, ranged},
 		// A value is unwrapped from a line that is not packed.
 		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`: {unpackSumCase, all},
+		// A ranking over a sum of a rate behind a keep after the unpack (the translator's text, as on main): the
+		// proxy fails the request where Loki answers.
+		`sort(sum(rate({job="pk"} | unpack | keep a [1m])))`: {unpackSumCase, all},
 		// A sum over a maximum adds the maxima of Loki's series, which the promoted labels split.
 		`sum(max_over_time({job="uw"} | unpack | unwrap a [1m]))`:    {unpackSumCase, ranged},
 		`sum(max_over_time({job="uwbad"} | unpack | unwrap a [1m]))`: {unpackSumCase, []string{"v1.54.0 step<range", "v1.49.0 step<range"}},
@@ -116,6 +120,30 @@ func unpackSumQueries() []string {
 			out = append(out, fn+`(`+job+` | unpack | unwrap a [1m])`, `sum(`+fn+`(`+job+` | unpack | unwrap a [1m]))`)
 		}
 	}
+	// A sum with no clause of a count or a rate reads no line for the unpack (semantics/ungrouped-sum-skips-unpack):
+	// over packed keys named like VictoriaLogs' fields, over a selector with no line, and an empty by clause (Loki's
+	// tree holds no grouping), which the plan does not rewrite.
+	out = append(out,
+		`sum(count_over_time({job="rs"} | unpack [1m]))`,
+		`sum(rate({job="rs"} | unpack | drop a [1m]))`,
+		`sum(count_over_time({job="none"} | unpack [1m]))`,
+		`sum(rate({job="none"} | unpack | keep a [1m] offset 40m))`,
+		`sum by () (count_over_time({job="bad"} | unpack [1m]))`,
+	)
+	// The rewritten sum under the wrappers Loki keeps it through: the proxy serves only the root sum, so these keep the
+	// translator's text, and answer Loki's values all the same.
+	for _, sum := range []string{`sum(count_over_time({job="pk"} | unpack [1m]))`, `sum(rate({job="pk"} | unpack | drop a [1m]))`} {
+		out = append(out,
+			sum+` * 2`,
+			sum+` / sum(count_over_time({job="pk"}[1m]))`,
+			`sort(`+sum+`)`,
+			`topk(1, `+sum+`)`,
+			`label_replace(`+sum+`, "dst", "x", "", "")`,
+			`max(`+sum+`)`,
+		)
+	}
+	// A keep after the unpack keeps it (the translator's text): a ranking over such a sum.
+	out = append(out, `sort(sum(rate({job="pk"} | unpack | keep a [1m])))`)
 	// absent_over_time reads the same count at an instant.
 	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`,
 		`absent_over_time({job="none"} | unpack [1m])`, `absent_over_time({job="pk"} | unpack [1m])`)
@@ -130,6 +158,7 @@ func unpackSumFixture() metricFixture {
 		{"job": "uw", "app": "api", "pod": "e", "service_name": "api"},
 		{"job": "uwbad", "app": "api", "pod": "f", "service_name": "api"},
 		{"job": "uwline", "app": "api", "pod": "g", "service_name": "api"},
+		{"job": "rs", "app": "api", "pod": "h", "service_name": "api"},
 	}}
 	valid := []string{
 		`{"a":"1","b":"x","_entry":"hello world k"}`,
@@ -165,6 +194,10 @@ func unpackSumFixture() metricFixture {
 				line = []string{`{"a":"2","_entry":"x"}`, `{"a":"1000"}`, `{"a":"1","_entry":""}`}[i%3]
 			case "uwbad":
 				line = []string{`{"a":"2","_entry":"x"}`, `not json`}[i%2]
+			case "rs":
+				// Packed lines whose keys are VictoriaLogs' own field names, which an unpack_json pipe would write.
+				line = []string{`{"_time":"2020-01-01T00:00:00Z","_entry":"k"}`, `{"_stream":"{x=\"y\"}","a":"1","_entry":"k"}`,
+					`{"_msg":"m","_entry":"k"}`, `{"_stream_id":"0","_entry":"k"}`, `{"_time":"later","a":"1"}`}[i%5]
 			}
 			f.Entries = append(f.Entries, metricEntry{Stream: s, TS: at.UnixNano(), Line: line, Metadata: md})
 		}
@@ -186,7 +219,7 @@ func unpackSumFixture() metricFixture {
 
 // TestUnpackSumMatchesLoki replays the recorded answers through the handlers.
 //
-// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/unpack-parser-error-not-raised, semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki
+// conformance: semantics/translator-writes-unpack-as-unpack-json, semantics/ungrouped-sum-skips-unpack, semantics/unpack-parser-error-not-raised, semantics/unpack-instant-sum-rate-per-stream, semantics/unpack-instant-grouped-sum-reads-every-line, semantics/unwrap-conversion-check-reads-unpack-unlike-loki
 func TestUnpackSumMatchesLoki(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	fix := unpackSumFixture()
@@ -220,7 +253,8 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 				}
 				runs++
 				diff := parserErrorDiff(loki, run, true)
-				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent")
+				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent") ||
+					strings.HasPrefix(mq.q, "sum by () (") || lower.WritesSkippedUnpack(mq.plan)
 				if sum && diff == "" && loki.Status == 200 {
 					if d := compareMetric(loki, run); len(d.classes) != 0 {
 						diff = fmt.Sprintf("another answer: %v", d.classes)

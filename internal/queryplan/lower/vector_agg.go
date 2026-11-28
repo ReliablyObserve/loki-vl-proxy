@@ -120,14 +120,9 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	// A sum with no clause adds up every series of a count, a rate or an absence check, so it reads nothing an unpack
 	// splits the series by: it is lowered over an unpack where the range aggregation under it is (unpackRangeFor).
 	// src still holds the stages as the client wrote them, an unwrap included.
-	if sumReadsNoSeries(va, ra) && unwrapStage(src) == nil {
-		unpacked, err := unpackRangeFor(ra, "VectorAgg")
-		if err != nil {
-			return builtVector{}, err
-		}
-		if unpacked != ra {
-			ra, src = unpacked, unpacked.In
-		}
+	ra, src, unparsed, err := sumOverUnpack(va, ra, src)
+	if err != nil {
+		return builtVector{}, err
 	}
 	if ra.By != nil {
 		return builtVector{}, &NotLoweredError{Construct: "VectorAgg grouping"}
@@ -152,6 +147,10 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	log, err := metricLogQuery(ra.In, prof, "VectorAgg")
 	if err != nil {
 		return builtVector{}, err
+	}
+	if unparsed {
+		// A rate's series are the stream's, as over the unpack the query has: the sum adds them up whatever they are.
+		log.parser = true
 	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
@@ -188,6 +187,30 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 	// the log query and of the pipes that resolved them.
 	stats = rateVectorPipes(stats, va.Op, labels, log, log.holdsCopy() || keys.copies)
 	return builtVector{log: log, keys: keys.text, stats: stats, without: without, raw: raw}, nil
+}
+
+// sumOverUnpack is the range aggregation a sum with no clause lowers over an unpack (sumReadsNoSeries): ra and src as
+// they are with no unpack; for a count or a rate followed by drops only, the copy with no stage from the unpack on
+// (unpackSkipped, unparsed set: the sum reads only how many lines each window holds, which neither the unpack nor the
+// drops change); otherwise the copy unpackRangeFor writes, or the construct it delegates.
+func sumOverUnpack(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect) (*queryplan.RangeAgg, *queryplan.LogSelect, bool, error) {
+	if !sumReadsNoSeries(va, ra) || unwrapStage(src) != nil {
+		return ra, src, false, nil
+	}
+	at, err := unpackLowered(ra, "VectorAgg")
+	switch {
+	case err != nil:
+		return nil, nil, false, err
+	case at < 0:
+		return ra, src, false, nil
+	case ra.Op == logql.RangeAbsentOverTime || keepsAfter(ra.In, at):
+		if ra, err = unpackRangeFor(ra, "VectorAgg"); err != nil {
+			return nil, nil, false, err
+		}
+		return ra, ra.In, false, nil
+	}
+	ra = unpackSkipped(ra, at)
+	return ra, ra.In, true, nil
 }
 
 // sumReadsNoSeries reports a sum with no by or without clause of a count, a rate or an absence check: one number

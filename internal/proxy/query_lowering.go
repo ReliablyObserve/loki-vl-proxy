@@ -161,6 +161,19 @@ func screenMetricQuery(canon string, flipped lower.MetricSet) bool {
 		lower.ScreenMetricIn(canon, flipped) != ""
 }
 
+// skipsUnpackConstruct is the flip of a sum with no by or without clause of a count_over_time or a rate over an
+// unpack followed only by drops (lower.SkipsUnpack): Loki parses no line for it, and the plan writes no
+// stage from the unpack on, where the string translator writes the unpack_json pipe that makes VictoriaLogs parse
+// every line (semantics/ungrouped-sum-skips-unpack). It is served under the VectorAgg flip; the corpus shadow holds
+// these rows as the case's, and TestUnpackSumMatchesLoki (internal/querycorpus) holds the answers to Loki.
+const skipsUnpackConstruct = "VectorAgg unpack skipped"
+
+// skipsUnpackScreen is the text screen of skipsUnpackConstruct: a query that starts with a sum and names an unpack,
+// under the VectorAgg flip. The plan decides.
+func skipsUnpackScreen(canon string, flipped lower.MetricSet) bool {
+	return flipped&lower.MetricVectorAgg != 0 && strings.HasPrefix(canon, "sum(") && strings.Contains(canon, "unpack")
+}
+
 // countVarianceScreen is the text screen of countVarianceConstruct: a query that starts with count and names
 // stdvar_over_time and an unwrap. The plan decides.
 func countVarianceScreen(canon string) bool {
@@ -181,7 +194,8 @@ func lowersParse(query string) bool {
 		_, _, ok := screenLogQuery(query, lower.LogStagesOf(QueryPlanFlippedLogStages))
 		return ok
 	}
-	return screenMetricQuery(query, lower.MetricSetOf(QueryPlanFlippedConstructs))
+	flipped := lower.MetricSetOf(QueryPlanFlippedConstructs)
+	return screenMetricQuery(query, flipped) || skipsUnpackScreen(query, flipped)
 }
 
 // turnedAwayByStages reports a parsed query the text screens turn away for a stage of its log query, read from the
@@ -197,6 +211,10 @@ func turnedAwayByStages(expr logqlpkg.Expr) bool {
 			expr, logQuery = x.Inner, false
 			continue
 		case *logqlpkg.VectorAggregation:
+			if ungroupedSumOfLines(x) {
+				// The plan serves an unpack under it (skipsUnpackConstruct) and decides the rest.
+				return false
+			}
 			expr, logQuery = x.Inner, false
 			continue
 		case *logqlpkg.LogQuery:
@@ -209,6 +227,15 @@ func turnedAwayByStages(expr logqlpkg.Expr) bool {
 		}
 		return false
 	}
+}
+
+// ungroupedSumOfLines reports a sum with no by or without clause directly over a count_over_time, a rate or an
+// absent_over_time: the unpack screen (skipsUnpackScreen) passes it, so its parse is kept for the plan, which serves
+// none of an absence check (lower.SkipsUnpack).
+func ungroupedSumOfLines(v *logqlpkg.VectorAggregation) bool {
+	ra, ok := v.Inner.(*logqlpkg.RangeAggregation)
+	return ok && v.Op == logqlpkg.VectorSum && v.Grouping == nil &&
+		(ra.Op == logqlpkg.RangeCountOverTime || ra.Op == logqlpkg.RangeRate || ra.Op == logqlpkg.RangeAbsentOverTime)
 }
 
 // isVectorCall reports a vector(n) call, which the metric screen turns away at any level.
@@ -285,7 +312,8 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	}
 	flipped := lower.MetricSetOf(p.flippedConstructs)
 	metricFlipped := flipped != 0
-	if !screenMetricQuery(canon, flipped) && (prof.AliasField == nil || lower.ScreenMetricAliasIn(canon, flipped) == "") {
+	screened := screenMetricQuery(canon, flipped) || prof.AliasField != nil && lower.ScreenMetricAliasIn(canon, flipped) != ""
+	if !screened && !skipsUnpackScreen(canon, flipped) {
 		return "", false
 	}
 	// A parser's series identity is served by lowerDynamicIdentity where the handlers read it; a query it does not
@@ -308,6 +336,15 @@ func (p *Proxy) lowerMetric(ctx context.Context, canon string, prof lower.Profil
 	// The screen named the construct; the plan's root has the last word.
 	if lower.CountsVarianceSeries(plan) {
 		construct = countVarianceConstruct
+	} else if lower.SkipsUnpack(plan) && !absentPresence(ctx) {
+		// Served under the VectorAgg flip, with every other divergence of the plan's text left to the translator. The
+		// presence query of an absent_over_time keeps the unpack (absentPresenceKey).
+		if construct = skipsUnpackConstruct; !slices.Contains(p.flippedConstructs, "VectorAgg") || !writesTranslatorText(plan, prof) {
+			return "", false
+		}
+	} else if !screened {
+		// Only the unpack screen passed it: the plan does not skip the unpack, so the translator writes it.
+		return "", false
 	} else if !lower.KeepDecidesUnwrapIdentity(plan) {
 		if !metricFlipped {
 			return "", false

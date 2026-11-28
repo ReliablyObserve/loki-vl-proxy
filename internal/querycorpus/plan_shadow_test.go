@@ -111,6 +111,7 @@ var servedDivergences = map[string]string{
 	knownKeepIdentity:    "TestKeepUnwrapIdentityMatchLoki (internal/querycorpus)",
 	knownDynamicIdentity: "TestKeepUnwrapIdentityMatchLoki, TestStddevStdvarMatchLoki (internal/querycorpus)",
 	knownCountVariance:   "TestStddevStdvarMatchLoki, TestExtractionListIdentityMatchLoki (internal/querycorpus)",
+	knownSkippedUnpack:   "TestUnpackSumMatchesLoki (internal/querycorpus)",
 	"semantics/translator-writes-reserved-field-names":        "TestReservedFieldLabelsMatchLoki (internal/queryplan/lower), TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
 	"semantics/translator-reads-quoted-text-as-syntax":        "TestPlanMatchesLokiOnLogQueries (internal/querycorpus)",
 	"semantics/translator-writes-signed-number-with-blank":    "TestPlanMatchesLokiOnLogQueries, TestOddSpellingsMatchLoki (internal/querycorpus)",
@@ -277,6 +278,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// variance of the group's pooled samples, and the proxy serves the plan's text (lowerMetric).
 				caseID, ok = knownCountVariance, true
 			}
+			if !ok && lower.WritesSkippedUnpack(plan) && !sameAsTranslator(got, legacy) {
+				// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on,
+				// the translator the unpack_json pipe; the proxy serves the plan's text at the root (lowerMetric).
+				caseID, ok = knownSkippedUnpack, true
+			}
 			if !ok && lower.WritesNumericEquality(plan) {
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
@@ -368,6 +374,10 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 // knownKeepIdentity is the registry case of the plan's series identity behind a keep, which the proxy serves from
 // the lowering where it differs from the string translator's.
 const knownKeepIdentity = "semantics/keep-before-unwrap-series-identity"
+
+// knownSkippedUnpack is the registry case of a sum with no clause of a count or a rate over an unpack, which the plan
+// writes with no stage from the unpack on and the proxy serves from the plan at the root (lower.SkipsUnpack).
+const knownSkippedUnpack = "semantics/ungrouped-sum-skips-unpack"
 
 // knownDynamicIdentity is the registry case of the plan's series identity after a json or logfmt parser with no keep
 // (the stream and every parsed label), which the proxy serves from the lowering where it differs from the string
