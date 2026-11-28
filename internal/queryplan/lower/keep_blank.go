@@ -41,7 +41,7 @@ func keepStagePipes(sel *queryplan.LogSelect, i int, st *queryplan.Keep, label f
 	if len(st.Matchers) == 0 {
 		return ps
 	}
-	return append(ps, keepBlankPipes(sel, i, st, label, metric, copies)...)
+	return keepBlankPipes(ps, sel, i, st, label, metric, copies)
 }
 
 // keepNames reports whether the keep names n, bare or with a matcher.
@@ -114,10 +114,9 @@ func WritesKeepStreamValue(p *queryplan.Plan, prof Profile) bool {
 	return false
 }
 
-// keepBlankPipes are the pipes that blank, behind the projection of the keep at stage i, the matcher-named fields
-// later stages read (every one in a metric query).
-func keepBlankPipes(sel *queryplan.LogSelect, i int, st *queryplan.Keep, label func(string) string, metric bool, copies []string) []logsql.Pipe {
-	var out []logsql.Pipe
+// keepBlankPipes appends to out the pipes that blank, behind the projection of the keep at stage i, the
+// matcher-named fields later stages read (every one in a metric query).
+func keepBlankPipes(out []logsql.Pipe, sel *queryplan.LogSelect, i int, st *queryplan.Keep, label func(string) string, metric bool, copies []string) []logsql.Pipe {
 	for j, m := range st.Matchers {
 		name := m.Name
 		if !blanksKeepName(sel, i, st, j, metric) || !metric && !stageReads(sel.Stages[i+1:], name) {

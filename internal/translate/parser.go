@@ -114,31 +114,39 @@ func DropDelete(labels []string) (logsql.Pipe, bool) {
 // time, line and stream, the names, the names without the _extracted suffix Loki gives a collision, level when
 // detected_level is kept without it, and the stored names label translates them to.
 func KeepFields(names []string, label func(string) string) logsql.Pipe {
-	fields := slices.Clone(names)
+	// One list: the three row fields, then the names and what is added after them (kept[3:]), with room for level;
+	// a keep that adds more grows it.
+	const row = 3
+	kept := make([]string, row, row+len(names)+1)
+	kept[0], kept[1], kept[2] = "_time", "_msg", "_stream"
+	kept = append(kept, names...)
 	// A parsed label Loki renamed name_extracted is the stored field name after unpack_*: keep that too.
-	n := len(fields)
-	for i := 0; i < n; i++ {
-		field := fields[i]
+	n := len(kept)
+	for i := row; i < n; i++ {
+		field := kept[i]
 		if len(field) > len(extractedSuffix) && field[len(field)-len(extractedSuffix):] == extractedSuffix {
-			if b := field[:len(field)-len(extractedSuffix)]; bareIdentifier(b) && !slices.Contains(fields, b) {
-				fields = append(fields, b)
+			if b := field[:len(field)-len(extractedSuffix)]; bareIdentifier(b) && !slices.Contains(kept[row:], b) {
+				kept = append(kept, b)
 			}
 		}
 	}
-	if slices.Contains(fields, DetectedLevelLabel) && !slices.Contains(fields, "level") {
-		fields = append(fields, "level")
+	if slices.Contains(kept[row:], DetectedLevelLabel) && !slices.Contains(kept[row:], "level") {
+		kept = append(kept, "level")
 	}
 	if label != nil {
-		for _, field := range slices.Clone(fields) {
+		// The names listed so far, each once: a stored name added here is not translated again.
+		n = len(kept)
+		for i := row; i < n; i++ {
+			field := kept[i]
 			if field == DetectedLevelLabel || field == "service_name" {
 				continue // derived labels have their own read-path projection
 			}
-			if mapped := label(field); mapped != "" && mapped != field && !slices.Contains(fields, mapped) {
-				fields = append(fields, mapped)
+			if mapped := label(field); mapped != "" && mapped != field && !slices.Contains(kept[row:], mapped) {
+				kept = append(kept, mapped)
 			}
 		}
 	}
-	return logsql.PipeFields{Labels: append([]string{"_time", "_msg", "_stream"}, fields...)}
+	return logsql.PipeFields{Labels: kept}
 }
 
 // bareIdentifier reports whether s is letters, digits and underscores.
