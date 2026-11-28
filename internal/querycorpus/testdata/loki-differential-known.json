@@ -788,6 +788,13 @@
     },
     "q": "{env=\"production\"} | json pipeline, level"
   },
+  "q-c624d733cea7": {
+    "classes": {
+      "adds a label Loki does not have": "semantics/logfmt-malformed-lines",
+      "categorized: parsed: adds a label Loki does not have": "semantics/logfmt-malformed-lines"
+    },
+    "q": "{app=\"x\"} | drop level=\"error\" | level!=\"warn\" | logfmt"
+  },
   "q-c761107b3e74": {
     "classes": {
       "categorized: drops a line Loki keeps": "semantics/stream-label-shadowed-after-json-parser",

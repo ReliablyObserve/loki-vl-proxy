@@ -41,6 +41,9 @@ var keepMatcherMetricQueries = []string{
 	`sum(count_over_time({app="x"} | drop level="error" | level="error" [5m]))`,
 	`sum(count_over_time({app="x"} | drop cluster="c1" | cluster!="c1" [5m]))`,
 	`sum by (level) (count_over_time({app="x"} | drop level="error" | level!="warn" [5m]))`,
+	// The filter reads the stored value (F AND NOT R, F alone where the drop spares its value).
+	`sum by (level) (count_over_time({app="x"} | drop level=~"err.*" | level=~"e.*" [5m]))`,
+	`sum by (level) (count_over_time({app="x"} | drop level="error" | level="warn" [5m]))`,
 }
 
 // A metric query over a keep with matchers answers Loki's series and values: instant and range, on VictoriaLogs v1.49

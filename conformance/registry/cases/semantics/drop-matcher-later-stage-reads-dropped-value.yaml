@@ -10,6 +10,34 @@ why: |
   reads the name; a level field is put back after the last stage, so the entry's
   detected_level stays as derived from the stored value. What stays open is in
   semantics/drop-read-remaining-shapes.
+
+  Decision (2026-11-28): where the only later reader is one string label filter F
+  on the name, with no parser before it and nothing between the drop and F that
+  reads or writes the name, the plan writes F reading the stored value instead of
+  blanking: F AND NOT R when F rejects the empty value (Loki's comparison), R OR F
+  when it accepts it (log queries only; a metric groups by the field), and F alone
+  when F is an equality on a value none of the drop's equality matchers removes, so
+  the text is the one of the query without the drop. R is the drop's matchers on
+  the name. The rows are the blanking text's by filter algebra, and the response
+  layer removes the label as before. Chosen over blanking because the blanking pipes
+  run ahead of the filter and keep VictoriaLogs from using it as a query filter:
+  `| drop level="warn" | level="nope"` took 7 ms with them against 3 ms for the
+  filter alone (main, 120,000 lines over 50 minutes; Loki 16 ms), and its
+  translation cost 47 allocations against 31 now (main 29, wrong answer). Code:
+  dropHoistReader and dropHoistedFilter in internal/queryplan/lower/drop_blank.go;
+  benchmark BenchmarkTranslateQueryMissShapes/drop_read_later (internal/proxy).
+corpus:
+  size: 8
+  dimensions:
+    shapes:
+      - query: '{app="x"} | drop level="error" | level="warn"'
+      - query: '{app="x"} | drop level="error" | level="error"'
+      - query: '{app="x"} | drop level=~"err.*" | level=~"e.*"'
+      - query: '{app="x"} | drop level=~"e.*" | level!~"w.*"'
+      - query: '{app="x"} | drop level="error" | level!="warn" | keep level, app'
+      - query: '{app="x"} | drop level="error" | level!="warn" | label_format lvl="{{.app}}"'
+      - query: '{app="x"} | drop level="error" | level!="warn" | logfmt'
+      - query: '{app="x"} | drop level="error" |= "a" | level=""'
 request:
   scope: keep and drop stages
   entry: "a label filter after a drop matcher"
@@ -23,10 +51,10 @@ gap:
   fixed_by: "#1776"
   impact: explore-visible
   effort: M
-  area: 'internal/queryplan/lower/drop_blank.go, internal/queryplan/lower/lower.go and internal/queryplan/lower/parser.go (stage pipes), internal/translate/parser.go (level fields), internal/proxy/response_key_fences.go dropReadResponseKeyVersion'
+  area: 'internal/queryplan/lower/drop_blank.go (dropHoistReader, dropHoistedFilter), internal/queryplan/lower/lower.go and internal/queryplan/lower/parser.go (stage pipes), internal/translate/parser.go (level fields), internal/proxy/response_key_fences.go dropReadResponseKeyVersion'
   loki: 'no line'
   proxy: 'the same entries and labels'
-  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestDropReadByLaterStage (internal/queryplan/lower), TestKeepMatchersMetricMatchLoki (internal/querycorpus)'
+  planned_test: 'TestCompat_KeepNamesAndMatchersLikeLoki (test/e2e-compat, group core), TestDropReadByLaterStage (internal/queryplan/lower), TestPlanMatchesLokiOnLogQueries and TestKeepMatchersMetricMatchLoki (internal/querycorpus)'
   clusters: []
 perf:
   max_ratio: 2.0
