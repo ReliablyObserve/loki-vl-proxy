@@ -527,7 +527,7 @@ func queryStepsWindow(query string) (time.Duration, bool) {
 func (p *Proxy) recordQueryStepsRequest(r *http.Request, logqlQuery string, code int, began time.Time, outcome string) {
 	elapsed := time.Since(began)
 	p.observeInternalOperation(r.Context(), "query_steps_cache", outcome, elapsed)
-	p.metrics.RecordRequest("query_range", code, elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", code, elapsed)
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, code >= 400)
 }
 

@@ -243,4 +243,5 @@ smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets 
 smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments
 smoke	internal/cache	FuzzSizingGhostLRU	12s	-	cache sizing ghost LRU bounds
 smoke	internal/proxy	FuzzBuildMetricSeriesEntryMatchesReference	12s	-	labels and key of a stream-grouped stats series against the copying form
+smoke	internal/proxy	FuzzEffectiveStep	12s	-	the effective step of a range metric query past a read bound: anchored as Loki anchors it, every window within the bucket bound, the smallest multiple within twice the finest fitting step
 smoke	internal/queryplan/lower	FuzzParserSkipLowering	12s	-	a sum that needs no label over bare json and logfmt parsers lowers with no stage from its first parser on, to the text of the query without them

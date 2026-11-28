@@ -43,6 +43,8 @@ type rankingCase struct {
 	// bodyBound, when set, is the stats body bound (maxStatsBucketResponseBytes) of the request: a full read over
 	// it fails, so a range longer than the step takes the ranked top-value read.
 	bodyBound int64
+	// stepMode is the proxy's -range-metric-step-mode ("": the default).
+	stepMode string
 }
 
 func (c rankingCase) query() string {
@@ -210,7 +212,8 @@ func askRanked(t *testing.T, b *rankingBackend, c rankingCase) (*httptest.Respon
 		defer func() { maxStatsBucketResponseBytes = old }()
 	}
 	p, err := New(Config{BackendURL: b.url(c), Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0",
-		BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit, DrilldownSeriesLimitSplitInterval: time.Hour})
+		BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: drilldownSeriesLimit, DrilldownSeriesLimitSplitInterval: time.Hour,
+		RangeMetricStepMode: c.stepMode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,6 +224,26 @@ func askRanked(t *testing.T, b *rankingBackend, c rankingCase) (*httptest.Respon
 	b.take()
 	res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+c.form(), map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": drilldownSeriesLimitTags})
 	return res, b.take()
+}
+
+// adjustedScope moves scope to the effective step of an answer the step layer gave at a raised step (step_adapt.go):
+// Loki's rule then holds for the request at that step, on its multiples inside the requested range.
+func adjustedScope(res *httptest.ResponseRecorder, scope *seriesLimitScope, checked map[string]int) {
+	h := res.Header().Get(stepAdjustedHeader)
+	if h == "" {
+		return
+	}
+	_, eff, _ := strings.Cut(h, ";")
+	step := int64(parseLokiDuration(eff))
+	if step <= 0 {
+		return
+	}
+	scope.stepNs = step
+	scope.startNs = ceilDiv(scope.startNs, step) * step
+	scope.endNs = floorDiv(scope.endNs, step) * step
+	if checked != nil {
+		checked["adjusted"]++
+	}
 }
 
 func sentRanked(sent []string) bool {
@@ -272,6 +295,7 @@ func TestDrilldownSeriesLimitRankedReadsKeepLokisSeries(t *testing.T) {
 			}
 			checked[path]++
 			scope := &seriesLimitScope{startNs: c.start * 1e9, endNs: c.end * 1e9, stepNs: c.step * 1e9, splitNs: int64(time.Hour), rangeNs: c.rangeS * 1e9}
+			adjustedScope(res, scope, checked)
 			if msg := lokiRuleViolations(c.rows, scope, drilldownSeriesLimit, res.Body.Bytes()); msg != "" {
 				t.Errorf("%s: step %ds range %ds start %d (%ds into its hour) end %d: %s\nsent:\n%s", b.name, c.step, c.rangeS, c.start, c.start%3600, c.end, msg, strings.Join(sent, "\n"))
 			}
@@ -602,7 +626,8 @@ func TestDrilldownSeriesLimitRankingFallsBackOnOddSteps(t *testing.T) {
 			t.Errorf("step %ds: %s", tc.step, msg)
 		}
 	}
-	// The top-value read of a 7 s step: Loki's limit error naming the byte bound.
+	// The top-value read of a 7 s step: with the step layer off, Loki's limit error naming the byte bound; by default
+	// the answer at a coarser step (step_adapt.go), which keeps Loki's rule at that step.
 	c := randomRankingCase(rand.New(rand.NewSource(4)), 0, true)
 	c.step, c.rangeS, c.bodyBound = 7, 35, 2000
 	emu := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: "v1.54.0", AlignStatsRange: true}
@@ -610,9 +635,20 @@ func TestDrilldownSeriesLimitRankingFallsBackOnOddSteps(t *testing.T) {
 	srv := httptest.NewServer(b.record(emu.Handler()))
 	t.Cleanup(srv.Close)
 	b.url = func(rankingCase) string { return srv.URL }
+	c.stepMode = RangeMetricStepModeOff
 	res, sent := askRanked(t, b, c)
 	if sentRanked(sent) || res.Code == http.StatusOK {
 		t.Fatalf("a 7 s top-value read: %d, ranked %v: %.300s", res.Code, sentRanked(sent), res.Body.String())
 	}
 	t.Logf("a 7 s top-value read past the byte bound: %d %.200s", res.Code, res.Body.String())
+	c.stepMode = ""
+	res, _ = askRanked(t, b, c)
+	if res.Code != http.StatusOK || res.Header().Get(stepAdjustedHeader) == "" {
+		t.Fatalf("a 7 s top-value read in adaptive mode: %d %.300s", res.Code, res.Body.String())
+	}
+	scope := &seriesLimitScope{startNs: c.start * 1e9, endNs: c.end * 1e9, stepNs: c.step * 1e9, splitNs: int64(time.Hour), rangeNs: c.rangeS * 1e9}
+	adjustedScope(res, scope, nil)
+	if msg := lokiRuleViolations(c.rows, scope, drilldownSeriesLimit, res.Body.Bytes()); msg != "" {
+		t.Errorf("a 7 s top-value read at %s: %s", res.Header().Get(stepAdjustedHeader), msg)
+	}
 }

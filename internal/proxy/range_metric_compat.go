@@ -888,6 +888,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		manualFunc, spec, rawSpec = counterFunc, counterSpec, rateCounterRawSpec(r.Context(), counterSpec, startTS, step, origSpec.Window)
 	}
 	markQueryStepsRoute(r.Context(), "raw")
+	noteReadRoute(r.Context(), "raw")
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd, p.lineFieldExposure(origSpec.BaseQuery))
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
