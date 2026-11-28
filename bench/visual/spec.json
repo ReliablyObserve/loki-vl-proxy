@@ -1633,6 +1633,50 @@
    ]
   },
   {
+   "id": "explore-unpack-sum-by-empty",
+   "kind": "explore",
+   "query": "sum by () (count_over_time({app=\"visual-unpack\"} | unpack [$__auto]))",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-times-two",
+   "kind": "explore",
+   "query": "sum(count_over_time({app=\"visual-unpack\"} | unpack [$__auto])) * 2",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/translator-writes-unpack-as-unpack-json",
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-unpack-sum-label-replace",
+   "kind": "explore",
+   "query": "label_replace(sum(rate({app=\"visual-unpack\"} | unpack | drop agent [$__auto])), \"dst\", \"x\", \"\", \"\")",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "semantics/ungrouped-sum-skips-unpack",
+    "parser-unpack",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-unwrap-parser-series-identity",
    "kind": "explore",
    "query": "sum by (app) (avg_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [$__auto]))",

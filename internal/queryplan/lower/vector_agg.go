@@ -190,9 +190,10 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 }
 
 // sumOverUnpack is the range aggregation a sum with no clause lowers over an unpack (sumReadsNoSeries): ra and src as
-// they are with no unpack; for a count or a rate followed by drops only, the copy with no stage from the unpack on
-// (unpackSkipped, unparsed set: the sum reads only how many lines each window holds, which neither the unpack nor the
-// drops change); otherwise the copy unpackRangeFor writes, or the construct it delegates.
+// they are with no unpack; for a count followed by drops and keeps only, or a rate followed by drops only, the copy
+// with no stage from the unpack on (unpackSkipped, unparsed set: the sum reads only how many lines each window holds,
+// which neither the unpack, the drops nor the keeps change); otherwise the copy unpackRangeFor writes, or the
+// construct it delegates (keepsAfterRate).
 func sumOverUnpack(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect) (*queryplan.RangeAgg, *queryplan.LogSelect, bool, error) {
 	if !sumReadsNoSeries(va, ra) || unwrapStage(src) != nil {
 		return ra, src, false, nil
@@ -203,7 +204,7 @@ func sumOverUnpack(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *querypl
 		return nil, nil, false, err
 	case at < 0:
 		return ra, src, false, nil
-	case ra.Op == logql.RangeAbsentOverTime || keepsAfter(ra.In, at):
+	case ra.Op == logql.RangeAbsentOverTime || keepsAfterRate(ra, at):
 		if ra, err = unpackRangeFor(ra, "VectorAgg"); err != nil {
 			return nil, nil, false, err
 		}
@@ -213,10 +214,11 @@ func sumOverUnpack(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *querypl
 	return ra, ra.In, true, nil
 }
 
-// sumReadsNoSeries reports a sum with no by or without clause of a count, a rate or an absence check: one number
-// over every line, however the lines split into series.
+// sumReadsNoSeries reports a sum with no by or without clause, or an empty by clause (`sum by () (…)`, one series as
+// in Loki), of a count, a rate or an absence check: one number over every line, however the lines split into series.
+// An empty without clause keeps every series and is not one.
 func sumReadsNoSeries(va *queryplan.VectorAgg, ra *queryplan.RangeAgg) bool {
-	return va.Op == logql.VectorSum && va.By == nil &&
+	return va.Op == logql.VectorSum && (va.By == nil || !va.By.Without && len(va.By.Labels) == 0) &&
 		(ra.Op == logql.RangeCountOverTime || ra.Op == logql.RangeRate || ra.Op == logql.RangeAbsentOverTime)
 }
 

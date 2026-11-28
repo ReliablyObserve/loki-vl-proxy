@@ -2719,6 +2719,7 @@
     ],
     "semantics/ungrouped-sum-skips-unpack": [
       "internal/proxy/absent_over_time_test.go",
+      "internal/proxy/unpack_sum_rate_test.go",
       "internal/querycorpus/unpack_sum_loki_diff_test.go",
       "internal/queryplan/lower/unpack_test.go",
       "test/e2e-compat/unpack_metrics_test.go"
@@ -5673,6 +5674,7 @@
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "internal/proxy/unpack_sum_rate_test.go": [
+      "semantics/ungrouped-sum-skips-unpack",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream"
     ],

@@ -60,9 +60,10 @@ why: |
   Open in the served answers, its own case (the plan writes the translator's
   text, so the lowering changes none of it):
   semantics/unpack-parser-error-not-raised. The text screens of the query
-  handlers turn every other unpack away; a sum with no clause of a count or a
-  rate is served from the plan with no stage from the unpack on
-  (semantics/ungrouped-sum-skips-unpack).
+  handlers turn every other unpack away; a sum with no clause or an empty by
+  clause of a count or a rate, at the root, under a binary operation, a
+  label_replace call or a ranking, is served from the plan with no stage from
+  the unpack on (semantics/ungrouped-sum-skips-unpack).
 
   A pushdown of the packed rule is not exact: with `unpack_json fields
   (_entry)` guarded by a raw-line regexp for a string `_entry`, then a second

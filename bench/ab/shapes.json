@@ -3741,7 +3741,7 @@
    ]
   },
   "unpack-sum": {
-   "description": "A sum with no by or without clause of a count, a rate or an absence check over `| unpack`. The count and the rate are served from the query plan with no unpack pipe (semantics/ungrouped-sum-skips-unpack); the absence check keeps the string translator's text. The seeded lines are JSON objects with no `_entry`, which unpack leaves as they are.",
+   "description": "A sum with no by or without clause, or an empty by clause, of a count, a rate or an absence check over `| unpack`, at the root, under a binary operation, a label_replace or a ranking, and behind a keep. The count and the rate are served from the query plan with no unpack pipe (semantics/ungrouped-sum-skips-unpack); the absence check keeps the string translator's text. The seeded lines are JSON objects with no `_entry`, which unpack leaves as they are.",
    "ranges": [
     "1h",
     "6h",
@@ -3778,6 +3778,57 @@
       "parser-unpack",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "UP5 sum by () count_over_time over unpack",
+     "query": "sum by () (count_over_time({env=\"production\", app=\"api-gateway\"} | unpack [5m]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "UP6 sum count_over_time over unpack times two",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack [5m])) * 2",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "UP7 label_replace of a sum rate over unpack and a drop",
+     "query": "label_replace(sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | drop level [5m])), \"dst\", \"x\", \"\", \"\")",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "UP8 sum count_over_time over unpack and a keep",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | unpack | keep level [5m]))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "UP9 sort of a sum rate over unpack and a keep, instant",
+     "query": "sort(sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | keep level [1h])))",
+     "covers": [
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
+      "parser-unpack",
+      "loki_api_v1_query"
+     ],
+     "instant": true
     },
     {
      "name": "UP3 sum absent_over_time over unpack with no stream",
