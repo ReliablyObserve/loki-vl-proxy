@@ -44,9 +44,10 @@ func patternRowsBody(t *testing.T, rows []map[string]string) []byte {
 	return b.Bytes()
 }
 
-// patternWideRows are rows as wide as the issue's (#1821): an ingress access log with dozens of OTel attributes
-// stored as fields, its level in a field, in a stream label, in the line only, or nowhere; messages under _msg or
-// only under a fallback field; time under _time or only under a fallback field.
+// patternWideRows are rows as VictoriaLogs answers them, as wide as the issue's (#1821): an ingress access log with
+// dozens of OTel attributes stored as fields, its level in a field, in a stream label, in the line only, or nowhere,
+// and some with fields named like the decoder's fallback message and time fields (every VictoriaLogs row has _time
+// and a non-empty _msg).
 func patternWideRows() []map[string]string {
 	base := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
 	var rows []map[string]string
@@ -74,13 +75,8 @@ func patternWideRows() []map[string]string {
 			row["_stream"] = fmt.Sprintf(`{cluster="c1",container="ingress",level="warn",pod="p%d"}`, i%3)
 			row["level"] = "warn"
 		}
-		switch i % 40 {
-		case 7: // a message under a fallback field only
-			delete(row, "_msg")
-			row["message"] = fmt.Sprintf("fallback message %d", i%4)
-		case 13: // a time under a fallback field only
-			row["ts"] = row["_time"]
-			delete(row, "_time")
+		if i%40 == 7 { // fields named like the decoder's fallbacks, next to _msg and _time
+			row["message"], row["ts"], row["log"] = fmt.Sprintf("fallback message %d", i%4), row["_time"], "x"
 		}
 		rows = append(rows, row)
 	}
