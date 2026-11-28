@@ -42,7 +42,11 @@ func TestStructuredMetadataSeriesCost(t *testing.T) {
 	end := time.Unix(1_790_000_000, 0).Truncate(time.Hour)
 	start := end.Add(-time.Duration(hours)*time.Hour - 10*time.Minute)
 	var rows []oraclerun.ServeRow
-	for svc := 0; svc < 15; svc++ {
+	services := 15
+	if v := os.Getenv("LVP_SM_COST_SERVICES"); v != "" {
+		_, _ = fmt.Sscan(v, &services)
+	}
+	for svc := 0; svc < services; svc++ {
 		name := fmt.Sprintf("svc-%02d", svc)
 		lines := perHour / 10
 		otel := svc < 5
