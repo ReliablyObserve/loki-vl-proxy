@@ -70,6 +70,22 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if p == nil {
 		return "", "", false, false, false
 	}
+	if SkipsParsers(p) && !SkipsUnpack(p) {
+		// A sum that needs no label over bare json and logfmt parsers is written with no stage from the first parser
+		// on (semantics/ungrouped-sum-skips-parsers): held to that text (skippedParsersWant), not the translator's.
+		op, lerr := PlanQuery(q, p, prof.lowerProfile())
+		want, werr := skippedParsersWant(q, prof)
+		if lerr != nil || werr != nil {
+			return "", "", false, lerr != nil, werr == nil
+		}
+		got := op.(physical.VLQuery).Text
+		return got, want, got == want, false, true
+	}
+	if WritesSkippedParsers(p) && !WritesSkippedUnpack(p) {
+		// Such a sum below the root is held by TestParserSkipLowering and the Loki differential
+		// (TestParserSumMatchesLoki), not to the translator's text of the whole query.
+		return "", "", false, true, true
+	}
 	legacy, terr := translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(q), prof.label, prof.stream, prof.caps)
 	legacy = guardedLegacy(p, legacy, terr)
 	if strings.HasPrefix(legacy, `"`) && logql.ValidateLogQL(q) != "" {

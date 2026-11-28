@@ -96,6 +96,18 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 					}
 					continue
 				}
+				// A sum with no clause of a count or a rate over bare json and logfmt parsers: the plan writes no stage
+				// from the first parser on, where the translator writes unpack_json and unpack_logfmt, held to Loki by
+				// TestParserSumMatchesLoki (lower.SkipsParsers, semantics/ungrouped-sum-skips-parsers). Each skipped sum
+				// loses its parser pipes and nothing is added.
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && (lower.SkipsParsers(plan) || lower.SkipsParsersWrapped(plan)) && gotErr == nil {
+					skipped++
+					pipes := func(s string) int { return strings.Count(s, "unpack_json") + strings.Count(s, "unpack_logfmt") }
+					if pipes(got) != 0 && !lower.SkipsParsersWrapped(plan) || pipes(got) >= pipes(want) && pipes(want) > 0 || len(got) > len(want) {
+						t.Errorf("%q: served %q, the translator writes %q", q, got, want)
+					}
+					continue
+				}
 				// A filter on a label named like a field VictoriaLogs reserves: the plan filters the stream tag where the
 				// translator writes a field filter, held to Loki by TestReservedFieldLabelsMatchLoki and the metric Loki
 				// differential (semantics/translator-writes-reserved-field-names).
@@ -380,8 +392,9 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
 				continue
 			}
-			if lower.SkipsUnpack(plan) || lower.SkipsUnpackWrapped(plan) {
-				// The skipped unpack has its own path (skipsUnpackConstruct), served under the VectorAgg flip.
+			if lower.SkipsParsers(plan) || lower.SkipsParsersWrapped(plan) {
+				// The skipped unpack has its own path (skipsUnpackConstruct), and the skipped json and logfmt parsers are
+				// served by the VectorAgg flip (and the root construct's): both under the VectorAgg flip.
 				caps := p.logsqlCapabilities()
 				prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, p.plainStreamLabelNames(ctx, normalized)), p.streamFieldsMap, caps, false)
 				if _, servedNow := p.lowerMetric(ctx, canon, prof); servedNow != slices.Contains(p.flippedConstructs, "VectorAgg") {

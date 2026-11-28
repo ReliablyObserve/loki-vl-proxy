@@ -190,7 +190,8 @@ func buildVectorAggClauses(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src 
 }
 
 // sumOverUnpack is the range aggregation a sum with no clause lowers over an unpack (sumReadsNoSeries): ra and src as
-// they are with no unpack; for a count followed by drops and keeps only, or a rate followed by drops only, the copy
+// they are with no unpack, except over the bare json and logfmt parsers bareParsersSkipped allows, which are skipped
+// like an unpack; for a count followed by drops and keeps only, or a rate followed by drops only, the copy
 // with no stage from the unpack on (unpackSkipped, unparsed set: the sum reads only how many lines each window holds,
 // which neither the unpack, the drops nor the keeps change); otherwise the copy unpackRangeFor writes, or the
 // construct it delegates (keepsAfterRate).
@@ -203,7 +204,11 @@ func sumOverUnpack(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *querypl
 	case err != nil:
 		return nil, nil, false, err
 	case at < 0:
-		return ra, src, false, nil
+		// No unpack: a count or a rate over bare json and logfmt parsers skips them the same way
+		// (semantics/ungrouped-sum-skips-parsers).
+		if at = bareParsersSkipped(ra); at < 0 {
+			return ra, src, false, nil
+		}
 	case ra.Op == logql.RangeAbsentOverTime || keepsAfterRate(ra, at):
 		if ra, err = unpackRangeFor(ra, "VectorAgg"); err != nil {
 			return nil, nil, false, err

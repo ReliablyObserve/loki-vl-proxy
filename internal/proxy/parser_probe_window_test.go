@@ -90,7 +90,9 @@ const parserProbeAt = int64(1795780800) * 1e9 // 2026-11-27T12:00:00Z
 //
 // conformance: semantics/instant-parser-probe-window, semantics/two-parsers-keep-one, loki_api_v1_query
 func TestInstantParserProbeReadsTheQueryWindow(t *testing.T) {
-	const pipe = `{app="x"} | json | logfmt | drop __error__, __error_details__`
+	// A filter after the parsers keeps them run: a sum with no label and no filter after its parsers runs none and
+	// sends no probe (TestUngroupedParserSumSendsNoProbe).
+	const pipe = `{app="x"} | json | logfmt | drop __error__, __error_details__ | level!=""`
 	at := time.Unix(0, parserProbeAt).UTC()
 	window := func(from, to time.Duration) [2]int64 {
 		return [2]int64{parserProbeAt - int64(from) + 1, parserProbeAt - int64(to) + 1}
@@ -107,7 +109,7 @@ func TestInstantParserProbeReadsTheQueryWindow(t *testing.T) {
 		{"offset", `sum(count_over_time(` + pipe + ` [1h] offset 2h))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(3*time.Hour, 2*time.Hour)},
 		{"label_replace", `label_replace(sum(count_over_time(` + pipe + ` [30m])), "a", "b", "", "")`, strconv.FormatInt(parserProbeAt/1e9, 10), window(30*time.Minute, 0)},
 		{"vector operand", `vector(1) + sum(count_over_time(` + pipe + ` [5m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(5*time.Minute, 0)},
-		{"filter after the parsers", `sum(rate(` + pipe + ` | level="info" [10m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(10*time.Minute, 0)},
+		{"another filter after the parsers", `sum(rate(` + pipe + ` | level="info" [10m]))`, strconv.FormatInt(parserProbeAt/1e9, 10), window(10*time.Minute, 0)},
 		{"absent_over_time", `absent_over_time({app="x"} | json | logfmt [5m])`, strconv.FormatInt(parserProbeAt/1e9, 10), window(5*time.Minute, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -364,7 +366,8 @@ func BenchmarkParserProbeDrop(b *testing.B) {
 //
 // conformance: semantics/log-range-default-window, semantics/parser-probe-drop-keeps-range, loki_api_v1_query_range
 func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
-	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))`
+	// A filter after the parsers keeps the probe: the sum without it runs no parser (TestUngroupedParserSumSendsNoProbe).
+	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ | level!="" [5m]))`
 	endAt := strconv.FormatInt(parserProbeAt/1e9, 10)
 	for _, tc := range []struct {
 		name   string
@@ -416,7 +419,7 @@ func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
 // range handler's key and its settled steps' base key all carry it, and an instant answer seeded under the edge key
 // without it is not served (it is, with the fence taken out).
 //
-// conformance: semantics/parser-probe-drop-keeps-range, cache-response-key-versions
+// conformance: semantics/parser-probe-drop-keeps-range, semantics/ungrouped-sum-skips-parsers, cache-response-key-versions
 func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 	const query = `sum(count_over_time({app="x"} | json | logfmt [3h]))`
 	for _, endpoint := range []string{"query", "query_range"} {
@@ -435,21 +438,27 @@ func TestParserProbeDropRejectsOldCopies(t *testing.T) {
 				t.Fatalf("unfenced key: %s", key)
 			}
 			stale := []byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"stale":"true"},"values":[["1795780800000000000","cut"]]}]}}`)
-			p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
-			if endpoint == "query_range" {
-				// The range handler's own answer and its settled steps are keyed from queryRangeCacheKey.
-				for _, inner := range []string{p.queryRangeCacheKey(r, query), p.queryStepsBaseKey(r, query)} {
-					if !strings.Contains(inner, twoParserMetricResponseVersion) {
-						t.Fatalf("unfenced inner key: %s", inner)
+			// The keys an earlier build wrote: with no fence, and with the v1 fence (before the sum ran no parser,
+			// semantics/ungrouped-sum-skips-parsers).
+			for _, old := range []string{"", "@two-parser-metric-v1:"} {
+				p.compatCache.SetLocalOnlyWithTTL(strings.Replace(key, twoParserMetricResponseVersion, old, 1), stale, 5*time.Minute)
+				if endpoint == "query_range" {
+					// The range handler's own answer and its settled steps are keyed from queryRangeCacheKey.
+					for _, inner := range []string{p.queryRangeCacheKey(r, query), p.queryStepsBaseKey(r, query)} {
+						if !strings.Contains(inner, twoParserMetricResponseVersion) {
+							t.Fatalf("unfenced inner key: %s", inner)
+						}
+						p.cache.SetLocalOnlyWithTTL(strings.Replace(inner, twoParserMetricResponseVersion, old, 1), stale, 5*time.Minute)
 					}
-					p.cache.SetLocalOnlyWithTTL(strings.Replace(inner, twoParserMetricResponseVersion, "", 1), stale, 5*time.Minute)
 				}
 			}
 			res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"})
 			if res.Code != http.StatusOK || bytes.Contains(res.Body.Bytes(), []byte("stale")) || bytes.Contains(res.Body.Bytes(), []byte(`"streams"`)) {
 				t.Fatalf("an answer cached under the old key was served: %d %s", res.Code, res.Body)
 			}
-			if len(b.probes) == 0 {
+			// The sum runs no parser and sends no probe (semantics/ungrouped-sum-skips-parsers): its stats read is
+			// the request reaching VictoriaLogs.
+			if len(b.probes)+len(b.reads) == 0 {
 				t.Fatal("the request did not reach VictoriaLogs")
 			}
 		})

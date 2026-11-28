@@ -287,6 +287,14 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// lowering that writes another text is a mismatch.
 				caseID, ok = knownSkippedUnpack, true
 			}
+			if !ok && lower.WritesSkippedParsers(plan) && !lower.WritesSkippedUnpack(plan) && !sameAsTranslator(got, legacy) &&
+				skippedParserPipes(legacy) > skippedParserPipes(translator.EncodePhysical(got)) {
+				// A sum with no clause of a count or a rate over bare json and logfmt parsers: the plan writes no stage
+				// from the first parser on, the translator the unpack_json and unpack_logfmt pipes; the proxy serves the
+				// plan's text wherever the VectorAgg flip serves the sum (lowerMetric). As for the unpack, only a
+				// reference that still holds a pipe the lowering skipped is the divergence.
+				caseID, ok = knownSkippedParsers, true
+			}
 			if !ok && lower.WritesNumericEquality(plan) {
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
@@ -382,6 +390,15 @@ const knownKeepIdentity = "semantics/keep-before-unwrap-series-identity"
 // knownSkippedUnpack is the registry case of a sum with no clause of a count or a rate over an unpack, which the plan
 // writes with no stage from the unpack on and the proxy serves from the plan at the root (lower.SkipsUnpack).
 const knownSkippedUnpack = "semantics/ungrouped-sum-skips-unpack"
+
+// knownSkippedParsers is the registry case of a sum with no clause of a count or a rate over bare json and logfmt
+// parsers, which the plan writes with no stage from the first parser on (lower.SkipsParsers).
+const knownSkippedParsers = "semantics/ungrouped-sum-skips-parsers"
+
+// skippedParserPipes counts the json and logfmt unpack pipes of a LogsQL text.
+func skippedParserPipes(text string) int {
+	return strings.Count(text, "unpack_json") + strings.Count(text, "unpack_logfmt")
+}
 
 // knownDynamicIdentity is the registry case of the plan's series identity after a json or logfmt parser with no keep
 // (the stream and every parsed label), which the proxy serves from the lowering where it differs from the string

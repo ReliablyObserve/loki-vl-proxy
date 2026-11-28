@@ -1,0 +1,106 @@
+id: semantics/ungrouped-sum-skips-parsers
+title: A sum with no clause or an empty by clause of a count_over_time or a rate over bare `| json` and `| logfmt` runs no parser and sends no parser probe
+pending: true
+proves:
+  - parser-json
+  - parser-logfmt
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: drilldown
+why: |
+  Logs Drilldown sends `sum(count_over_time({…} | json | logfmt | drop
+  __error__, __error_details__ [r]))` on every service page load. Such a sum
+  counts the lines in each window. Loki runs no parser for a sum that needs no
+  label (recorded rule semantics/loki-pipeline-error-rules), so no line fails a
+  parser and the answer is the number of selected lines. A json or logfmt
+  parser never drops a line, and neither does a drop; a keep changes labels
+  only.
+
+  The proxy read 25 lines from VictoriaLogs to choose one of the two parsers
+  (preferWorkingParser, the parser probe), then sent `| unpack_logfmt` (or
+  `| unpack_json`) and the drops, which make VictoriaLogs parse every
+  selected line (#1821: 19.4 s for a 3 h count over a busy selector, most of it
+  the probe). The query plan now writes no stage from the first parser on for
+  this shape (lower.SkipsParsers, internal/queryplan/lower/parser_skip.go): a
+  count is `<filters> | stats count()`; a rate keeps the series of a parsed
+  query (`stats by (_stream) count()`, then the division and the sum), the
+  text the unpack rule writes (semantics/ungrouped-sum-skips-unpack). The
+  proxy serves it from the plan under the VectorAgg flip, at the root, as an
+  operand of a binary operation or a label_replace call, and where a ranking
+  translates it as its operand, and sends no parser probe for it
+  (planSkipsParsers, internal/proxy/query_translation.go). With
+  -query-plan-lowering=false both the probe and the pipes come back. The probe
+  is skipped only where the request's own translation holds no unpack pipe
+  (translationRunsNoParser, under every label, field and tenant profile:
+  TestUngroupedParserSumProbeSkipFollowsTheTranslation).
+
+  Main answered some of these sums otherwise than Loki: VictoriaLogs'
+  `unpack_json` and `unpack_logfmt` let a key named `_time`, `_msg` or
+  `_stream` replace the line's own field, so the count missed lines Loki
+  counts (236 of the 416 runs of the skipped sums in TestParserSumMatchesLoki
+  differ on main 640431dfc, none on this rule). Answers cached before are
+  fenced: the response keys of the shape carry `@parser-sum-skip-v1:`, read
+  from the plan (skippedParsersResponseKeyVersion), and the two-parser fence is
+  `@two-parser-metric-v2:` (one cache miss per such query after the upgrade).
+
+  The shape: only line filters before the first parser; from it on only bare
+  json and logfmt parsers (no extraction list, no flag), in any order and
+  number, and drops, plus keeps for a count. Not rewritten (each written as
+  before, and tested): a by clause with labels, a without clause (`without ()`
+  included), count, min, max, avg or any other function over the range
+  aggregation, a range aggregation alone, a label filter, line filter,
+  line_format, label_format or decolorize after a parser, a label filter or a
+  drop before it, an extraction list (`| json a="b"`), a regexp, pattern or
+  unpack parser (an unpack has its own rule), a rate behind a keep (the
+  handlers group it by the kept labels), bytes_over_time and bytes_rate, and
+  absent_over_time. The request rewrite removes logfmt's flags before the
+  plan reads the query (logql.StripParserFlags), so `| logfmt --strict` under
+  such a sum is skipped as on main it was written as bare logfmt; Loki runs
+  no parser there either (held by TestParserSumMatchesLoki).
+
+  Evidence: TestParserSumMatchesLoki (internal/querycorpus) runs the sums over
+  JSON lines (keys named like VictoriaLogs' fields and like __error__),
+  logfmt lines (an unterminated value among them), mixed lines with plain
+  text, broken JSON and blanks, and a selector with no line, with filters
+  before, drops and keeps after, an empty by clause, offset, and under `* 2`,
+  a division, label_replace, sort and topk, as instant and range requests
+  (step equal to, below and above the range) through the proxy's handlers
+  against Loki's engine and VictoriaLogs v1.49.0 and v1.54.0: every run of a
+  skipped sum answers Loki's series and values and sends no unpack pipe, no
+  probe and no raw-row read; the controls answer as on main.
+  TestParserSkipLowering and FuzzParserSkipLowering hold the written text,
+  TestUngroupedParserSumSendsNoProbe the requests.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [3h]))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200, one series with no labels, the number of lines per window as
+    Loki answers, from one stats call with no unpack_json or unpack_logfmt
+    pipe and no parser probe.
+corpus:
+  size: 9
+  dimensions:
+    shapes:
+      - query: 'sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum(count_over_time({app="x"} | logfmt [5m]))'
+      - query: 'sum(rate({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum by () (count_over_time({app="x"} |= "k" | logfmt | json [5m] offset 1h))'
+      - query: 'sum(count_over_time({app="x"} | json | logfmt | keep a [5m]))'
+      - query: 'sum(count_over_time({app="x"} | json | logfmt [5m])) * 2'
+      - query: 'sum by (a) (count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))'
+      - query: 'sum(rate({app="x"} | json | logfmt | keep a [5m]))'
+      - query: 'sum(count_over_time({app="x"} | json | logfmt | a!="" [5m]))'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
