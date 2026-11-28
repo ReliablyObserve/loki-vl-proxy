@@ -33,6 +33,14 @@ proxy: |
   memory, then disk when memory had no usable value; a disabled cache is not
   read. Reads outside a client request or after it ended are not counted. The
   new histogram is also pushed over OTLP; the other three are scrape only.
+  A request whose label or label values listing the metadata inventory splits
+  into time buckets also carries its bucket plan (issue #1821 item 3):
+  flow.inventory.listings, flow.inventory.memory (listings answered from
+  memory with no VictoriaLogs call), flow.inventory.buckets_cached,
+  buckets_revalidated (confirmed by a row count), buckets_scanned (read from
+  VictoriaLogs, with the pieces a covering hour made it read again) and
+  flow.inventory.edges (unaligned edges, read on every listing). A request
+  with no such listing writes none of these fields.
 
 implementation:
   - internal/proxy/query_flow.go

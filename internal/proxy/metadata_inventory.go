@@ -562,6 +562,7 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		}
 		if miss == "" {
 			p.observeInternalOperation(ctx, "metadata_inventory", "memory", time.Since(now))
+			recordInventoryPlan(ctx, true, 0, 0, 0, 0)
 			return items, nil
 		}
 		if miss != "off" {
@@ -576,7 +577,7 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	var group errgroup.Group
 	group.SetLimit(p.metadataInventoryParallelism)
 	var failed atomic.Bool
-	var scanned, reused, revalidated int
+	var scanned, reused, revalidated, edges, reread int
 	var statsMu sync.Mutex
 	for i, seg := range plan {
 		group.Go(func() error {
@@ -597,10 +598,12 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 			}
 			parts[i] = items
 			statsMu.Lock()
-			switch outcome {
-			case "scanned":
+			switch {
+			case seg.level < 0:
+				edges++
+			case outcome == "scanned":
 				scanned++
-			case "revalidated":
+			case outcome == "revalidated":
 				revalidated++
 			default:
 				reused++
@@ -619,11 +622,17 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 		return nil, err
 	}
 	if len(covers) > 0 {
-		if err := p.resolveCovers(ctx, path, params, base, parts, covers, countable, longListing); err != nil {
+		n, err := p.resolveCovers(ctx, path, params, base, parts, covers, countable, longListing)
+		if err != nil {
 			return nil, err
 		}
+		reread = n
 	}
-	p.observeInternalOperation(ctx, "metadata_inventory", inventoryOutcome(scanned, revalidated, reused), time.Since(now))
+	// An edge counts as scanned in the outcome, as it always has.
+	p.observeInternalOperation(ctx, "metadata_inventory", inventoryOutcome(scanned+edges, revalidated, reused), time.Since(now))
+	// The request line counts the pieces a covering hour made it read again as
+	// scanned buckets (the metric's outcome above is unchanged).
+	recordInventoryPlan(ctx, false, reused, revalidated, scanned+reread, edges)
 	merged := mergeVLValueHits(parts...)
 	if err := p.checkMergedListingCap(ctx, path, merged); err != nil {
 		return nil, err
@@ -1145,8 +1154,8 @@ func (p *Proxy) peekInventoryEntry(key string) (inventoryEntry, bool) {
 // resolveCovers drops each covering hour whose names all appear in the parts
 // of the window that are answered exactly, and reads the pieces of every
 // other covering hour from VictoriaLogs, so the names are those of one
-// full-range call.
-func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Values, base string, parts [][]vlValueHits, covers map[int][]inventorySegment, countable, longListing bool) error {
+// full-range call. It returns how many pieces it read again.
+func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Values, base string, parts [][]vlValueHits, covers map[int][]inventorySegment, countable, longListing bool) (int, error) {
 	known := map[string]struct{}{}
 	for i, part := range parts {
 		if _, cover := covers[i]; cover {
@@ -1169,7 +1178,9 @@ func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Value
 	var group errgroup.Group
 	group.SetLimit(p.metadataInventoryParallelism)
 	var mu sync.Mutex
+	reread := 0
 	for _, i := range rescan {
+		reread += len(covers[i])
 		for _, seg := range covers[i] {
 			group.Go(func() error {
 				// Forced: the hour's names changed since the pieces were
@@ -1186,7 +1197,7 @@ func (p *Proxy) resolveCovers(ctx context.Context, path string, params url.Value
 			})
 		}
 	}
-	return group.Wait()
+	return reread, group.Wait()
 }
 
 // vlListingEncodedSize is the size of the response VictoriaLogs sends for a
