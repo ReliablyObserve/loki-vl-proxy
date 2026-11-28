@@ -57,7 +57,6 @@ func TestPlanLowersParserLabels(t *testing.T) {
 		`count(rate({app="a"} | keep level, a [5m]))`,
 		`min by (x) (count_over_time({app="a"} | logfmt | keep a [5m]))`,
 		`sum(rate({app="a"} | keep service_name [5m]))`,
-		`rate({app="a"} | keep a="x" [5m])`,
 		`count(absent_over_time({app="a"} | keep a | unwrap a [5m]))`,
 		`sum by (a_b) (rate({app="a"} | json | keep a_b [5m]))`,
 	} {

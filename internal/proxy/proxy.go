@@ -75,7 +75,9 @@ var compatCaptureBufPool = sync.Pool{
 	},
 }
 
-const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
+// v3: a keep with matchers, several keeps, and a keep ahead of a parser answer Loki's labels and entries
+// (semantics/keep-names-and-matchers).
+const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v3:"
 
 // keepMetadataProjectionResponseKeyVersion fences pre-fix keep replies in
 // local and peer-fed response caches and in the log window fragments

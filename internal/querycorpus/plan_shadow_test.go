@@ -119,6 +119,7 @@ var servedDivergences = map[string]string{
 	// A served row with the unspaced parser is held, on top, to the translator's text for the parser written with the
 	// blank (spacedParserText), which Loki reads as the same parser.
 	knownUnspacedParser:                       "TestUnspacedParserMatchesLoki (internal/queryplan/lower)",
+	"semantics/keep-names-and-matchers":       "TestPlanMatchesLokiOnLogQueries, TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
 	"semantics/label-filter-numeric-equality": "TestNumericEqualityAfterParserMatchesLoki (internal/queryplan/lower), TestPlanMatchesLokiOnLogQueries, TestPlanMatchesLokiOnMetricQueries (internal/querycorpus)",
 }
 
@@ -299,6 +300,15 @@ func runShadowSlices(t *testing.T, lowerFn lowering, served servedText, limit in
 				// A numeric, duration or bytes equality after a json or logfmt parser: the plan compares the value as
 				// a number as Loki does, the translator writes the exact text of the literal.
 				caseID, ok = "semantics/label-filter-numeric-equality", true
+			}
+			if !ok && lower.WritesKeepStreamValue(plan, prof.lowerProfile()) && !sameAsTranslator(got, legacy) {
+				// A keep behind a parser over a stream label the query reads: the plan keeps its stored value.
+				caseID, ok = "semantics/keep-names-and-matchers", true
+			}
+			if !ok && lower.WritesKeepBlank(plan) {
+				// A matcher keep before a stage that reads the matcher's name: the plan blanks the values Loki's keep
+				// removes, the translator reads the stored field.
+				caseID, ok = "semantics/keep-names-and-matchers", true
 			}
 			if c := translatorspelling.Case(q, plan); !ok && !routed && c != "" && !sameAsTranslator(got, legacy) {
 				// A spelling the translator reads otherwise than the plan, which reads the tree: held to a spelling or a

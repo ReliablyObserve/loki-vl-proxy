@@ -16,7 +16,9 @@ import (
 func parsedLowering(t testing.TB, q string, prof parserProfile) (lowered, legacy, construct string, delegated, ok bool) {
 	t.Helper()
 	lowered, legacy, construct, _, delegated, ok = parserLowering(t, q, prof)
-	if ok && !delegated && queryWritesNumericEquality(q) {
+	// So is one with a keep matcher a later stage reads, whose rejected values the lowering blanks
+	// (semantics/keep-names-and-matchers).
+	if ok && !delegated && (queryWritesNumericEquality(q) || queryWritesKeepBlank(q) || queryWritesKeepStreamValue(q, prof.label)) {
 		return "", "", "", false, false
 	}
 	return lowered, legacy, construct, delegated, ok
@@ -34,6 +36,34 @@ func queryWritesNumericEquality(q string) bool {
 	}
 	queryplan.Resolve(p)
 	return WritesNumericEquality(p)
+}
+
+// queryWritesKeepBlank is WritesKeepBlank for a query text.
+func queryWritesKeepBlank(q string) bool {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return false
+	}
+	p, err := queryplan.Build(expr, queryplan.Inputs{})
+	if err != nil {
+		return false
+	}
+	queryplan.Resolve(p)
+	return WritesKeepBlank(p)
+}
+
+// queryWritesKeepStreamValue is WritesKeepStreamValue for a query text under the profile's label translator.
+func queryWritesKeepStreamValue(q string, label translate.LabelTranslateFunc) bool {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return false
+	}
+	p, err := queryplan.Build(expr, queryplan.Inputs{})
+	if err != nil {
+		return false
+	}
+	queryplan.Resolve(p)
+	return WritesKeepStreamValue(p, Profile{Label: label})
 }
 
 // A label filter after a json or logfmt parser lowers to the query the string translator writes, byte for byte,

@@ -89,9 +89,8 @@ type logQueryShape struct {
 	// lineFields are the fields the pipeline writes, left out of rebuilt lines.
 	lineFields     map[string]bool
 	dropConditions []translate.DropCondition
-	keepConditions []translate.DropCondition
 	bareDropFields []string
-	bareKeepFields []string
+	keeps          keepRules
 	// pipeline is the parsed pipeline (parsed only).
 	pipeline []logqlpkg.Stage
 	// rowLines picks a placeholder row's rebuilt-line fields with
@@ -113,7 +112,7 @@ func newLogQueryShape(query string) logQueryShape {
 			lineFields:       logQueryLineFields(query),
 			fingerprint:      logQueryShapeFingerprint(responseKeyFences(nil, query, responseKeyLogWindowShape) + query),
 		}
-		shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = extractDropKeepFromAST(query)
+		shape.dropConditions, shape.bareDropFields, shape.keeps = extractDropKeepFromAST(query)
 		return shape
 	}
 	stages := make([]string, 0, len(lq.Pipeline))
@@ -129,7 +128,7 @@ func newLogQueryShape(query string) logQueryShape {
 		lineFields:       pipelineLineFields(lq.Pipeline),
 		fingerprint:      logQueryShapeFingerprint(responseKeyFences(nil, query, responseKeyLogWindowShape) + strings.Join(stages, "\n")),
 	}
-	shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = dropKeepFromPipeline(lq.Pipeline)
+	shape.dropConditions, shape.bareDropFields, shape.keeps = dropKeepFromPipeline(lq.Pipeline)
 	return shape
 }
 
@@ -949,9 +948,8 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 	// captures need them; parser labels are otherwise folded into the stream.
 	keepEntryMetadata := emitTupleMetadata || len(captureFields) > 0
 	needsClassification := keepEntryMetadata || mergeParsed || exposure.filtersLineFields()
-	dropConditions, keepConditions := shape.dropConditions, shape.keepConditions
-	bareDropFields, bareKeepFields := shape.bareDropFields, shape.bareKeepFields
-	levelStages := newLevelDropKeep(bareDropFields, bareKeepFields)
+	dropConditions, bareDropFields, keeps := shape.dropConditions, shape.bareDropFields, shape.keeps
+	levelStages := newLevelDropKeep(bareDropFields, keeps)
 
 	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
@@ -1009,7 +1007,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			lineFields = forRowMsg(shape.rowLines, fjVal.GetStringBytes("_msg"))
 		}
 		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
-		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
+		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure, keeps)
 		desc := p.logRowStreamDescriptor(rawStream, rowStream, levelBytes, detected, emitTupleMetadata, levelStages, streamDescriptorCache)
 
 		var structuredMetadata, parsedFields map[string]string
@@ -1027,17 +1025,15 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
-			dropKeepEntryFields(bareDropFields, bareKeepFields, structuredMetadata, parsedFields)
-			if len(keepConditions) > 0 {
-				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
-			}
+			dropEntryFields(bareDropFields, structuredMetadata, parsedFields)
+			keeps.entry(structuredMetadata, parsedFields, p.labelTranslator)
 			if mergeMetadata {
 				parsedFields = mergeMetadataIntoParsed(structuredMetadata, parsedFields, pfBuf)
 			}
 		}
 
 		streamKey, streamLabels := resolveLogQueryStream(
-			desc, dropConditions, keepConditions, bareDropFields, bareKeepFields,
+			desc, dropConditions, bareDropFields, keeps,
 			parsedFields, mergeParsed, captureFields, p.labelTranslator,
 		)
 

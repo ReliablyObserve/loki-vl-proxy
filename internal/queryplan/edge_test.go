@@ -101,6 +101,8 @@ func TestKeyEdgePairs(t *testing.T) {
 		{`{a="x"} | regexp "(?P<q>.)"`, `{a="x"} | pattern "(?P<q>.)"`, false, "regexp and pattern"},
 		{`{a="x"} | json | logfmt`, `{a="x"} | logfmt | json`, false, "parser order"},
 		{`{a="x"} | drop a`, `{a="x"} | keep a`, false, "drop and keep"},
+		{`{a="x"} | keep a, b="x"`, `{a="x"} | keep b="x", a`, true, "a keep list's written order changes nothing"},
+		{`{a="x"} | keep b="x"`, `{a="x"} | keep b="y"`, false, "keep matcher value"},
 		{`{a="x"} | drop a, b`, `{a="x"} | drop b, a`, false, "drop order"},
 		{`{a="x"} | drop a`, `{a="x"} | drop a=""`, false, "name or condition"},
 		{`{a="x"} | drop a="1"`, `{a="x"} | drop a!="1"`, false, "condition operator"},

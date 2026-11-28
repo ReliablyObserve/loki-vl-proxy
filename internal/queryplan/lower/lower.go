@@ -159,7 +159,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 		return logsql.Query{}, false, &NotLoweredError{Construct: c}
 	}
 	defs := definitions(sel)
-	staged, read, err := stagePipes(sel, prof, defs)
+	staged, read, restore, err := stagePipes(sel, prof, defs)
 	if err != nil {
 		return logsql.Query{}, false, err
 	}
@@ -177,9 +177,9 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 			return logsql.Query{}, false, err
 		}
 	}
-	q := queryParts{pipes: pipeRoom(sel, staged, lf, len(read) > 0, levels.any)}
+	q := queryParts{pipes: pipeRoom(sel, staged, lf, len(read) > 0, levels.any), room: filterRoom(sel, lf)}
 	// A stage that is one comparison on a reserved field keeps only the streams with its tag (reservedGuard).
-	q.filters = append(q.filters, lf.guards...)
+	q.add(lf.guards...)
 	// seq numbers the pattern alternatives that extract, across the query.
 	seq := 0
 	// afterParser is whether a json or logfmt parser came before: the string translator then gives every label
@@ -247,6 +247,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 	}
 	level.flush(&q)
 	q.flush()
+	q.pipes = append(q.pipes, restore...)
 	q.pipes = appendScratchDeletes(q.pipes, lf, len(read) > 0)
 	f, err := translate.StreamSelectorFilterOpts(sel.Matchers, prof.Label, prof.StreamFields, logsql.QuoteFieldName,
 		translate.SelectorOptions{ServiceNameStreamLabelOnly: prof.ServiceNameStreamLabelOnly})
@@ -259,7 +260,10 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, bool,
 // queryParts are the parts of a log query the lowering writes, in the string translator's order: the filters in
 // front of the first pipe, the pipes, and the filters after the last pipe, which go into one filter pipe (after).
 type queryParts struct {
+	// filters starts with the room for the stream selector's filter (selectQuery), so the query's filter is built in
+	// one list; room is the capacity it is made with.
 	filters, after logsql.AllOf
+	room           int
 	pipes          []logsql.Pipe
 	// lastPipe is whether the last part the string translator holds starts with a pipe: a pipe, or a label
 	// filter it wrapped in a filter pipe.
@@ -280,7 +284,13 @@ func (q *queryParts) flush() {
 
 // add adds filters where they stand: in front of the first pipe, or after the last one.
 func (q *queryParts) add(fs ...logsql.FilterExpr) {
+	if len(fs) == 0 {
+		return
+	}
 	if len(q.pipes) == 0 {
+		if q.filters == nil {
+			q.filters = make(logsql.AllOf, 1, max(q.room, 1+len(fs)))
+		}
 		q.filters = append(q.filters, fs...)
 	} else {
 		q.after = append(q.after, fs...)
@@ -358,20 +368,33 @@ func pipeRoom(sel *queryplan.LogSelect, staged [][]logsql.Pipe, lf filterStages,
 }
 
 // selectQuery is the query of a stream selector's filter f, the filters written in front of the first pipe and
-// the pipes.
+// the pipes. filters[0] is the room for f (queryParts.add); a nil filters holds none.
 func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe) logsql.Query {
 	q := logsql.Query{Filter: f, Pipes: pipes}
-	if len(filters) > 0 {
+	if len(filters) > 1 {
 		// A selector that keeps every row (`{detected_level!="info"}`) is no filter next to the others, as the
 		// string translator writes it.
 		if _, all := f.(logsql.Wildcard); all {
-			q.Filter = filters
+			q.Filter = filters[1:]
 		} else {
-			all := make(logsql.AllOf, 0, 1+len(filters))
-			q.Filter = append(append(all, f), filters...)
+			filters[0] = f
+			q.Filter = filters
 		}
 	}
 	return q
+}
+
+// filterRoom is the capacity of the filters a log query writes in front of its first pipe: the stream selector's,
+// the reserved-field guards, and one for each line or label filter stage.
+func filterRoom(sel *queryplan.LogSelect, lf filterStages) int {
+	room := 1 + len(lf.guards)
+	for _, st := range sel.Stages {
+		switch st.(type) {
+		case *queryplan.LineFilter, *queryplan.LabelFilter:
+			room++
+		}
+	}
+	return room
 }
 
 // labelFilters builds the filter of each label filter stage of the query, by stage index (nil elsewhere), or
@@ -429,7 +452,8 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 				numericAlreadyFailed = failed
 			}
 		} else {
-			filter = labelFilter(lbl.Expr, &lb)
+			// A filter on a label a matcher drop before it removes reads the stored value (dropHoistedFilter).
+			filter = dropHoistedFilter(sel, i, labelFilter(lbl.Expr, &lb), lb.label, prof.metric)
 		}
 		if lb.bad != "" {
 			return filterStages{}, &NotLoweredError{Construct: lb.bad}

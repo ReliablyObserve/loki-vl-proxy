@@ -105,6 +105,11 @@ func TestQueryPlanLowering_LogCorpusTextParity(t *testing.T) {
 					// TestNumericEqualityAfterParserMatchesLoki), so the texts differ by design.
 					continue
 				}
+				if plan := resolvedPlan(q); plan != nil && lower.WritesKeepBlank(plan) {
+					// A matcher keep before a stage that reads its name: the plan blanks the values Loki's keep removes
+					// (semantics/keep-names-and-matchers, held to Loki by TestPlanMatchesLokiOnLogQueries).
+					continue
+				}
 				got, gotErr := on.translateLogResponseQuery(ctx, q)
 				want, wantErr := off.translateLogResponseQuery(ctx, respaced(q))
 				if got != want || (gotErr == nil) != (wantErr == nil) {
@@ -303,7 +308,8 @@ func logFlipGateHolds(on, off *Proxy, q string) string {
 	ctx := context.Background()
 	// A numeric equality after a parser is served from the plan, which compares the value as a number where the
 	// translator writes the literal's text (semantics/label-filter-numeric-equality): held to Loki by its differential.
-	if plan := resolvedPlan(q); plan != nil && lower.WritesNumericEquality(plan) {
+	// So is a keep whose rejected matcher values the plan blanks (semantics/keep-names-and-matchers).
+	if plan := resolvedPlan(q); plan != nil && (lower.WritesNumericEquality(plan) || lower.WritesKeepBlank(plan)) {
 		return ""
 	}
 	reads := spelledAsTranslatorReads(q)
@@ -509,8 +515,8 @@ var parserFormatFamilies = []struct {
 	}, []string{`{app="a"} | logfmt | detected_level="x"`}},
 	{"DropKeep", []string{
 		`{app="a"} | drop a, b`, `{app="a"} | keep c, d`, `{app="a"} | drop a="x", b`, `{app="a"} | keep a="x", b="y"`,
-		`{app="a"} |= "x" | drop detected_level`,
-	}, []string{`{app="a"} | keep a="x", b`, `{app="a"} | drop service_name`}},
+		`{app="a"} |= "x" | drop detected_level`, `{app="a"} | keep a="x", b`,
+	}, []string{`{app="a"} | drop service_name`}},
 	{"LabelFormat", []string{
 		`{app="a"} | label_format x="{{.a}}"`, `{app="a"} | label_format x="{{ .a }} {{.b}}", y=z`,
 	}, []string{`{app="a"} | label_format x="{{.a | upper}}"`, `{app="a"} | label_format x="<a>"`}},
@@ -525,7 +531,7 @@ var parserFormatFamilies = []struct {
 
 // A log query of a flipped parser or formatting stage family is served from the plan with the string translator's
 // text, and one of a family not flipped, or one the family leaves to the translator (a numeric equality after a
-// parser, a level filter after a stage, a template that is more than fields, a keep of names and matchers), is
+// parser, a level filter after a stage, a template that is more than fields), is
 // translated by the string translator. With -query-plan-lowering=false nothing is served.
 //
 // conformance: architecture-syntax-package-layering

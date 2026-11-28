@@ -144,6 +144,7 @@ smoke	internal/logql	FuzzComplexityBoundedByLength	12s	-	nodes and depth of ever
 smoke	internal/logql	FuzzValidateUnderBudget	12s	-	a validation the planning budget cuts short answers only the trip, never for a query Loki rejects for its syntax; one it does not is the unbudgeted validation
 smoke	internal/logql	FuzzUnwrapParensMatchesLayerReading	12s	-	the one-pass reading of the parentheses around a query answers what the reading layer by layer answers
 smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a trailing keep regrouped by the kept labels, once
+smoke	internal/proxy	FuzzKeepRules	12s	-	the labels the keep stages leave, bare names and matchers, as LogQL defines them
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
 smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
 smoke	internal/queryplan	FuzzResolve	12s	-	resolver total, deterministic, idempotent, key unchanged

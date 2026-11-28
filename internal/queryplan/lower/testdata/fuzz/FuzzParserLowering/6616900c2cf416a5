@@ -1,0 +1,8 @@
+go test fuzz v1
+string("0")
+string("0")
+string("pod")
+string("0")
+byte('¼')
+byte('\x13')
+byte('_')

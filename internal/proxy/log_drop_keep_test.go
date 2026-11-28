@@ -23,7 +23,12 @@ func translatorDropKeep(query string) (drop, keep []translate.DropCondition, bar
 		return translator.ParseDropConditions(query), translator.ParseKeepConditions(query),
 			translator.ParseBareDropFields(query), translator.ParseBareKeepFields(query)
 	}
-	return dropKeepFromPipeline(lq.Pipeline)
+	drop, bareDrop, rules := dropKeepFromPipeline(lq.Pipeline)
+	for _, r := range rules {
+		keep = append(keep, r.conditions()...)
+		bareKeep = append(bareKeep, r.bare()...)
+	}
+	return drop, keep, bareDrop, bareKeep
 }
 
 // dropKeepProbeValues are the values both readings' conditions are evaluated on.
@@ -98,7 +103,7 @@ func TestLogDropKeepReadsLikeTheTranslator(t *testing.T) {
 	var accepted, nonEmpty, rejectedDiffer int
 	for _, raw := range qs {
 		q := RequestQueryText(raw)
-		gotDrop, gotKeep, gotBareDrop, gotBareKeep := extractDropKeepFromAST(q)
+		gotDrop, gotKeep, gotBareDrop, gotBareKeep := flatDropKeep(q)
 		wantDrop, wantKeep, wantBareDrop, wantBareKeep := translatorDropKeep(q)
 		if cachedQueryValidation(q).msg != "" || q == "" {
 			if len(wantDrop)+len(wantKeep)+len(wantBareDrop)+len(wantBareKeep) != len(gotDrop)+len(gotKeep)+len(gotBareDrop)+len(gotBareKeep) {
