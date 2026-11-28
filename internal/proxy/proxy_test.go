@@ -912,8 +912,9 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 	if strings.Contains(gotQuery, "extract") || strings.Contains(gotQuery, "filter") || strings.Contains(gotQuery, "json") {
 		t.Fatalf("expected /patterns backend query to be selector-scoped, got %q", gotQuery)
 	}
-	if gotQuery != `app:="web"` {
-		t.Fatalf("expected translated selector query app:=\"web\", got %q", gotQuery)
+	// The selector's filter and the fields the miner reads (patternRowsQuery).
+	if want := `app:="web" | fields ` + strings.Join(patternRowFields, ", "); gotQuery != want {
+		t.Fatalf("expected translated selector query %q, got %q", want, gotQuery)
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)

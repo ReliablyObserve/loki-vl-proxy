@@ -596,6 +596,7 @@ func run(
 	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 1000, "Flush write buffer after N entries")
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
+	diskCacheRebuildReadahead := fs.Bool("disk-cache-rebuild-readahead", true, "While the start-up index rebuild runs, read the disk cache file in file order into the page cache (eight 512 KiB positioned reads at a time, stopped when the rebuild ends, before the listener opens), so a cold disk serves large sequential reads instead of one random read per record")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
 	cacheShutdownFlushTimeout := fs.Duration("cache-shutdown-flush-timeout", 0, "Time budget for the restart hand-over a graceful shutdown (SIGTERM) writes to the disk cache after the HTTP server drained: the memory cache's recency order and hit counts, the disk records it lacks, and memory-only answers up to -cache-startup-warm-bytes; the next start warms from it. Needs -disk-cache-path. 0 (default) writes none. Keep it inside the pod's terminationGracePeriodSeconds")
 	cacheStartupWarmBytes := fs.Int64("cache-startup-warm-bytes", 0, "Most bytes the start-up warm-up loads into the memory cache from the restart hand-over the previous graceful shutdown left (at most half of -cache-max-bytes; it never evicts what live requests stored); also the most memory-only answer bytes that shutdown keeps. Memory-only answers are restored only by the same build and configuration. 0 (default) loads none")
@@ -1040,6 +1041,8 @@ func run(
 			FlushInterval:  *diskCacheFlushInterval,
 			MinTTL:         *diskCacheMinTTL,
 			MaxBytes:       *diskCacheMaxBytes,
+
+			RebuildReadahead: *diskCacheRebuildReadahead,
 		},
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:                          envCfg.backendURL,
@@ -1434,6 +1437,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 		"path", diskCfg.Path,
 		"compress", diskCfg.Compression,
 		"codec", diskCfg.Codec,
+		"rebuild_readahead", diskCfg.RebuildReadahead,
 		"max_bytes", diskCfg.MaxBytes,
 		"max_entries", diskCfg.MaxEntries,
 		"max_index_bytes", diskCfg.MaxIndexBytes,

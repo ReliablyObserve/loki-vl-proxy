@@ -306,6 +306,7 @@ extraArgs:
   # disk-cache-max-index-bytes: "16777216"
   # disk-cache-flush-interval: "5s"
   # disk-cache-max-bytes: "21474836480" # 20Gi logical LRU cap; bbolt retains free pages
+  # disk-cache-rebuild-readahead: "true" # read the file ahead of the start-up index rebuild
   # Restart hand-over of the response cache (needs disk-cache-path; off by default).
   # cache-shutdown-flush-timeout: "60s" # keep inside terminationGracePeriodSeconds
   # cache-startup-warm-bytes: "268435456" # at most half of cache-max-bytes is warmed
