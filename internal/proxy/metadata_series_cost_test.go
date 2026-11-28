@@ -67,6 +67,7 @@ func TestStructuredMetadataSeriesCost(t *testing.T) {
 		}
 	}
 	t.Logf("%d rows over %d h", len(rows), hours)
+	// The serve oracle reads a data set as one line of at most 256 MiB: about a million of these rows.
 	srv, err := oraclerun.StartVLServe(filepath.Join("..", "..", "test", "oracle", "vl"), "", []oraclerun.ServeDataSet{{Tenant: 0, Rows: rows}})
 	if err != nil {
 		t.Fatal(err)
