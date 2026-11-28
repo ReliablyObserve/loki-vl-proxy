@@ -18,8 +18,9 @@ import (
 // restoreReadaheadReaders buffers of restoreReadaheadBuffer bytes.
 
 // startRebuildReadahead starts reading the file at path ahead of the rebuild;
-// stop ends the reads and joins every goroutine, and reports the bytes read. A
-// file that cannot be opened means no read-ahead.
+// stop ends the reads and joins every goroutine, and reports the bytes read:
+// after it is called, each reader finishes at most the read it is in. A file
+// that cannot be opened means no read-ahead.
 func startRebuildReadahead(path string) (stop func() int64) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -44,6 +45,9 @@ func startRebuildReadahead(path string) (stop func() int64) {
 			var n int64
 			defer func() { mu.Lock(); read += n; mu.Unlock() }()
 			for at := range work {
+				if ctx.Err() != nil {
+					return // stopped: the queued ranges are not read
+				}
 				got, err := file.ReadAt(buffer[:min(size-at, restoreReadaheadBuffer)], at)
 				n += int64(got)
 				if err != nil && err != io.EOF {
@@ -58,7 +62,7 @@ func startRebuildReadahead(path string) (stop func() int64) {
 		defer func() { _ = file.Close() }()
 		defer readers.Wait()
 		defer close(work)
-		for at := int64(0); at < size; at += restoreReadaheadBuffer {
+		for at := int64(0); at < size && ctx.Err() == nil; at += restoreReadaheadBuffer {
 			select {
 			case work <- at:
 			case <-ctx.Done():

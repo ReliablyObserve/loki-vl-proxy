@@ -551,7 +551,7 @@ memory accounting counts them, up to the file's size, until then. With the
 restart hand-over the warm-up then reads those values from memory instead of the
 disk.
 
-Measured on 2026-11-28 (`BenchmarkRestoreIndexRebuild` and a real proxy start).
+Measured on 2026-11-28 with the read-ahead of commit `36348635a` (`BenchmarkRestoreIndexRebuild` and a real proxy start).
 The emulated runs used the harness of the targets below: a local Linux VM with
 its data disk throttled per container and **no latency added**, so they are not
 EBS. "Ready" is rebuild plus warm-up with the hand-over, two runs per cell:

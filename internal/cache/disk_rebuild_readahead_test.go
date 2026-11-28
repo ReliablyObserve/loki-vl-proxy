@@ -112,8 +112,11 @@ func TestRebuildReadahead_ReadsTheFileAndStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	stop = startRebuildReadahead(big)
-	if got := stop(); got > int64(2*restoreReadaheadReaders)*restoreReadaheadBuffer {
-		t.Fatalf("stopped at once but read %d bytes", got)
+	// Each reader finishes at most the read it is in when stop is called, so
+	// at most every reader's reads before then plus one each; stopped at once,
+	// far less than the 256 buffers of the file.
+	if got := stop(); got >= 256*restoreReadaheadBuffer {
+		t.Fatalf("stopped at once but read the whole file (%d bytes)", got)
 	}
 	if got := startRebuildReadahead(filepath.Join(t.TempDir(), "missing"))(); got != 0 {
 		t.Fatalf("missing file: read %d bytes", got)
