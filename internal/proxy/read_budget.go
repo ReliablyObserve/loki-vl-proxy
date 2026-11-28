@@ -41,6 +41,24 @@ func noteReadGrid(ctx context.Context, route string, step, window, bucket time.D
 	n.mu.Unlock()
 }
 
+// readRouteStepIndependent names a failed read whose cost a coarser step does not lower (one step's window, the
+// series of a window): the step layer does not retry it.
+const readRouteStepIndependent = "step-independent"
+
+// noteReadRoute names the route the request's evaluator went on to over the grid it noted (raw: the raw rows of the
+// window, whose cost the step does not change).
+func noteReadRoute(ctx context.Context, route string) {
+	n, _ := ctx.Value(readGridNoteKey{}).(*readGridNote)
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	if n.set {
+		n.route = route
+	}
+	n.mu.Unlock()
+}
+
 // readGridBuckets is the buckets of one series over [start, end] and the window before it.
 func readGridBuckets(start, end time.Time, window, bucket time.Duration) int64 {
 	if bucket <= 0 {
@@ -127,6 +145,9 @@ type stepCandidateInput struct {
 	// its bound (0 < share < 1).
 	failed []readGrid
 	share  float64
+	// halve: the failure counted the answer (its samples or bytes), not a read, so a step that holds every window
+	// within the bound still fails it with all its points: the next step holds at most share of them.
+	halve bool
 }
 
 // effectiveBounds are the bounds of the request at k times the step.
@@ -202,12 +223,22 @@ func effectiveStepMultiple(in stepCandidateInput) (int64, bool) {
 	}
 	var shrinks []shrink
 	for _, g := range in.failed {
+		if g.route == readRouteStepIndependent {
+			return 0, false
+		}
+		if g.route == "raw" {
+			// Raw rows read within the bucket bound were read for another reason than the step (a counter
+			// proof, a parser error check): no coarser step changes them. Past the bound, the step that brings the
+			// windows back within it moves the read to the buckets.
+			if g.buckets <= heavyQueryBucketThreshold {
+				return 0, false
+			}
+			continue
+		}
 		if g.buckets > 0 && g.buckets <= heavyQueryBucketThreshold {
 			shrinks = append(shrinks, shrink{g, int64(math.Ceil(float64(g.buckets) * share))})
 		}
 	}
-	// A failure with no read noted, or only reads past the bound, at a step that already holds every window within
-	// the bound: the read is of a kind the model does not see, and the next one holds at most share of the points.
 	points := func(k int64) int64 {
 		startNs, endNs, ok := effectiveBounds(in, k)
 		if !ok {
@@ -226,6 +257,11 @@ func effectiveStepMultiple(in stepCandidateInput) (int64, bool) {
 	}
 	halveFrom := int64(0)
 	if len(shrinks) == 0 && fitsAt(prev) {
+		if !in.halve {
+			// A read that failed with every window within the bound and no grid a coarser step shrinks (raw rows
+			// read for another reason, a read the model does not see): no step is known to change it.
+			return 0, false
+		}
 		halveFrom = int64(math.Ceil(float64(points(prev)) * share))
 	}
 	lo := prev + 1

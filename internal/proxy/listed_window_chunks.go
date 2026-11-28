@@ -233,6 +233,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 			size, halved = max(1, (last-first+1)/listedChunkShrink), true
 			continue
 		case meter.over:
+			noteReadRoute(ctx, readRouteStepIndependent) // one step's window: no coarser step reads less of it
 			p.writeErr(w, ctx, p.listedStepOverflowError(meter.overBytes))
 			return true, false
 		case err != nil:

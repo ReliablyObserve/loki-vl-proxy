@@ -44,14 +44,33 @@ func TestEffectiveStepMultiple(t *testing.T) {
 		{"53ms over [1h], raw rows", stepInput(53*time.Millisecond, true), 360 * 53 * time.Millisecond, true},
 		// Off the grid the bounds keep the start: same model, same multiple.
 		{"50ms over [1h], align off", stepInput(50*time.Millisecond, false), 400 * time.Millisecond, true},
-		// A [5m] window at 50 ms: (80 s + 5 m) / 50 ms = 7,600 buckets fit already: the failure halves the points.
-		{"50ms over [5m], unknown read", stepInput(50*time.Millisecond, true, 5*time.Minute), 100 * time.Millisecond, true},
+		// A [5m] window at 50 ms: (80 s + 5 m) / 50 ms = 7,600 buckets fit already. A bound on the answer halves the
+		// points; a read bound with no grid that shrinks is not retried.
+		{"50ms over [5m], answer bound", func() stepCandidateInput {
+			in := stepInput(50*time.Millisecond, true, 5*time.Minute)
+			in.halve = true
+			return in
+		}(), 100 * time.Millisecond, true},
+		{"50ms over [5m], read bound", stepInput(50*time.Millisecond, true, 5*time.Minute), 0, false},
+		{"one step's window", func() stepCandidateInput {
+			in := stepInput(50*time.Millisecond, true)
+			in.failed = []readGrid{{route: readRouteStepIndependent, buckets: 73600}}
+			return in
+		}(), 0, false},
 		// Two windows: both must fit.
 		{"binary [1h] and [5m]", stepInput(50*time.Millisecond, true, time.Hour, 5*time.Minute), 400 * time.Millisecond, true},
 		// A ceiling below the step that fits: the limit error stays.
-		{"ceiling", func() stepCandidateInput { in := stepInput(50*time.Millisecond, true); in.ceiling = 300 * time.Millisecond; return in }(), 0, false},
+		{"ceiling", func() stepCandidateInput {
+			in := stepInput(50*time.Millisecond, true)
+			in.ceiling = 300 * time.Millisecond
+			return in
+		}(), 0, false},
 		// A floor above the step that fits.
-		{"floor", func() stepCandidateInput { in := stepInput(50*time.Millisecond, true); in.floor = time.Second; return in }(), time.Second, true},
+		{"floor", func() stepCandidateInput {
+			in := stepInput(50*time.Millisecond, true)
+			in.floor = time.Second
+			return in
+		}(), time.Second, true},
 		// The window grids of a recurrence that failed within the bound: half of their buckets.
 		{"window grids at 1s", func() stepCandidateInput {
 			in := stepInput(time.Second, true)
@@ -64,6 +83,18 @@ func TestEffectiveStepMultiple(t *testing.T) {
 			in.failed = []readGrid{{route: "buckets", step: time.Second, window: time.Hour, bucket: time.Second, buckets: 3680}}
 			return in
 		}(), 2 * time.Second, true},
+		// Raw rows read within the bucket bound (a counter proof): no step changes them.
+		{"raw rows within the bound", func() stepCandidateInput {
+			in := stepInput(time.Minute, true, 5*time.Minute)
+			in.failed = []readGrid{{route: "raw", step: time.Minute, window: 5 * time.Minute, bucket: time.Minute, buckets: 6}}
+			return in
+		}(), 0, false},
+		// Raw rows read past it: the step that brings the window within it.
+		{"raw rows past the bound", func() stepCandidateInput {
+			in := stepInput(50*time.Millisecond, true)
+			in.failed = []readGrid{{route: "raw", step: 50 * time.Millisecond, window: time.Hour, bucket: 50 * time.Millisecond, buckets: 73600}}
+			return in
+		}(), 400 * time.Millisecond, true},
 		// A range of one step holds no coarser grid of two points.
 		{"no room", stepCandidateInput{step: time.Second, prev: 1, startNs: 0, endNs: int64(time.Second), onGrid: true, windows: []time.Duration{time.Hour}}, 0, false},
 		// No window: not a metric query.
@@ -300,13 +331,13 @@ func TestStepLayer_RetriesAtTheSmallestMultipleThatFits(t *testing.T) {
 	}
 }
 
-// TestStepLayer_LokiErrorsAreAnsweredAsBefore: Loki's own limits, and an answer that would pass the bytes the proxy
-// sends at the requested step, keep their error; no effective request answers them.
+// TestStepLayer_LokiErrorsAreAnsweredAsBefore: Loki's own limits, and a read bound at a step whose windows already
+// fit the bucket bound, keep their error; no effective request answers them.
 //
 // conformance: limits/range-metric-step-adapt
 func TestStepLayer_LokiErrorsAreAnsweredAsBefore(t *testing.T) {
 	for name, fail := range map[string]func(int) error{
-		"series limit": func(int) error { return lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, 500, nil) },
+		"series limit":    func(int) error { return lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, 500, nil) },
 		"too many points": func(int) error { return lokierr.TooManyPoints() },
 		"label values":    func(limit int) error { return newLabelValuesTooLarge(int64(limit)+1, int64(limit)) },
 	} {
@@ -321,17 +352,6 @@ func TestStepLayer_LokiErrorsAreAnsweredAsBefore(t *testing.T) {
 		if rec.Code != direct.Code || rec.Body.String() != direct.Body.String() || cachedCalls != 0 {
 			t.Fatalf("%s: %d %s (%d effective requests), want %d %s", name, rec.Code, rec.Body.String(), cachedCalls, direct.Code, direct.Body.String())
 		}
-	}
-	// The answer at 400 ms holds enough points that, at 50 ms, it would pass the bytes the proxy sends.
-	p := stepTestProxy(t, func(c *Config) { c.ExecutionLimits.BackendMaxBufferedResponseBytes = 64 << 10 })
-	big := strings.Repeat(`[1,"1"],`, 2000) + `[1,"1"]`
-	stub := &stepStub{p: p, fits: 400 * time.Millisecond, answer: func(time.Duration) string {
-		return `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[` + big + `]}]}}`
-	}}
-	rec := httptest.NewRecorder()
-	p.rangeStepLayer(stub.serve, stub.serve)(rec, stepRequestFor(stepTestQuery, 50*time.Millisecond, "t"))
-	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "ResourceExhausted") {
-		t.Fatalf("answer too large at the requested step: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -431,12 +451,12 @@ func TestStepLayer_Metrics(t *testing.T) {
 // conformance: limits/range-metric-step-adapt
 func TestRangeWindows(t *testing.T) {
 	for q, want := range map[string]string{
-		`sum by (a) (count_over_time({a="b"}[1h]))`:                                         "1h0m0s",
-		`sum(rate({a="b"}[5m])) / sum(rate({a="b"} | json [1h]))`:                            "5m0s,1h0m0s",
-		`label_replace(rate({a="b"}[1m]), "x", "$1", "a", "(.*)")`:                          "1m0s",
-		`topk(3, sum by (a) (rate({a="b"}[10m]))) * 2`:                                      "10m0s",
-		`{a="b"} |= "x"`:                                                                    "",
-		`vector(1)`:                                                                         "",
+		`sum by (a) (count_over_time({a="b"}[1h]))`:                "1h0m0s",
+		`sum(rate({a="b"}[5m])) / sum(rate({a="b"} | json [1h]))`:  "5m0s,1h0m0s",
+		`label_replace(rate({a="b"}[1m]), "x", "$1", "a", "(.*)")`: "1m0s",
+		`topk(3, sum by (a) (rate({a="b"}[10m]))) * 2`:             "10m0s",
+		`{a="b"} |= "x"`: "",
+		`vector(1)`:      "",
 	} {
 		expr, err := parseLogQLExpr(context.Background(), q)
 		if err != nil {
@@ -450,5 +470,179 @@ func TestRangeWindows(t *testing.T) {
 		if strings.Join(got, ",") != want || ok != (want != "") {
 			t.Errorf("%s: %v %v, want %q", q, got, ok, want)
 		}
+	}
+}
+
+// TestStepLayer_ThroughTheRouteChain: through the shipped mux (compatibility cache, flights, query stats), a per-stream
+// count over [1h] at 50 ms whose raw rows pass the buffered bound answers at 400 ms with one warning and one stats
+// object; a repeat goes straight to the learned step and reads the effective request's cached answer (no VictoriaLogs
+// call), the warning answer itself is never cached (the repeat is adjusted again), and the effective request asked
+// directly is the warning-free answer from the cache.
+//
+// conformance: limits/range-metric-step-adapt
+func TestStepLayer_ThroughTheRouteChain(t *testing.T) {
+	backend, calls := stepFineRawBackend(t)
+	p, get := stepRouteProxy(t, backend.URL, calls)
+	end := stepTestEnd.UnixNano()
+	start := stepTestEnd.Add(-80 * time.Second).UnixNano()
+	for i := 0; i < 2; i++ {
+		rec, n := get(50*time.Millisecond, start, end)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("run %d: %d %.300s", i, rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Warnings []string `json:"warnings"`
+			Data     struct {
+				Stats json.RawMessage `json:"stats"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || len(resp.Warnings) != 1 || resp.Warnings[0] != "step raised from 50ms to 400ms to fit the query limits" ||
+			len(resp.Data.Stats) == 0 || strings.Count(rec.Body.String(), `"stats"`) != 1 {
+			t.Fatalf("run %d: %.400s (%v)", i, rec.Body.String(), err)
+		}
+		if i == 1 && n != 0 {
+			t.Fatalf("the repeat made %d VictoriaLogs calls, want 0", n)
+		}
+	}
+	metrics := httptest.NewRecorder()
+	p.metrics.Handler(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(metrics.Body.String(), `loki_vl_proxy_step_adjusted_total{endpoint="query_range",mode="adaptive",reason="backend-max-buffered-response-bytes"} 2`) {
+		t.Fatalf("want both requests adjusted (the warning answer is not cached as such)")
+	}
+	rec, n := get(400*time.Millisecond, start, end)
+	if rec.Code != http.StatusOK || n != 0 || strings.Contains(rec.Body.String(), "warnings") || rec.Header().Get(stepAdjustedHeader) != "" {
+		t.Fatalf("the effective request asked directly: %d, %d calls, %.300s", rec.Code, n, rec.Body.String())
+	}
+}
+
+// TestStepLayer_StepIndependentFailureReadsOnce: a read bound at a step whose windows already fit the bucket bound
+// (raw rows read for another reason) is answered as main answers it, after one read.
+//
+// conformance: limits/range-metric-step-adapt
+func TestStepLayer_StepIndependentFailureReadsOnce(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		// Every read past the buffered bound.
+		_, _ = w.Write([]byte(strings.Repeat(`{"_time":"2025-12-31T23:30:00Z","_stream":"{app=\"api\"}","_msg":"line","app":"api"}`+"\n", 4096)))
+	}))
+	defer backend.Close()
+	run := func(mode string) (int, string, int) {
+		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Minute, 1000), LogLevel: "error", RangeMetricStepMode: mode,
+			AlignQueriesWithStep: true, ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: 64 << 10}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = p.Shutdown(context.Background()) }()
+		p.storeBackendVersion("v1.54.0", "v1.54.0")
+		mux := http.NewServeMux()
+		p.RegisterRoutes(mux)
+		end := stepTestEnd.UnixNano()
+		form := url.Values{"query": {`sum(rate_counter({app="api"} | json | unwrap bytes [5m]))`}, "start": {strconv.FormatInt(end-int64(time.Hour), 10)},
+			"end": {strconv.FormatInt(end, 10)}, "step": {"60"}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		mu.Lock()
+		before := calls
+		mu.Unlock()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		mu.Lock()
+		defer mu.Unlock()
+		return rec.Code, rec.Body.String(), calls - before
+	}
+	offCode, offBody, offCalls := run(RangeMetricStepModeOff)
+	code, body, n := run(RangeMetricStepModeAdaptive)
+	if offCode == http.StatusOK {
+		t.Fatalf("the read fits: %.200s", offBody)
+	}
+	if code != offCode || body != offBody || n != offCalls {
+		t.Fatalf("adaptive: %d %q after %d calls, off: %d %q after %d calls", code, body, n, offCode, offBody, offCalls)
+	}
+}
+
+// stepFineRawBackend is a VictoriaLogs stub whose raw rows of the hour pass a 64 KiB buffered bound and whose
+// stats_query_range answers one sample at the start; calls counts its requests.
+func stepFineRawBackend(t *testing.T) (*httptest.Server, *stepCallCount) {
+	t.Helper()
+	calls := &stepCallCount{}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		calls.add()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/stats_query_range"):
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[` +
+				r.Form.Get("start") + `,"7"]]}]}}`))
+		case r.URL.Path == "/select/logsql/query" && !strings.Contains(r.Form.Get("query"), "stats"):
+			_, _ = w.Write([]byte(strings.Repeat(`{"_time":"2025-12-31T23:30:00Z","_stream":"{app=\"api\"}","_msg":"line","app":"api"}`+"\n", 4096)))
+		default:
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		}
+	}))
+	t.Cleanup(backend.Close)
+	return backend, calls
+}
+
+type stepCallCount struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (c *stepCallCount) add() { c.mu.Lock(); c.n++; c.mu.Unlock() }
+func (c *stepCallCount) get() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// stepRouteProxy is a proxy with the shipped mux on backend, and a getter of the per-stream count over [1h] at a step
+// that returns the answer and the VictoriaLogs calls it made.
+func stepRouteProxy(t *testing.T, backend string, calls *stepCallCount) (*Proxy, func(time.Duration, int64, int64) (*httptest.ResponseRecorder, int)) {
+	t.Helper()
+	p, err := New(Config{BackendURL: backend, Cache: cache.New(time.Minute, 1000), CompatCache: cache.New(time.Minute, 1000), LogLevel: "error",
+		AlignQueriesWithStep: true, ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: 64 << 10}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	p.storeBackendVersion("v1.54.0", "v1.54.0")
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	return p, func(step time.Duration, startNs, endNs int64) (*httptest.ResponseRecorder, int) {
+		before := calls.get()
+		form := url.Values{"query": {`count_over_time({app="api"}[1h])`}, "start": {strconv.FormatInt(startNs, 10)}, "end": {strconv.FormatInt(endNs, 10)},
+			"step": {strconv.FormatInt(step.Milliseconds(), 10) + "ms"}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
+		req.Header.Set("X-Scope-OrgID", "0")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec, calls.get() - before
+	}
+}
+
+// TestStepLayer_EachReplicaLearnsOnItsOwn: the learned step is replica memory. A second replica that never served
+// the request pays its own read at the requested step once, then answers the same bytes; its repeat makes no call.
+//
+// conformance: limits/range-metric-step-adapt
+func TestStepLayer_EachReplicaLearnsOnItsOwn(t *testing.T) {
+	backend, calls := stepFineRawBackend(t)
+	_, getA := stepRouteProxy(t, backend.URL, calls)
+	_, getB := stepRouteProxy(t, backend.URL, calls)
+	end := stepTestEnd.UnixNano()
+	start := stepTestEnd.Add(-80 * time.Second).UnixNano()
+	a, aCalls := getA(50*time.Millisecond, start, end)
+	b, bCalls := getB(50*time.Millisecond, start, end)
+	b2, b2Calls := getB(50*time.Millisecond, start, end)
+	if a.Code != http.StatusOK || b.Code != http.StatusOK || aCalls == 0 || bCalls != aCalls || b2Calls != 0 {
+		t.Fatalf("replica A %d after %d calls, B %d after %d calls, B's repeat %d calls", a.Code, aCalls, b.Code, bCalls, b2Calls)
+	}
+	strip := func(s string) string { return s[:strings.Index(s, `"stats"`)] }
+	if strip(a.Body.String()) != strip(b.Body.String()) || strip(b.Body.String()) != strip(b2.Body.String()) {
+		t.Fatalf("replicas answer differently:\n%.300s\n%.300s", a.Body.String(), b.Body.String())
 	}
 }

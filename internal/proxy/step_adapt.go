@@ -35,9 +35,9 @@ import (
 //   - off: the request is served as it came.
 //
 // What never changes: Loki's own limits and errors (the series limit, the 11,000-point resolution limit, a parse or
-// parameter error, a backend failure, a timeout) are answered as before; so is an answer at the requested step that
-// would itself pass the bytes the proxy sends (Loki's message size). No limit is raised: every effective read is held
-// to the same bounds.
+// parameter error, a backend failure, a timeout) are answered as before, and so is a failed read whose cost a coarser
+// step does not lower (raw rows read for another reason than the step, one step's window, the series of a window).
+// No limit is raised: every effective read is held to the same bounds.
 //
 // The adjusted answer carries Loki's warnings field ("step raised from 53ms to 19s80ms to fit the query limits"), is
 // counted by loki_vl_proxy_step_adjusted_total and the factor histogram, and logged with the steps, the reason and the
@@ -187,8 +187,9 @@ func (p *Proxy) tenantStepLimits(orgID string) stepLimits {
 type stepAttempt struct {
 	// armed: a failure the step layer can retry is held for it, not logged or counted by the error layer.
 	armed bool
-	// held: such a failure was answered in this attempt; last: the last failure answered was one.
-	held, last bool
+	// held: such a failure was answered in this attempt; last: the last failure answered was one; halve: one of them
+	// bounded the answer, not a read.
+	held, last, halve bool
 	// first is the first such failure, which the layer logs and counts when no retry answers.
 	first heldFailure
 	// grids are the read grids the failed reads noted.
@@ -205,33 +206,35 @@ type heldFailure struct {
 	reason string
 }
 
-// stepFixableReason names a limit error whose read the step bounds: the flag of the limit, without its dash; "" for
-// any other error. It decides by the error's type, never its text.
-func stepFixableReason(err error, typed *lokierr.Error) string {
+// stepFixableReason names a limit error whose read or answer the step sizes: the flag of the limit, without its
+// dash; "" for any other error. answer reports a bound on the answer (its samples, an operand's or a merged answer's
+// bytes), which holds fewer points at a coarser step whatever was read; the other bounds are on one read, whose cost
+// falls with the step only on a bucket grid (effectiveStepMultiple). It decides by the error's type, never its text.
+func stepFixableReason(err error, typed *lokierr.Error) (reason string, answer bool) {
+	flag := ""
 	if typed != nil {
 		switch typed.Msg() {
 		case lokierr.MsgResponseTooLarge, lokierr.MsgLimitReached:
 		default:
-			return ""
+			return "", false
 		}
-		flag, _, ok := typed.Limit()
+		f, _, ok := typed.Limit()
 		if !ok {
-			return ""
+			return "", false
 		}
-		switch flag {
-		case flagBackendMaxBufferedResponseBytes, flagManualRangeMetricRowLimit, flagOrderedJSONMetricMaxBytes,
-			flagOrderedJSONMetricMaxSamples, flagBinaryMetricMaxOperandBytes, flagMultiTenantMaxMergedBytes:
-			return strings.TrimPrefix(flag, "-")
-		}
-		return ""
+		flag = f
+	} else if errors.Is(err, errBodyTooLarge) {
+		flag = flagBackendMaxBufferedResponseBytes
+	} else if _, ok := asType[*rowLimitError](err); ok {
+		flag = flagManualRangeMetricRowLimit
 	}
-	if errors.Is(err, errBodyTooLarge) {
-		return strings.TrimPrefix(flagBackendMaxBufferedResponseBytes, "-")
+	switch flag {
+	case flagBackendMaxBufferedResponseBytes, flagManualRangeMetricRowLimit, flagOrderedJSONMetricMaxBytes:
+		return strings.TrimPrefix(flag, "-"), false
+	case flagOrderedJSONMetricMaxSamples, flagBinaryMetricMaxOperandBytes, flagMultiTenantMaxMergedBytes:
+		return strings.TrimPrefix(flag, "-"), true
 	}
-	if _, ok := asType[*rowLimitError](err); ok {
-		return strings.TrimPrefix(flagManualRangeMetricRowLimit, "-")
-	}
-	return ""
+	return "", false
 }
 
 // holdStepFixable keeps a step-fixable failure for the step layer when the request's attempt is armed: the error
@@ -251,11 +254,12 @@ func holdStepFixable(ctx context.Context, err error, typed *lokierr.Error, statu
 	if !st.armed {
 		return false
 	}
-	reason := stepFixableReason(err, typed)
+	reason, answer := stepFixableReason(err, typed)
 	st.last = reason != ""
 	if reason == "" {
 		return false
 	}
+	st.halve = st.halve || answer
 	if !st.held {
 		st.held = true
 		st.first = heldFailure{ctx: ctx, status: status, text: text, err: err, typed: typed, reason: reason}
@@ -537,11 +541,10 @@ func rangeWindows(expr logqlpkg.Expr) ([]time.Duration, bool) {
 
 // stepRequest is what the layer knows of a request it may serve at another step.
 type stepRequest struct {
-	in       stepCandidateInput
-	query    string
-	stepRaw  string
-	verdict  uint64
-	maxBytes int
+	in      stepCandidateInput
+	query   string
+	stepRaw string
+	verdict uint64
 }
 
 // stepRequestOf reads a request the layer may adjust; ok is false for a request without a step in whole
@@ -573,7 +576,7 @@ func (p *Proxy) stepRequestOf(r *http.Request, lim stepLimits) (stepRequest, boo
 	onGrid := p.alignQueriesWithStep && startNs%int64(step) == 0 && endNs%int64(step) == 0
 	in := stepCandidateInput{step: step, prev: 1, startNs: startNs, endNs: endNs, onGrid: onGrid, windows: windows,
 		floor: lim.floor, ceiling: lim.ceiling, maxBuckets: int64(p.stepMaxPoints), share: share}
-	return stepRequest{in: in, query: query, stepRaw: stepRaw, maxBytes: p.limits().BufferedBackendBodyBytes}, true
+	return stepRequest{in: in, query: query, stepRaw: stepRaw}, true
 }
 
 // effectiveStepRequest is r at k times its step, on the bounds effectiveBounds gives.
@@ -643,7 +646,7 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		}
 		if st.held && st.last && r.Context().Err() == nil {
 			if sr, ok := p.stepRequestOf(r, lim); ok {
-				sr.in.failed = st.grids
+				sr.in.failed, sr.in.halve = st.grids, st.halve
 				if k, fits := effectiveStepMultiple(sr.in); fits {
 					if p.stepVerdicts != nil {
 						sr.verdict = p.verdictKey(r, sr.query, sr.stepRaw, sr.in.endNs-sr.in.startNs)
@@ -689,12 +692,6 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 		}
 		if out.code < http.StatusBadRequest {
 			body := out.body.Bytes()
-			// An answer at the requested step that would itself pass the bytes the proxy sends is Loki's
-			// message size error, not a read bound: answered as before.
-			if fullAnswerBytes(body, k) > int64(sr.maxBytes) && sr.maxBytes > 0 {
-				p.metrics.RecordStepAdjusted("query_range", mode.String(), "answer-too-large", 0)
-				return false
-			}
 			if sr.verdict != 0 && p.stepVerdicts != nil {
 				p.stepVerdicts.put(sr.verdict, k, reason, time.Now())
 			}
@@ -712,7 +709,7 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			return false
 		}
 		in := sr.in
-		in.prev, in.failed = k, st.grids
+		in.prev, in.failed, in.halve = k, st.grids, st.halve
 		next, fits := effectiveStepMultiple(in)
 		if !fits || attempt == stepAdaptMaxRetries-1 {
 			if hw == nil {
@@ -725,13 +722,6 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 		k = next
 	}
 	return false
-}
-
-// fullAnswerBytes estimates the answer at the requested step from the answer at k times it: every point of it k
-// times, at most 32 bytes each.
-func fullAnswerBytes(body []byte, k int64) int64 {
-	points := int64(bytes.Count(body, []byte("],[")) + bytes.Count(body, []byte(`"values":[`)))
-	return int64(len(body)) + points*(k-1)*32
 }
 
 // writeStepAnswer writes an effective request's answer as it is, with the warning when warning is set.

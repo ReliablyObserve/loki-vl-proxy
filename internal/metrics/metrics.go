@@ -145,15 +145,15 @@ type Metrics struct {
 	loadLatency             cache.LatencyHist
 
 	// Server-side request and connection visibility.
-	activeRequests            atomic.Int64
-	connectionStates          map[string]*atomic.Int64 // "state" -> current connections
-	connectionTransitions     map[string]*atomic.Int64 // "state" -> transition count
-	connectionRotations       map[string]*atomic.Int64 // "reason" -> rotation count
-	parserMetricEvaluators    map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
+	activeRequests         atomic.Int64
+	connectionStates       map[string]*atomic.Int64 // "state" -> current connections
+	connectionTransitions  map[string]*atomic.Int64 // "state" -> transition count
+	connectionRotations    map[string]*atomic.Int64 // "reason" -> rotation count
+	parserMetricEvaluators map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
 	// stepAdjusted counts the answers the proxy gave at a raised step, by "endpoint|mode|reason"; stepFactor is the
 	// histogram of effective step / requested step per endpoint (RecordStepAdjusted).
-	stepAdjusted map[string]*atomic.Int64
-	stepFactor   map[string]*histogram
+	stepAdjusted              map[string]*atomic.Int64
+	stepFactor                map[string]*histogram
 	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
 
@@ -2818,7 +2818,7 @@ func (m *Metrics) writeStepAdjustedMetrics(sb *strings.Builder) {
 	m.mu.RUnlock()
 	sort.Strings(keys)
 	sort.Strings(endpoints)
-	sb.WriteString("# HELP loki_vl_proxy_step_adjusted_total Range metric answers the proxy gave at a raised step (-range-metric-step-mode), by endpoint, mode and reason: the flag of the read bound the requested step passed, range-metric-min-step for the floor, answer-too-large when the answer at the requested step would pass the bytes the proxy sends, so the limit error was answered.\n")
+	sb.WriteString("# HELP loki_vl_proxy_step_adjusted_total Range metric answers the proxy gave at a raised step (-range-metric-step-mode), by endpoint, mode and reason: the flag of the read bound the requested step passed, or range-metric-min-step for the floor.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_step_adjusted_total counter\n")
 	for _, key := range keys {
 		parts := strings.SplitN(key, metricKeySep, 3)

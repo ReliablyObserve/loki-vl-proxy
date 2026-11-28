@@ -867,73 +867,73 @@ type Proxy struct {
 	refusalQueries         refusalQuerySet
 	refusalSeenUntil       atomic.Int64
 	vlRefusalCounters
-	limiter                               *mw.RateLimiter
-	admissionLog                          logGate // paces the log line of a request the limiter rejects
-	breaker                               *mw.CircuitBreaker
-	routingNamespace                      string       // immutable digest, replaced under configMu on reload
-	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
-	tenantMap                             map[string]TenantMapping
-	tenantLabel                           string
-	authEnabled                           bool
-	requireTenantHeader                   bool
-	allowGlobalTenant                     bool
-	strictTenantRouting                   bool
-	tenantRefusals                        tenantRefusalLog
-	forwardTenantHeader                   bool
-	maxLines                              int
-	forwardHeaders                        []string          // headers to copy from client request to VL
-	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
-	backendHeaders                        map[string]string // static headers on all VL requests
-	backendHeadersInKeys                  map[string]string // backendHeaders with keyed digests for values, for the routing namespace
-	credentialDigest                      *credentialDigest // keys credential digests in cache keys
-	backendKeyText                        string            // urlInKeys(backend): the backend URL as cache keys spell it
-	backendCompression                    string
-	backendLoopback                       bool // true when backend host resolves to a loopback address
-	clientResponseCompression             string
-	clientResponseCompressionMinBytes     int
-	backendMinVersion                     string
-	backendAllowUnsupportedVersion        bool
-	backendVersionCheckTimeout            time.Duration
-	backendVersionStrict                  bool
-	derivedFields                         []DerivedField
-	streamResponse                        bool
-	emitStructuredMetadata                bool
-	backendDefaultMsgValue                string
-	jsonLineFieldsAsLineKeys              bool
-	detectedLevelBodyScan                 bool
-	serviceNameStreamLabelOnly            bool
-	serviceNameStreamRoute                bool
-	serviceNameRouteMinWindow             time.Duration
-	serviceNameRouteViolationTTL          time.Duration
-	patternsEnabled                       bool
-	deleteAPIEnabled                      bool
-	deleteAPIAuthToken                    string
-	clientAuth                            *clientauth.Authenticator // nil: caller authentication off
-	forwardsAuthorization                 bool                      // Authorization is in forwardHeaders
-	tenantMapFileSet                      bool
-	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
-	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
-	flippedConstructs                     []string        // QueryPlanFlippedConstructs, read once by New
-	flippedLogStages                      lower.LogStages // QueryPlanFlippedLogStages, read once by New
-	queryStatsVictoriaLogsMode            bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
-	queryStatsExactMetricBytes            bool            // -query-stats-exact-metric-bytes
-	queryStatsExactLogLines               bool            // -query-stats-exact-log-lines
-	meanLines                             meanLineTable   // the mean line size of log answers, for metric bytes (query_stats_totals.go)
-	patternsAutodetectFromQueries         bool
-	patternsCounts                        bool
-	patternsExactMaxLines                 int
-	patternState                          *patternStateStore
-	patternsFullRange                     bool
-	patternsSelectorScope                 bool
-	exactParserSeriesIdentity             bool
-	alignQueriesWithStep                  bool
+	limiter                           *mw.RateLimiter
+	admissionLog                      logGate // paces the log line of a request the limiter rejects
+	breaker                           *mw.CircuitBreaker
+	routingNamespace                  string       // immutable digest, replaced under configMu on reload
+	configMu                          sync.RWMutex // protects tenantMap and labelTranslator
+	tenantMap                         map[string]TenantMapping
+	tenantLabel                       string
+	authEnabled                       bool
+	requireTenantHeader               bool
+	allowGlobalTenant                 bool
+	strictTenantRouting               bool
+	tenantRefusals                    tenantRefusalLog
+	forwardTenantHeader               bool
+	maxLines                          int
+	forwardHeaders                    []string          // headers to copy from client request to VL
+	forwardCookies                    map[string]bool   // cookie names to copy from client request to VL
+	backendHeaders                    map[string]string // static headers on all VL requests
+	backendHeadersInKeys              map[string]string // backendHeaders with keyed digests for values, for the routing namespace
+	credentialDigest                  *credentialDigest // keys credential digests in cache keys
+	backendKeyText                    string            // urlInKeys(backend): the backend URL as cache keys spell it
+	backendCompression                string
+	backendLoopback                   bool // true when backend host resolves to a loopback address
+	clientResponseCompression         string
+	clientResponseCompressionMinBytes int
+	backendMinVersion                 string
+	backendAllowUnsupportedVersion    bool
+	backendVersionCheckTimeout        time.Duration
+	backendVersionStrict              bool
+	derivedFields                     []DerivedField
+	streamResponse                    bool
+	emitStructuredMetadata            bool
+	backendDefaultMsgValue            string
+	jsonLineFieldsAsLineKeys          bool
+	detectedLevelBodyScan             bool
+	serviceNameStreamLabelOnly        bool
+	serviceNameStreamRoute            bool
+	serviceNameRouteMinWindow         time.Duration
+	serviceNameRouteViolationTTL      time.Duration
+	patternsEnabled                   bool
+	deleteAPIEnabled                  bool
+	deleteAPIAuthToken                string
+	clientAuth                        *clientauth.Authenticator // nil: caller authentication off
+	forwardsAuthorization             bool                      // Authorization is in forwardHeaders
+	tenantMapFileSet                  bool
+	loweringShadow                    *loweringShadow // nil unless -translate-shadow-sample is set
+	queryPlanLowering                 bool            // serve the constructs the typed lowering covers from it
+	flippedConstructs                 []string        // QueryPlanFlippedConstructs, read once by New
+	flippedLogStages                  lower.LogStages // QueryPlanFlippedLogStages, read once by New
+	queryStatsVictoriaLogsMode        bool            // -query-stats-mode=victorialogs: measured stats, not Loki's accounting
+	queryStatsExactMetricBytes        bool            // -query-stats-exact-metric-bytes
+	queryStatsExactLogLines           bool            // -query-stats-exact-log-lines
+	meanLines                         meanLineTable   // the mean line size of log answers, for metric bytes (query_stats_totals.go)
+	patternsAutodetectFromQueries     bool
+	patternsCounts                    bool
+	patternsExactMaxLines             int
+	patternState                      *patternStateStore
+	patternsFullRange                 bool
+	patternsSelectorScope             bool
+	exactParserSeriesIdentity         bool
+	alignQueriesWithStep              bool
 	// The step layer's settings (step_adapt.go) and the steps it learned.
-	stepMode        stepMode
-	stepFloor       time.Duration
-	stepCeiling     time.Duration
-	stepBudgetBytes int64
-	stepMaxPoints   int
-	stepVerdicts    *stepVerdicts
+	stepMode                              stepMode
+	stepFloor                             time.Duration
+	stepCeiling                           time.Duration
+	stepBudgetBytes                       int64
+	stepMaxPoints                         int
+	stepVerdicts                          *stepVerdicts
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode

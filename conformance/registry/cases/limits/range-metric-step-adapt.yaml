@@ -37,7 +37,9 @@ why: |
   Unchanged:
   - a request that fits, byte for byte, with the same VictoriaLogs calls;
   - Loki's own limits and errors;
-  - an answer that would pass the bytes the proxy sends at the requested step;
+  - a failed read whose cost a coarser step does not lower (raw rows read
+    for another reason than the step, one step's window, the series of a
+    window);
   - instant and log queries, /index/volume_range and /patterns, whose points
     depend on the step;
   - windows that follow the step ($__auto).
