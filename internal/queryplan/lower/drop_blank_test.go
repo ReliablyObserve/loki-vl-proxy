@@ -32,6 +32,8 @@ func TestDropReadByLaterStage(t *testing.T) {
 		{query: `{app="a"} | drop code="5" | keep code="1"`, want: []string{`"" as code`}},
 		{query: `{app="a"} | drop code="5" | label_format x="{{.code}}" | code="5"`, want: []string{`"" as code`}},
 		{query: `{app="a"} | drop code="5" | code > 5`, want: []string{`"" as code`}},
+		// Behind a parser the filter may read an alias field or a stream label's stored copy: the field is blanked.
+		{query: `{app="a"} | json | drop code="5" | code="7"`, want: []string{`| format if (code:="5") "" as code`}},
 		{query: `sum(count_over_time({app="a"} | drop level="w" | level="w" [5m]))`, want: []string{`app:="a" level:="w" AND NOT level:="w" | stats`}, rewritten: true},
 		// The empty value passes the filter: a metric query groups by the blanked field.
 		{query: `sum(count_over_time({app="a"} | drop level="w" | level!="x" [5m]))`, want: []string{`format if (level:="w") "" as level`}},
@@ -39,7 +41,10 @@ func TestDropReadByLaterStage(t *testing.T) {
 		// NOT R when the empty value fails F, as R OR F(x) when it passes, and as F(x) alone when R spares F's value.
 		{query: `{app="a"} | drop code="5" | code="5"`, want: []string{`app:="a" code:="5" AND NOT code:="5"`}, rewritten: true},
 		{query: `{app="a"} | drop level="w" | level=""`, want: []string{`app:="a" (level:="w" OR -level:*)`}, rewritten: true},
-		{query: `{app="a"} | drop code="5" | code!="7"`, want: []string{`app:="a" (code:="5" OR -code:="7")`}, rewritten: true},
+		{query: `{app="a"} | drop code="5" | code!="7"`, none: true, want: []string{`app:="a" -code:="7"`}},
+		{query: `{app="a"} | drop code="5" | code!="5"`, want: []string{`app:="a" (code:="5" OR -code:="5")`}, rewritten: true},
+		{query: `{app="a"} | drop code="5", code="6" | code=~"[0-4]"`, none: true, want: []string{`app:="a" code:~`}},
+		{query: `{app="a"} | drop code=~"5.*" | code!="7"`, want: []string{`app:="a" (code:~"^(?s:5.*)$" OR -code:="7")`}, rewritten: true},
 		{query: `{app="a"} | drop code="5", code!="1" | code="5"`, want: []string{`code:="5" AND NOT (code:="5" OR -code:="1")`}, rewritten: true},
 		{query: `{app="a"} | drop code=~"5.." |= "x" | code=~"4.."`, want: []string{`code:~"^(?-s:4..)$" AND NOT code:~"^(?s:5..)$"`}, rewritten: true},
 		{query: `{app="a"} | drop level="warn" | level="nope"`, none: true, want: []string{`app:="a" level:="nope"`}},

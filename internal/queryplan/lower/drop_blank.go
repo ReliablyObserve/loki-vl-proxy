@@ -71,8 +71,14 @@ func dropBlankCandidate(sel *queryplan.LogSelect, i int, st *queryplan.Drop, nam
 // nothing reads or writes name in between. A filter F on the blanked value x' (x' is "" where the matchers R remove
 // x) reads the same rows as F(x) AND NOT R when F("") is false, and as R OR F(x) when it is true; nothing after F
 // reads x, so the blanking changes nothing else. A metric query groups by the fields, so only the first form, which
-// keeps no removed value, is written there.
+// keeps no removed value, is written there. A query with a parser before the drop keeps the blanking: behind a parser
+// the filter may read an alias field or the stored copy of a stream label (parsedLeaf), which the matchers do not.
 func dropHoistReader(sel *queryplan.LogSelect, i int, name string, metric bool) (int, bool) {
+	for _, st := range sel.Stages[:i] {
+		if _, ok := st.(*queryplan.Parse); ok {
+			return -1, false
+		}
+	}
 	for j := i + 1; j < len(sel.Stages); j++ {
 		switch st := sel.Stages[j].(type) {
 		case *queryplan.LineFilter, *queryplan.Decolorize:
@@ -116,9 +122,8 @@ func filterAcceptsEmpty(e *logql.LabelFilterExpr) (empty, ok bool) {
 }
 
 // dropHoistedFilter is the filter f of the label filter stage j rewritten to read the stored value of the label a
-// matcher drop before it removes (dropHoistReader), or f as it is. It is f alone where f is an equality whose value
-// none of the drop's matchers on the label removes (each an equality on another non-empty value), so the plan writes
-// the text of a query without the drop.
+// matcher drop before it removes (dropHoistReader), or f as it is. It is f alone where the drop's matchers decide
+// nothing f does not (dropSpares), so the plan writes the text of a query without the drop.
 func dropHoistedFilter(sel *queryplan.LogSelect, j int, f logsql.FilterExpr, label func(string) string, metric bool) logsql.FilterExpr {
 	lbl, ok := sel.Stages[j].(*queryplan.LabelFilter)
 	if !ok || f == nil || lbl.Expr == nil || !lbl.Expr.IsLeaf() {
@@ -137,6 +142,9 @@ func dropHoistedFilter(sel *queryplan.LogSelect, j int, f logsql.FilterExpr, lab
 		if at != j {
 			return f
 		}
+		if dropSpares(d, lbl.Expr, empty) {
+			return f
+		}
 		removed := dropRemoved(d, name, label)
 		if removed == nil {
 			return f
@@ -144,22 +152,22 @@ func dropHoistedFilter(sel *queryplan.LogSelect, j int, f logsql.FilterExpr, lab
 		if empty {
 			return logsql.Or(removed, f)
 		}
-		if dropSpares(d, lbl.Expr) {
-			return f
-		}
 		return logsql.And(f, logsql.Not(removed))
 	}
 	return f
 }
 
-// dropSpares reports an equality filter on a non-empty value whose value none of the drop's matchers on its label
-// removes, each matcher an equality on another non-empty value: every row the filter keeps keeps the label.
-func dropSpares(d *queryplan.Drop, e *logql.LabelFilterExpr) bool {
-	if e.Cmp != "=" || e.Value == "" {
+// dropSpares reports a filter e that reads the same rows with or without the drop's matchers R on its label, each an
+// equality on a non-empty value v (VictoriaLogs compares it exactly), as Loki's filter compares the values: where e
+// rejects the empty value (F AND NOT R), e accepts no v, so no row e keeps has its label removed; where e accepts it
+// (R OR F), e accepts every v, so every removed row passes e anyway.
+func dropSpares(d *queryplan.Drop, e *logql.LabelFilterExpr, empty bool) bool {
+	cond, err := translate.NewLabelFilterCondition(e.Name, e.Cmp, e.Value)
+	if err != nil {
 		return false
 	}
 	for _, m := range d.Matchers {
-		if m.Name == e.Name && (m.Op != "=" || m.Value == "" || m.Value == e.Value) {
+		if m.Name == e.Name && (m.Op != "=" || m.Value == "" || cond.Matches(m.Value) != empty) {
 			return false
 		}
 	}
@@ -278,7 +286,7 @@ func selectWritesDropBlank(sel *queryplan.LogSelect, metric bool) bool {
 				continue
 			}
 			if j, empty := dropHoistReader(sel, i, m.Name, metric); j >= 0 &&
-				(empty || !dropSpares(d, sel.Stages[j].(*queryplan.LabelFilter).Expr)) {
+				!dropSpares(d, sel.Stages[j].(*queryplan.LabelFilter).Expr, empty) {
 				return true
 			}
 		}
