@@ -1147,14 +1147,38 @@ func isUnpackSumAll(query string) bool {
 	return ok && (grouping == nil || len(grouping.Labels) == 0)
 }
 
-// unpackSumGrouping is the grouping of the sum of an isUnpackSum query.
+// unpackSumGrouping is the grouping of the sum of an isUnpackSum query, read under the label_replace calls and the
+// rankings (sort, sort_desc, topk, bottomk) at its root: an instant ranking hands its operand to the stats routes
+// with the whole query as the request's (answerInstantMetricPostAggregation), and the operand is the sum.
 func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 	// The shared parse of the query: it is read, never changed.
-	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
 	if !ok {
 		return nil, false
 	}
-	return unpackSumGroupingOf(expr)
+	return unpackSumGroupingOf(underRankings(expr))
+}
+
+// underRankings is the expression under the label_replace calls and the rankings at the root of expr.
+func underRankings(expr logqlpkg.Expr) logqlpkg.Expr {
+	for {
+		switch e := expr.(type) {
+		case *logqlpkg.OpaqueMetricExpr:
+			if e.Func != "label_replace" || !e.Typed || e.Inner == nil {
+				return expr
+			}
+			expr = e.Inner
+		case *logqlpkg.VectorAggregation:
+			switch e.Op {
+			case logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+				expr = e.Inner
+			default:
+				return expr
+			}
+		default:
+			return expr
+		}
+	}
 }
 
 // unpackSumGroupingOf is unpackSumGrouping of a parsed node.

@@ -86,9 +86,12 @@ func TestQueryPlanLowering_CorpusTextParity(t *testing.T) {
 				// A sum with no clause of a count or a rate over an unpack: the plan writes no stage from the unpack on, where
 				// the translator writes unpack_json, held to Loki by TestUnpackSumMatchesLoki (lower.SkipsUnpack,
 				// semantics/ungrouped-sum-skips-unpack).
-				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && lower.SkipsUnpack(plan) && gotErr == nil {
+				// Also an operand of a binary operation or a label_replace call (lower.SkipsUnpackWrapped): each skipped
+				// sum loses one unpack_json pipe, and the rest of the text is the translator's.
+				if plan := resolvedPlan(dynamicQuery(q)); plan != nil && (lower.SkipsUnpack(plan) || lower.SkipsUnpackWrapped(plan)) && gotErr == nil {
 					skipped++
-					if !strings.Contains(want, "unpack_json") || strings.Contains(got, "unpack_json") || strings.Replace(want, " | unpack_json", "", 1) != got && !strings.Contains(q, "| keep") && !strings.Contains(q, "| drop") {
+					dropped := strings.Count(want, " | unpack_json") - strings.Count(got, " | unpack_json")
+					if dropped < 1 || strings.Replace(want, " | unpack_json", "", dropped) != got && !strings.Contains(q, "| keep") && !strings.Contains(q, "| drop") {
 						t.Errorf("%q: served %q, the translator writes %q", q, got, want)
 					}
 					continue
@@ -377,7 +380,7 @@ func TestQueryPlanLowering_MetricScreenCorpus(t *testing.T) {
 			if err != nil || lower.KeepDecidesUnwrapIdentity(plan) {
 				continue
 			}
-			if lower.SkipsUnpack(plan) {
+			if lower.SkipsUnpack(plan) || lower.SkipsUnpackWrapped(plan) {
 				// The skipped unpack has its own path (skipsUnpackConstruct), served under the VectorAgg flip.
 				caps := p.logsqlCapabilities()
 				prof := loweringProfile(translator.WithStreamLabels(p.labelTranslator.ToVL, p.plainStreamLabelNames(ctx, normalized)), p.streamFieldsMap, caps, false)

@@ -583,7 +583,7 @@ func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
 	}
 	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
-		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance] {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows-known-bad.DelegatedByConstruct["known divergence "+knownKeepIdentity]-bad.DelegatedByConstruct["known divergence "+knownDynamicIdentity]-bad.DelegatedByConstruct["known divergence "+knownCountVariance]-bad.DelegatedByConstruct["known divergence "+knownSkippedUnpack] {
 			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
 		}
 	})

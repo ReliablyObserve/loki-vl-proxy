@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
@@ -56,9 +57,6 @@ var unpackSumKnown = func() map[string]unpackSumOpen {
 		`count_over_time({job="bad"} | unpack != "k" [1m])`:         {unpackSumCase, ranged},
 		// A value is unwrapped from a line that is not packed.
 		`sum_over_time({job="uwline"} | unpack | unwrap a [1m])`: {unpackSumCase, all},
-		// A ranking over a sum of a rate behind a keep after the unpack (the translator's text, as on main): the
-		// proxy fails the request where Loki answers.
-		`sort(sum(rate({job="pk"} | unpack | keep a [1m])))`: {unpackSumCase, all},
 		// A sum over a maximum adds the maxima of Loki's series, which the promoted labels split.
 		`sum(max_over_time({job="uw"} | unpack | unwrap a [1m]))`:    {unpackSumCase, ranged},
 		`sum(max_over_time({job="uwbad"} | unpack | unwrap a [1m]))`: {unpackSumCase, []string{"v1.54.0 step<range", "v1.49.0 step<range"}},
@@ -121,29 +119,54 @@ func unpackSumQueries() []string {
 		}
 	}
 	// A sum with no clause of a count or a rate reads no line for the unpack (semantics/ungrouped-sum-skips-unpack):
-	// over packed keys named like VictoriaLogs' fields, over a selector with no line, and an empty by clause (Loki's
-	// tree holds no grouping), which the plan does not rewrite.
+	// over packed keys named like VictoriaLogs' fields, over a selector with no line, with an empty by clause (Loki's
+	// tree holds no grouping) and a count behind a keep; a rate behind a keep keeps the unpack. An empty without clause
+	// keeps every series and the unpack.
 	out = append(out,
 		`sum(count_over_time({job="rs"} | unpack [1m]))`,
 		`sum(rate({job="rs"} | unpack | drop a [1m]))`,
 		`sum(count_over_time({job="none"} | unpack [1m]))`,
 		`sum(rate({job="none"} | unpack | keep a [1m] offset 40m))`,
 		`sum by () (count_over_time({job="bad"} | unpack [1m]))`,
+		`sum by () (rate({job="pk"} | unpack | drop a [1m]))`,
+		`sum by () (rate({job="bad"} | unpack | keep a [1m]))`,
+		`sum without () (count_over_time({job="pk"} | unpack [1m]))`,
+		`sum(rate({job="pk"} | unpack | keep a [1m]))`,
+		`sum(rate({job="bad"} | unpack | keep app, a [1m]))`,
+		`sum(count_over_time({job="bad"} | unpack | drop b | keep a [1m]))`,
+		`sum(count_over_time({job="none"} | unpack | keep a [1m]))`,
 	)
-	// The rewritten sum under the wrappers Loki keeps it through: the proxy serves only the root sum, so these keep the
-	// translator's text, and answer Loki's values all the same.
-	for _, sum := range []string{`sum(count_over_time({job="pk"} | unpack [1m]))`, `sum(rate({job="pk"} | unpack | drop a [1m]))`} {
+	// The rewritten sum under the wrappers Loki keeps it through: the proxy serves it from the plan as the operand of
+	// a binary operation or a label_replace call, and a ranking translates it as its operand.
+	for _, sum := range []string{
+		`sum(count_over_time({job="pk"} | unpack [1m]))`,
+		`sum(rate({job="pk"} | unpack | drop a [1m]))`,
+		`sum by () (count_over_time({job="bad"} | unpack [1m]))`,
+		`sum(rate({job="pk"} | unpack | keep a [1m]))`,
+		`sum(count_over_time({job="bad"} | unpack | keep a [1m]))`,
+	} {
 		out = append(out,
 			sum+` * 2`,
+			`2 * `+sum,
 			sum+` / sum(count_over_time({job="pk"}[1m]))`,
+			sum+` + sum by (app) (count_over_time({job="pk"} | unpack [1m]))`,
 			`sort(`+sum+`)`,
+			`sort_desc(`+sum+`)`,
 			`topk(1, `+sum+`)`,
 			`label_replace(`+sum+`, "dst", "x", "", "")`,
+			`label_replace(`+sum+` * 2, "dst", "x", "", "")`,
 			`max(`+sum+`)`,
 		)
 	}
-	// A keep after the unpack keeps it (the translator's text): a ranking over such a sum.
-	out = append(out, `sort(sum(rate({job="pk"} | unpack | keep a [1m])))`)
+	// A ranking over a grouped sum: the instant ranking hands the stats routes the sum as its operand.
+	out = append(out, `sort(sum by (app) (count_over_time({job="pk"} | unpack [1m])))`)
+	// A ranking over a range aggregation behind a keep, which the handlers group by the kept labels: the rewrite is
+	// handed on in the request's canonical spelling (it printed `sort (`, which the translation read as a phrase).
+	out = append(out,
+		`sort(rate({job="pk"} | json | keep job [1m]))`,
+		`sort_desc(count_over_time({job="pk"} | json | keep job, service_name [1m]))`,
+		`topk(1, rate({job="pk"} | json | keep service_name [1m]))`,
+	)
 	// absent_over_time reads the same count at an instant.
 	return append(out, `sum(absent_over_time({job="none"} | unpack [1m]))`,
 		`absent_over_time({job="none"} | unpack [1m])`, `absent_over_time({job="pk"} | unpack [1m])`)
@@ -235,7 +258,7 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 		recordMetricAnswers(t, unpackSumAnswersPath, queries)
 	}
 	answers := readMetricAnswersFrom(t, unpackSumAnswersPath)
-	match, runs, sums, failing, open, notRaised := 0, 0, 0, 0, 0, 0
+	match, runs, sums, failing, open, notRaised, skippedRuns := 0, 0, 0, 0, 0, 0, 0
 	for _, mq := range queries {
 		rec := answers[mq.q]
 		if rec == nil || rec.Inputs != mq.inputsHash() {
@@ -252,6 +275,17 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 					t.Fatalf("%s %s %s: VictoriaLogs request %s was not recorded: record them again with LVP_RUN_ORACLES=1", prof.name, mr.kind, mq.q, missing[0])
 				}
 				runs++
+				if skipsUnpackServed(mq) {
+					// The plan writes no stage from the unpack on, and VictoriaLogs answers from stats, not raw rows.
+					for _, sent := range run.sent {
+						// A grouped operand beside the sum keeps its unpack.
+						grouped := strings.Contains(mq.q, "sum by (app)")
+						if strings.Contains(sent, "unpack_json") && !grouped || strings.HasPrefix(sent, "/select/logsql/query?") {
+							t.Errorf("%s %s %s: sent %.300s", prof.name, mr.kind, mq.q, sent)
+						}
+					}
+					skippedRuns++
+				}
 				diff := parserErrorDiff(loki, run, true)
 				sum := strings.HasPrefix(mq.q, "sum(count") || strings.HasPrefix(mq.q, "sum(rate") || strings.HasPrefix(mq.q, "sum(absent") ||
 					strings.HasPrefix(mq.q, "sum by () (") || lower.WritesSkippedUnpack(mq.plan)
@@ -299,8 +333,19 @@ func TestUnpackSumMatchesLoki(t *testing.T) {
 	if open != listed {
 		t.Errorf("%d runs listed in unpackSumKnown were open, %d are listed: a listed query is no longer run", open, listed)
 	}
-	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d matching Loki errors), %d listed as open, %d answering where Loki fails", match, runs, sums, failing, open, notRaised)
+	t.Logf("unpack aggregations against Loki: %d of %d runs match (%d of them answered sums, %d matching Loki errors), %d listed as open, %d answering where Loki fails; %d runs read no line for the unpack", match, runs, sums, failing, open, notRaised, skippedRuns)
 	if sums == 0 || notRaised == 0 {
 		t.Error("no sum, or no run Loki fails, reached the comparison")
 	}
+}
+
+// skipsUnpackServed reports a query the proxy serves with no stage from the unpack on: the sum at the root, as the
+// operand of a binary operation or a label_replace call (lower.SkipsUnpackWrapped), or under a ranking, which
+// translates its operand as a query of its own. A sum under another aggregation keeps the translator's text.
+func skipsUnpackServed(mq metricQuery) bool {
+	if lower.SkipsUnpack(mq.plan) || lower.SkipsUnpackWrapped(mq.plan) {
+		return true
+	}
+	rank, ok := mq.plan.Root.(*queryplan.Rank)
+	return ok && lower.SkipsUnpack(&queryplan.Plan{Root: rank.In})
 }
