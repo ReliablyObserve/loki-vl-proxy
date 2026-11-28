@@ -372,8 +372,10 @@ func FuzzProxyEvaluatedLowering(f *testing.F) {
 			// A root the proxy evaluates is held to its route, which strips the parentheses that wrap the whole query.
 			// A parser's series identity under it (lower.WritesDynamicUnwrapIdentity) is the plan's, held to Loki by the
 			// differentials, not to the translator's stream and line: a known divergence, as in TestPlanShadow.
+			// A sum that needs no label over bare json and logfmt parsers is written with no stage from the first parser
+			// on (lower.WritesSkippedParsers): the same count with fewer pipes, held to Loki by TestParserSumMatchesLoki.
 			if translatorMisreadsQuotedText(q) || translatorReadsStageMarker(q) ||
-				lower.WritesDynamicUnwrapIdentity(plan) && !sameAsTranslator(got, legacy) {
+				(lower.WritesDynamicUnwrapIdentity(plan) || lower.WritesSkippedParsers(plan) && !lower.WritesSkippedUnpack(plan)) && !sameAsTranslator(got, legacy) {
 				continue
 			}
 			if msg := checkProxyEvaluated(q, prof, got); msg != "" {

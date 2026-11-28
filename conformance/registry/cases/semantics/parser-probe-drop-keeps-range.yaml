@@ -31,7 +31,7 @@ why: |
   the arguments of label_replace and approx_topk are read the same way). A query that does not parse is left as it
   is. A range probe without start or end reads the window Loki reads the request with (lokiRangeBounds: end now,
   start an hour or `since` before). Answers cached by an earlier build for a metric query naming both parsers are
-  not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query).
+  not served: their keys carry the fence `@two-parser-metric-v2:` (v2 since semantics/ungrouped-sum-skips-parsers) (one more cache miss per such query).
   The instant query the probe leaves is offered to the route that answers that query sent alone (the ordered JSON
   evaluator: `sum(count_over_time({...} | json [r]))` from VictoriaLogs stats), which the query naming both parsers
   was not offered before the probe; it read every line of the window (`| limit 1000001`) and answered the row

@@ -85,6 +85,8 @@ func TestStructuredMetadataSeriesCost(t *testing.T) {
 		{"F2", `count by (service_name) (count_over_time({env="production"}[5m]))`},
 		{"bare", `count_over_time({service_name="svc-00"}[5m])`},
 		{"without", `sum without (pod) (count_over_time({service_name="svc-00"}[5m]))`},
+		{"rate", `rate({service_name="svc-00"}[5m])`},
+		{"stddev", `stddev by (app) (count_over_time({env="production"}[5m]))`},
 		{"control", `sum by (service_name) (count_over_time({env="production"}[5m]))`},
 	}
 	if only := os.Getenv("LVP_SM_COST_SHAPES"); only != "" {
