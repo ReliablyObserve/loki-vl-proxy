@@ -96,7 +96,11 @@ why: |
   caller that reads in chunks ends with the overflow, rather than being sent
   again over the whole range with the full chain, which holds the same groups
   and passed the bound too (F1/F4 24h at 20s read 123 MB whole for it;
-  TestLevelWitnessResponse).
+  TestLevelWitnessResponse). Such a read holds one series per stream, and
+  each series' labels are built from the stream's labels parsed once, without
+  copies, and keyed once (buildMetricSeriesEntry; held to the copying form by
+  TestBuildMetricSeriesEntryMatchesReference and
+  FuzzBuildMetricSeriesEntryMatchesReference).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -126,7 +130,7 @@ gap:
   area: 'internal/proxy/matrix_fold_sink.go (matrixFold, matrixFoldSink); internal/proxy/range_metric_compat.go buildHitsRangeMetricMatrixFolded; internal/proxy/typed_fold.go foldAccumulator; internal/proxy/vector_agg_fold.go foldVectorAggregations'
   loki: 'a count, min, max or avg folds one value per series per step; the groups of a step fold and the per-stream samples are not kept (test/e2e-compat series_level_aggregation_fine_step_test.go)'
   proxy: 'the bucket matrix builder folds each stream into its group as it builds it; the response bound and the series cap apply to the folded answer'
-  planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestStreamIdentityWindowsChunkedPastBodyBound, TestStreamIdentityWindowChunksMatchOneRead, FuzzStreamIdentityWindowChunks (internal/proxy, CI fuzz smoke); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink (internal/proxy, CI fuzz smoke)'
+  planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestStreamIdentityWindowsChunkedPastBodyBound, TestStreamIdentityWindowChunksMatchOneRead, FuzzStreamIdentityWindowChunks (internal/proxy, CI fuzz smoke); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink, FuzzBuildMetricSeriesEntryMatchesReference (internal/proxy, CI fuzz smoke); TestBuildMetricSeriesEntryMatchesReference (internal/proxy)'
   note: 'Found by the 48h perf pass on main 7eaf79ce (B2 answered 500 in all 7 runs and both Loki profiles). The e2e against Loki and the bench/ab 24h-20s set and the 48h B2 check are written, not yet run in a stack window. The 24h read past the stats body bound (B2 24h at 60s, F1-F4 24h at 20s) was found by the perf-smoke of #1715 and is read in time chunks since.'
   clusters: []
 perf:
