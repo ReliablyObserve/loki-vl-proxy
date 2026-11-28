@@ -1,0 +1,8 @@
+go test fuzz v1
+string("code")
+string("5")
+string("code")
+string("x")
+byte('A')
+byte('\x05')
+byte('\x01')
