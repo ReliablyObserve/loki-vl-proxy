@@ -192,3 +192,35 @@ func TestPatternRowsQueryKeepsTheFilter(t *testing.T) {
 		t.Fatalf("an unparsable query is sent as it is, got %q", got)
 	}
 }
+
+// BenchmarkPatternRowsDecode is the proxy's cost of mining a sampled read's answer: whole rows (base) and the rows
+// the fields pipe keeps (this change), 240 wide rows.
+func BenchmarkPatternRowsDecode(b *testing.B) {
+	t := &testing.T{}
+	rows := patternWideRows()
+	var kept []map[string]string
+	for _, row := range rows {
+		kept = append(kept, patternRowsKept(t, row))
+	}
+	for name, body := range map[string][]byte{"whole": patternRowsBody(t, rows), "kept": patternRowsBody(t, kept)} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(body)))
+			for b.Loop() {
+				if _, _, err := extractLogPatternsStreamFilled(bytes.NewReader(body), "10s", 1000, defaultLogRowLevels(), true, 1795773600e9, 1795775700e9); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkPatternRowsQuery is the cost of building the read's query: the translated selector parsed and printed
+// with the fields pipe.
+func BenchmarkPatternRowsQuery(b *testing.B) {
+	const text = `service_name:="ingress" OR service_name:="" "service.name":="ingress" OR service_name:="" "service.name":="" service:="ingress"`
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = patternRowsQuery(text)
+	}
+}
