@@ -174,9 +174,9 @@ func TestIsVLMemoryLimitMessage(t *testing.T) {
 	for raw, want := range map[string]bool{
 		vlSortMemoryRefusal(20000): true,
 		"cannot execute query [x]: cannot calculate [stats by (a) count()], since it requires more than 512MB of memory": true,
-		"cannot execute query [x]: -search.maxQueryDuration=60s exceeded":                                               false,
-		"since it requires more than 3 seconds":                                                                         false,
-		"": false,
+		"cannot execute query [x]: -search.maxQueryDuration=60s exceeded":                                                false,
+		"since it requires more than 3 seconds":                                                                          false,
+		"":                                                                                                               false,
 	} {
 		if got := isVLMemoryLimitMessage(raw); got != want {
 			t.Fatalf("%q: %v, want %v", raw, got, want)
