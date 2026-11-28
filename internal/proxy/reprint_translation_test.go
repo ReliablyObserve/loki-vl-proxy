@@ -200,6 +200,7 @@ var reprintTranslationDiffers = map[string]bool{
 	"sort_desc(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))":                                                          true,
 	"sort(sum by (app) (count_over_time({env=\"production\"}[5m])))":                                                                                  true,
 	"sort(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))":                                                               true,
+	"sort(sum(rate({env=\"production\", app=\"api-gateway\"} | unpack | keep level [1h])))":                                                           true,
 	"sum by (app) (bytes_over_time(({env=\"production\"} |~ \"level=(debug|info)\")[5m]))":                                                            true,
 	"sum by (app) (rate({env=\"production\"}[5m] | json | drop __error__))":                                                                           true,
 	"sum by (level) (count_over_time(({env=\"production\"} | json | drop __error__)[1m] offset 5m))":                                                  true,

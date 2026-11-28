@@ -2716,6 +2716,13 @@
     "semantics/unary-plus-literal-rejected": [
       "internal/querycorpus/grammar_sweep_test.go"
     ],
+    "semantics/ungrouped-sum-skips-unpack": [
+      "internal/proxy/absent_over_time_test.go",
+      "internal/proxy/unpack_sum_rate_test.go",
+      "internal/querycorpus/unpack_sum_loki_diff_test.go",
+      "internal/queryplan/lower/unpack_test.go",
+      "test/e2e-compat/unpack_metrics_test.go"
+    ],
     "semantics/unknown-pipeline-stage-error-text": [
       "internal/proxy/error_refusals_test.go",
       "internal/querycorpus/grammar_sweep_test.go"
@@ -3366,7 +3373,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 775,
+  "registry_items": 776,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/cache_handover_scope_test.go": [
@@ -3829,6 +3836,7 @@
     ],
     "internal/proxy/absent_over_time_test.go": [
       "semantics/absent-over-time-semantics",
+      "semantics/ungrouped-sum-skips-unpack",
       "status-400"
     ],
     "internal/proxy/absent_reference_test.go": [
@@ -5658,6 +5666,7 @@
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
     ],
     "internal/proxy/unpack_sum_rate_test.go": [
+      "semantics/ungrouped-sum-skips-unpack",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream"
     ],
@@ -6165,6 +6174,7 @@
     ],
     "internal/querycorpus/unpack_sum_loki_diff_test.go": [
       "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream",
       "semantics/unpack-parser-error-not-raised",
@@ -6349,7 +6359,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/unpack_test.go": [
-      "semantics/translator-writes-unpack-as-unpack-json"
+      "semantics/translator-writes-unpack-as-unpack-json",
+      "semantics/ungrouped-sum-skips-unpack"
     ],
     "internal/queryplan/lower/unspaced_parser_test.go": [
       "semantics/translator-copies-unspaced-parser"
@@ -7348,6 +7359,7 @@
     "test/e2e-compat/unpack_metrics_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
+      "semantics/ungrouped-sum-skips-unpack",
       "semantics/unpack-instant-grouped-sum-reads-every-line",
       "semantics/unpack-instant-sum-rate-per-stream",
       "semantics/unwrap-conversion-check-reads-unpack-unlike-loki"
@@ -7700,5 +7712,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 506
+  "wired_items": 507
 }

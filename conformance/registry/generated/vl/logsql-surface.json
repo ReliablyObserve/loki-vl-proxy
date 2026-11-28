@@ -879,6 +879,7 @@
         "internal/proxy/absent_over_time.go",
         "internal/proxy/metric_agg.go",
         "internal/proxy/nested_vector_fold.go",
+        "internal/proxy/query_lowering.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/series_fold_read.go",
         "internal/proxy/unwrap_samples.go",

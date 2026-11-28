@@ -1147,13 +1147,42 @@ func isUnpackSumAll(query string) bool {
 	return ok && (grouping == nil || len(grouping.Labels) == 0)
 }
 
-// unpackSumGrouping is the grouping of the sum of an isUnpackSum query.
+// unpackSumGrouping is the grouping of the sum of an isUnpackSum query, read under the label_replace calls and the
+// rankings (sort, sort_desc, topk, bottomk) at its root: an instant ranking hands its operand to the stats routes
+// with the whole query as the request's (answerInstantMetricPostAggregation), and the operand is the sum.
 func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 	// The shared parse of the query: it is read, never changed.
-	expr, ok := sharedLogQLExpr(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(query))
 	if !ok {
 		return nil, false
 	}
+	return unpackSumGroupingOf(underRankings(expr))
+}
+
+// underRankings is the expression under the label_replace calls and the rankings at the root of expr.
+func underRankings(expr logqlpkg.Expr) logqlpkg.Expr {
+	for {
+		switch e := expr.(type) {
+		case *logqlpkg.OpaqueMetricExpr:
+			if e.Func != "label_replace" || !e.Typed || e.Inner == nil {
+				return expr
+			}
+			expr = e.Inner
+		case *logqlpkg.VectorAggregation:
+			switch e.Op {
+			case logqlpkg.VectorSort, logqlpkg.VectorSortDesc, logqlpkg.VectorTopK, logqlpkg.VectorBottomK:
+				expr = e.Inner
+			default:
+				return expr
+			}
+		default:
+			return expr
+		}
+	}
+}
+
+// unpackSumGroupingOf is unpackSumGrouping of a parsed node.
+func unpackSumGroupingOf(expr logqlpkg.Expr) (*logqlpkg.Grouping, bool) {
 	agg, ok := expr.(*logqlpkg.VectorAggregation)
 	if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping != nil && agg.Grouping.Without {
 		return nil, false
@@ -1175,8 +1204,10 @@ func unpackSumGrouping(query string) (*logqlpkg.Grouping, bool) {
 }
 
 // unpackMetricResponseVersion fences the answers to a metric query over an unpack cached before its semantics
-// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream).
-const unpackMetricResponseVersion = "@unpack-metric-v1:"
+// changed: an instant sum of a rate answered one series per stream (semantics/unpack-instant-sum-rate-per-stream,
+// v1), and a topk over a sum with no label behind a keep, or with an empty by clause, answered other values than
+// Loki's (semantics/ungrouped-sum-skips-unpack, v2).
+const unpackMetricResponseVersion = "@unpack-metric-v2:"
 
 // unpackMetricResponseKeyVersion is that fence: a text screen, so a query that names unpack and a rate or an
 // _over_time function is fenced whatever its shape (one more cache miss), and no query without an unpack changes
