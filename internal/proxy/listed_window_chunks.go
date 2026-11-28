@@ -127,6 +127,13 @@ const listedChunkShrink = 4
 // listedChunkLoad is the share of a read's bound a chunk is sized to use.
 const listedChunkLoad = 0.5
 
+// listedRowsLoad is the share of -structured-metadata-series-max-read-rows a folded read's chunk is sized to: its rows
+// are counted before it is sent (a read over the bound is never sent), so it can fill most of the bound.
+const listedRowsLoad = 0.9
+
+// listedRowsShrinkMargin is the share of listedRowsLoad a folded chunk refused over its row bound is cut to.
+const listedRowsShrinkMargin = 0.8
+
 // listedWindowChunksOff reads the windows in one read, as before the chunks (tests measure the two).
 var listedWindowChunksOff bool
 
@@ -308,7 +315,8 @@ func listedChunkBucketSteps(step, window, bucket time.Duration) int64 {
 // listedChunkLoad of the tighter of the two bounds (the series before the fold, the body bytes), at least one step
 // and at most bucketSteps.
 func nextListedChunkSize(read, bucketSteps int64, m statsReadMeter, budget, bodyBound int) int64 {
-	load := m.rowsLoad
+	// A folded read's rows are known before it is sent and refused over the bound, so its chunks fill most of it.
+	load := m.rowsLoad * listedChunkLoad / listedRowsLoad
 	if budget > 0 {
 		load = max(load, float64(m.series)/float64(budget))
 	}
@@ -364,7 +372,8 @@ func (p *Proxy) noteWindowReadOverflow(r *http.Request, start, end time.Time, st
 // over its row bound before it was sent, by what makes it fit.
 func listedChunkShrinkFor(m statsReadMeter) int64 {
 	if m.rowsLoad > 0 {
-		return max(1, int64(math.Ceil(m.rowsLoad/listedChunkLoad)))
+		// The chunk's read reaches back a range before its first step: a margin under the share it is sized to.
+		return max(1, int64(math.Ceil(m.rowsLoad/(listedRowsLoad*listedRowsShrinkMargin))))
 	}
 	return listedChunkShrink
 }
