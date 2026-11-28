@@ -782,12 +782,13 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			return true
 		}
 		if !st.held || !st.last {
-			// A failure the step does not size: the effective request answers it, as the request itself would.
-			if hw == nil {
-				p.writeStepAnswer(w, out, nil)
-				return true
+			// A failure the step does not size (a parser error, the series limit): the request at its own step
+			// fails the same way past its read bound, so the effective request's answer is the request's.
+			if hw != nil {
+				hw.restoreHeaders()
 			}
-			return false
+			p.writeStepAnswer(w, out, nil)
+			return true
 		}
 		in := sr.in
 		in.prev, in.failed, in.halve = eff, st.grids(), st.halve

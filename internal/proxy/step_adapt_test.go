@@ -694,3 +694,23 @@ func TestStepLayer_EachReplicaLearnsOnItsOwn(t *testing.T) {
 		t.Fatalf("replicas answer differently:\n%.300s\n%.300s", a.Body.String(), b.Body.String())
 	}
 }
+
+// TestStepLayer_EffectiveRequestsOwnErrorIsTheAnswer: when the effective request fails with an error the step does
+// not size (a parser error, the series limit), the request at its own step would fail so past its read bound too:
+// that error, Loki's, is the answer.
+//
+// conformance: limits/range-metric-step-adapt
+func TestStepLayer_EffectiveRequestsOwnErrorIsTheAnswer(t *testing.T) {
+	p := stepTestProxy(t, nil)
+	stub := &stepStub{p: p, fits: time.Hour}
+	effective := func(w http.ResponseWriter, r *http.Request) {
+		p.fail(w, r, lokierr.SeriesLimitOf(flagMaxStatsQuerySeries, 500, nil))
+	}
+	direct := httptest.NewRecorder()
+	effective(direct, stepRequestFor(stepTestQuery, 400*time.Millisecond, "t"))
+	rec := httptest.NewRecorder()
+	p.rangeStepLayer(stub.serve, effective)(rec, stepRequestFor(stepTestQuery, 50*time.Millisecond, "t"))
+	if rec.Code != http.StatusBadRequest || rec.Body.String() != direct.Body.String() || rec.Header().Get(stepAdjustedHeader) != "" {
+		t.Fatalf("%d %q, want the effective request's %d %q", rec.Code, rec.Body.String(), direct.Code, direct.Body.String())
+	}
+}
