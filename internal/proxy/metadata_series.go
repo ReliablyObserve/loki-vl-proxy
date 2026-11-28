@@ -223,9 +223,14 @@ func (p *Proxy) statsReadSeriesLimit(ctx context.Context) int {
 
 // slicedSeriesMetadataRead answers a rebuilt stats_query_range read over more rows than the bound in slices, and
 // reports whether it did. A read within the bound is sent as it is (false). A read over it whose buckets cannot be
-// read apart answers Loki's limit error naming -structured-metadata-series-max-read-rows, never an unbounded read.
+// read apart, an instant stats read and a read of rows over it answer Loki's limit error naming -structured-metadata-series-max-read-rows, never an unbounded read.
 func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, params url.Values) (*http.Response, bool, error) {
-	if path != statsQueryRangePath || p.seriesMetadataMaxReadRows <= 0 || metadataSeriesOf(ctx) == nil {
+	switch path {
+	case statsQueryRangePath, "/select/logsql/stats_query", "/select/logsql/query":
+	default:
+		return nil, false, nil
+	}
+	if p.seriesMetadataMaxReadRows <= 0 || metadataSeriesOf(ctx) == nil || params.Get("start") == "" || params.Get("end") == "" {
 		return nil, false, nil
 	}
 	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); fetch {
@@ -249,7 +254,11 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	if rows <= limit {
 		return nil, false, nil
 	}
-	req, ok := p.statsExtentRequestFor(ctx, params)
+	// An instant read and a read of rows (the series fold, the unwrap identity) hold their window's groups at once.
+	req, ok := (*statsExtentRequest)(nil), false
+	if path == statsQueryRangePath {
+		req, ok = p.statsExtentRequestFor(ctx, params)
+	}
 	if !ok {
 		p.observeInternalOperation(ctx, "metadata_series_identity", "over_rows_unsliced", time.Since(started))
 		return nil, true, lokierr.LimitReached(flagMetadataSeriesMaxReadRows, limit, &rowLimitError{limit: int(limit), unit: "rows in one VictoriaLogs read", matches: rows})
