@@ -103,6 +103,10 @@ type metricRequest struct {
 	rowLimit int
 	// drilldown sends the request as Grafana Logs Drilldown does (its X-Query-Tags source).
 	drilldown bool
+	// bufLimit is the proxy's -backend-max-buffered-response-bytes for the request (0: the default); stepMode its
+	// -range-metric-step-mode ("": the default).
+	bufLimit int
+	stepMode string
 }
 
 // metricQuery is one corpus row of the differential.

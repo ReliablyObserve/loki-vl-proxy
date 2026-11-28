@@ -158,6 +158,9 @@
     "limits/query-timeout-per-tenant | applies_to",
     "limits/query-timeout-per-tenant | compare:exact",
     "limits/queue-rejection-not-a-backend-failure | compare:exact",
+    "limits/range-metric-step-adapt | compare:exact",
+    "limits/range-metric-step-adapt | gap:fixed",
+    "limits/range-metric-step-adapt | query",
     "limits/raw-metric-row-precheck | compare:exact",
     "limits/raw-metric-row-precheck | query",
     "limits/row-limit-answers-loki-limit-text | compare:exact",
@@ -2670,6 +2673,7 @@
     "internal/proxy/stdvar_grouped_binary_test.go | semantics/stdvar-grouped-binary-marker",
     "internal/proxy/stdvar_grouped_binary_test.go | semantics/unwrap-extraction-list-series-identity",
     "internal/proxy/stdvar_grouped_binary_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/step_adapt_test.go | limits/range-metric-step-adapt",
     "internal/proxy/step_align_diff_test.go | loki_api_v1_query_range",
     "internal/proxy/step_align_diff_test.go | semantics/query-range-step-alignment",
     "internal/proxy/step_align_test.go | loki_api_v1_query_range",
@@ -3068,6 +3072,7 @@
     "internal/querycorpus/plancorpus/plancorpus_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/range_step_adapt_loki_diff_test.go | limits/range-metric-step-adapt",
     "internal/querycorpus/rank_binary_loki_diff_test.go | semantics/rank-over-binary-operation",
     "internal/querycorpus/rank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_loki_test.go | architecture-syntax-package-layering",
@@ -3874,17 +3879,17 @@
       "any": 50,
       "api": 125,
       "drilldown": 68,
-      "explore": 271,
+      "explore": 272,
       "grafana-datasource": 4,
       "operator": 6
     },
     "claiming_tests": {
-      "go": 916,
+      "go": 918,
       "playwright": 3
     },
     "page_kinds": {
       "drilldown": 23,
-      "explore": 151,
+      "explore": 153,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -3901,7 +3906,7 @@
     "shape_covers_distinct": 120,
     "shapes_path_only": 10,
     "unwired_items": 153,
-    "wired_items": 510
+    "wired_items": 511
   },
   "gates": [
     "A/B shape selection",
@@ -4014,6 +4019,8 @@
     "explore-stddev-parsed-method",
     "explore-stddev-trailing-by",
     "explore-stdvar-without-pod",
+    "explore-step-adapt",
+    "explore-step-adapt-quantile",
     "explore-sum-by-over-binary",
     "explore-sum-over-topk",
     "explore-sum-without-comparison-inside",

@@ -598,7 +598,7 @@ func (p *Proxy) rankingRelabel(w http.ResponseWriter, r *http.Request, endpoint 
 	if regexErr != nil {
 		status := p.fail(w, r, regexErr)
 		if !silent {
-			p.metrics.RecordRequest(endpoint, unwrapRecordedStatus(r.Context(), status), time.Since(start))
+			p.recordRangeRequest(r.Context(), endpoint, unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		}
 		return labelTransforms{}, r, false
 	}
@@ -790,7 +790,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if err != nil {
 		status := p.fail(w, r, queryRefusal(err))
 		if code := unwrapRecordedStatus(r.Context(), status); !silent {
-			p.metrics.RecordRequest("query_range", code, time.Since(start))
+			p.recordRangeRequest(r.Context(), "query_range", code, time.Since(start))
 		}
 		return
 	}
@@ -805,7 +805,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	transforms, regexErr := newLabelTransforms(replaces)
 	if regexErr != nil {
 		status := p.fail(w, r, regexErr)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
@@ -883,7 +883,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		_, _ = w.Write(bw.body)
 		elapsed := time.Since(start)
 		if code := unwrapRecordedStatus(r.Context(), sc.code); !silent {
-			p.metrics.RecordRequest("query_range", code, elapsed)
+			p.recordRangeRequest(r.Context(), "query_range", code, elapsed)
 			p.queryTracker.Record("query_range", originalQuery, elapsed, true)
 		}
 		return
@@ -895,7 +895,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
 			p.writeErr(w, r.Context(), capErr)
 			if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
-				p.metrics.RecordRequest("query_range", code, time.Since(start))
+				p.recordRangeRequest(r.Context(), "query_range", code, time.Since(start))
 			}
 			return
 		}
@@ -903,7 +903,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	result, ok := p.capFoldedGroups(w, r, result, postAgg, seriesLimit)
 	if !ok {
 		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
-			p.metrics.RecordRequest("query_range", code, time.Since(start))
+			p.recordRangeRequest(r.Context(), "query_range", code, time.Since(start))
 		}
 		return
 	}
@@ -923,7 +923,7 @@ func (p *Proxy) answerRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	_, _ = w.Write(result)
 	elapsed := time.Since(start)
 	if code := unwrapRecordedStatus(r.Context(), http.StatusOK); !silent {
-		p.metrics.RecordRequest("query_range", code, elapsed)
+		p.recordRangeRequest(r.Context(), "query_range", code, elapsed)
 		p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	}
 }
@@ -996,7 +996,7 @@ func (p *Proxy) applyOuterPostAggregation(w http.ResponseWriter, r *http.Request
 	capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
-		p.metrics.RecordRequest(endpoint, unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		p.recordRangeRequest(r.Context(), endpoint, unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return nil, false
 	}
 	return capped, true

@@ -286,7 +286,7 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		return true // the outer settled-steps request records client metrics
 	}
 	if recordRequest {
-		p.metrics.RecordRequest(endpoint, status, time.Since(requestStart))
+		p.recordRangeRequest(r.Context(), endpoint, status, time.Since(requestStart))
 		p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
 	}
 	return true
@@ -2262,7 +2262,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		_, _ = w.Write(body)
 	}
 	status = unwrapRecordedStatus(r.Context(), status)
-	p.metrics.RecordRequest("query_range", status, time.Since(requestStart))
+	p.recordRangeRequest(r.Context(), "query_range", status, time.Since(requestStart))
 	p.queryTracker.Record("query_range", query, time.Since(requestStart), status >= 400)
 	return true
 }

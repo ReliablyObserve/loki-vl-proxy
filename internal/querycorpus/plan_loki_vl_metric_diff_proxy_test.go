@@ -212,6 +212,8 @@ func runMetricHandler(t *testing.T, prof diffProfile, mr metricRequest, front *m
 		// The recordings hold the queries' requests only: the gates come from the recorded release, not from
 		// feature probes, which would add requests the oracles were never asked.
 		BackendFeatureProbesDisabled: true,
+		ExecutionLimits:              proxy.ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: mr.bufLimit},
+		RangeMetricStepMode:          mr.stepMode,
 	})
 	if err != nil {
 		t.Fatal(err)
