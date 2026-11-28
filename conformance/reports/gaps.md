@@ -72,7 +72,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | 3 | 2 | unknown |
 | observability | `cache-eviction-signals` — The cache says why entries leave a tier or never enter it, how old and how reused they were, and which TTL each answer class has | 8 | 4 | partial |
 | semantics | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | 13 | 5 | unknown |
-| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 13 | unknown |
+| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 6 | 14 | unknown |
 | resource_control | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | 11 | 17 | partial |
 | performance | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | 7 | 3 | partial |
 | observability | `cache-sizing-signals` — The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class | 7 | 3 | partial |

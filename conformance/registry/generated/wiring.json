@@ -175,6 +175,7 @@
       "internal/proxy/rank_binary_range_test.go",
       "internal/proxy/reserved_field_case_fence_test.go",
       "internal/proxy/reserved_field_test.go",
+      "internal/proxy/response_key_fence_ip_name_test.go",
       "internal/proxy/response_key_fence_parser_test.go",
       "internal/proxy/response_key_fences_test.go"
     ],
@@ -5279,6 +5280,9 @@
       "limits/effective-limit-resolution",
       "peer-cache-replication"
     ],
+    "internal/proxy/response_key_fence_ip_name_test.go": [
+      "cache-response-key-versions"
+    ],
     "internal/proxy/response_key_fence_parser_test.go": [
       "cache-response-key-versions",
       "semantics/blank-before-call-parenthesis-read-unlike-loki",
@@ -7532,7 +7536,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 909,
+  "tests_with_markers": 910,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

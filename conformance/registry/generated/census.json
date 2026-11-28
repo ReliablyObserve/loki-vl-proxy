@@ -2543,6 +2543,7 @@
     "internal/proxy/response_cache_contract_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/response_cache_contract_test.go | limits/effective-limit-resolution",
     "internal/proxy/response_cache_contract_test.go | peer-cache-replication",
+    "internal/proxy/response_key_fence_ip_name_test.go | cache-response-key-versions",
     "internal/proxy/response_key_fence_parser_test.go | cache-response-key-versions",
     "internal/proxy/response_key_fence_parser_test.go | semantics/blank-before-call-parenthesis-read-unlike-loki",
     "internal/proxy/response_key_fence_parser_test.go | semantics/translator-reads-only-space-between-tokens",
@@ -3846,7 +3847,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 906,
+      "go": 907,
       "playwright": 3
     },
     "page_kinds": {
