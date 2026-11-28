@@ -191,10 +191,32 @@ type stepAttempt struct {
 	// held: such a failure was answered in this attempt; last: the last failure answered was one; halve: one of them
 	// bounded the answer, not a read.
 	held, last, halve bool
+	// failed holds the failures, set by the first one (the request's telemetry stays its size for every request).
+	failed *stepFailures
+}
+
+// stepFailures are the failures an attempt held.
+type stepFailures struct {
 	// first is the first such failure, which the layer logs and counts when no retry answers.
 	first heldFailure
 	// grids are the read grids the failed reads noted.
 	grids []readGrid
+}
+
+// first is the attempt's first held failure (zero when it held none).
+func (st stepAttempt) first() heldFailure {
+	if st.failed == nil {
+		return heldFailure{}
+	}
+	return st.failed.first
+}
+
+// grids are the read grids the attempt's failed reads noted.
+func (st stepAttempt) grids() []readGrid {
+	if st.failed == nil {
+		return nil
+	}
+	return st.failed.grids
 }
 
 // heldFailure is a failure the error layer answered for the step layer to decide on.
@@ -251,8 +273,8 @@ func holdStepFixable(ctx context.Context, err error, typed *lokierr.Error, statu
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	st := &rt.stepAdapt
-	if !st.armed {
+	st := rt.stepAdapt
+	if st == nil || !st.armed {
 		return false
 	}
 	reason, answer := stepFixableReason(err, typed)
@@ -263,10 +285,10 @@ func holdStepFixable(ctx context.Context, err error, typed *lokierr.Error, statu
 	st.halve = st.halve || answer
 	if !st.held {
 		st.held = true
-		st.first = heldFailure{ctx: ctx, status: status, text: text, err: err, typed: typed, reason: reason}
+		st.failed = &stepFailures{first: heldFailure{ctx: ctx, status: status, text: text, err: err, typed: typed, reason: reason}}
 	}
 	if g, ok := readGridOf(ctx); ok {
-		st.grids = append(st.grids, g)
+		st.failed.grids = append(st.failed.grids, g)
 	}
 	return true
 }
@@ -283,7 +305,7 @@ func stepFailureHeld(ctx context.Context) bool {
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return rt.stepAdapt.armed && rt.stepAdapt.held
+	return rt.stepAdapt != nil && rt.stepAdapt.armed && rt.stepAdapt.held
 }
 
 // recordRangeRequest is the handler's request metric: an error status an armed attempt held is counted by the step
@@ -295,17 +317,23 @@ func (p *Proxy) recordRangeRequest(ctx context.Context, endpoint string, status 
 	p.metrics.RecordRequest(endpoint, status, d)
 }
 
-func (rt *requestTelemetry) armStep() {
+// armStep makes st the request's armed attempt; the caller owns st (the hold writer carries the first one, so a
+// request that fits allocates no attempt of its own).
+func (rt *requestTelemetry) armStep(st *stepAttempt) {
 	rt.mu.Lock()
-	rt.stepAdapt = stepAttempt{armed: true}
+	*st = stepAttempt{armed: true}
+	rt.stepAdapt = st
 	rt.mu.Unlock()
 }
 
 func (rt *requestTelemetry) disarmStep() stepAttempt {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	st := rt.stepAdapt
-	rt.stepAdapt = stepAttempt{}
+	if rt.stepAdapt == nil {
+		return stepAttempt{}
+	}
+	st := *rt.stepAdapt
+	rt.stepAdapt = nil
 	return st
 }
 
@@ -316,6 +344,8 @@ type stepHoldWriter struct {
 	held bool
 	code int
 	body []byte
+	// attempt is the request's armed attempt (requestTelemetry.stepAdapt points at it while the handler runs).
+	attempt stepAttempt
 	// entry are the headers the response had when the layer started, restored before a retry's answer.
 	entry  [8]stepHeader
 	nEntry int
@@ -409,9 +439,10 @@ func (hw *stepHoldWriter) flushHeld() {
 
 // stepAnswerWriter buffers the answer of an effective request.
 type stepAnswerWriter struct {
-	header http.Header
-	code   int
-	body   bytes.Buffer
+	header  http.Header
+	code    int
+	body    bytes.Buffer
+	attempt stepAttempt
 }
 
 func (w *stepAnswerWriter) Header() http.Header { return w.header }
@@ -673,7 +704,7 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		hw := newStepHoldWriter(w)
-		rt.armStep()
+		rt.armStep(&hw.attempt)
 		next(hw, r)
 		st := rt.disarmStep()
 		if !hw.held {
@@ -681,12 +712,12 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		}
 		if st.held && st.last && r.Context().Err() == nil {
 			if sr, ok := p.stepRequestOf(r, lim); ok {
-				sr.in.failed, sr.in.halve = st.grids, st.halve
+				sr.in.failed, sr.in.halve = st.grids(), st.halve
 				if eff, fits := effectiveStep(sr.in); fits {
 					if p.stepVerdicts != nil {
 						sr.verdict = p.verdictKey(r, sr.query, sr.stepRaw, sr.in.endNs-sr.in.startNs)
 					}
-					if p.serveAtStep(w, r, rt, cached, sr, eff, lim.mode, st.first.reason, "retry", hw) {
+					if p.serveAtStep(w, r, rt, cached, sr, eff, lim.mode, st.first().reason, "retry", hw) {
 						return
 					}
 				}
@@ -702,7 +733,7 @@ func (p *Proxy) answerHeldFailure(st stepAttempt, began time.Time) {
 	if !st.held {
 		return
 	}
-	f := st.first
+	f := st.first()
 	p.logRequestError(f.ctx, f.status, f.text, f.err, f.typed)
 	recordFlightFailure(f.ctx, f.err, f.status, f.typed)
 	p.metrics.RecordRequest("query_range", f.status, time.Since(began))
@@ -719,7 +750,7 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 		}
 		child := effectiveStepRequest(r, sr, eff)
 		out := &stepAnswerWriter{header: make(http.Header)}
-		rt.armStep()
+		rt.armStep(&out.attempt)
 		cached(out, child)
 		st := rt.disarmStep()
 		if out.code == 0 {
@@ -744,7 +775,7 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			return false
 		}
 		in := sr.in
-		in.prev, in.failed, in.halve = eff, st.grids, st.halve
+		in.prev, in.failed, in.halve = eff, st.grids(), st.halve
 		next, fits := effectiveStep(in)
 		if !fits || attempt == stepAdaptMaxRetries-1 {
 			if hw == nil {
