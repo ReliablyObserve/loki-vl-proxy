@@ -224,8 +224,8 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 			}
 			matched++
 			if part := doCompatProxyRequest(sliced, r.target, map[string]string{"X-Scope-OrgID": "0"}); part.Code == http.StatusBadRequest && strings.Contains(part.Body.String(), "limit reached") {
-				// A read over the bound whose buckets cannot be read apart (statsExtentQueryCacheable) answers Loki's limit
-				// error: never an unbounded read.
+				// A read over the bound that cannot be read in slices (an instant read, a folded read whose single step
+				// passes it) answers Loki's limit error: never an unbounded read.
 				slicedRefused++
 			} else if part.Code != http.StatusOK {
 				t.Errorf("%s %s: sliced proxy answered %d %s", v.version, r.target, part.Code, part.Body.String())
@@ -263,6 +263,13 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 			t.Errorf("%s: no request passed the series limit", v.version)
 		}
 		rebuilt := front.rebuilt()
+		front.mu.Lock()
+		folded := front.folded
+		front.mu.Unlock()
+		if folded == 0 {
+			t.Errorf("%s: no read folded the stream identity's series", v.version)
+		}
+		t.Logf("VictoriaLogs %s: %d reads folded the stream identity's series", v.version, folded)
 		if rebuilt == 0 {
 			t.Errorf("%s: no read carried the identity", v.version)
 		}
@@ -270,7 +277,9 @@ func TestStructuredMetadataSeriesMatchLoki(t *testing.T) {
 		// each with 200, or the request above failed.
 		t.Logf("VictoriaLogs %s: %d of %d answers equal Loki's (%d series), %d read in slices (%d refused unsliced); without the flag %d differ; %d reads rebuilt",
 			v.version, matched, len(requests), series, slicedSame, slicedRefused, offDiffers, rebuilt)
-		if slicedSame < len(requests)*9/10 || slicedRefused > len(requests)/10 {
+		// A 30-row bound refuses every request whose step window holds more rows (folded reads are never cut into
+		// slices): each answer is Loki's or that limit error, and some are read in slices.
+		if slicedSame == 0 || slicedSame+slicedRefused != len(requests) {
 			t.Errorf("%s: %d of %d sliced answers equal Loki's, %d refused", v.version, slicedSame, len(requests), slicedRefused)
 		}
 		if offDiffers == 0 {
@@ -344,6 +353,7 @@ type smFront struct {
 	version, upstream string
 	mu                sync.Mutex
 	withIdentity      int
+	folded            int // reads of the stream identity's series fold (series_fold_stream.go)
 }
 
 func (f *smFront) rebuilt() int {
@@ -374,6 +384,9 @@ func (f *smFront) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(query, "| set_stream_fields ") && !strings.Contains(query, "_stream |") {
 		f.mu.Lock()
 		f.withIdentity++
+		if strings.Contains(query, streamSeriesCopy) && strings.Contains(query, "unroll") {
+			f.folded++
+		}
 		f.mu.Unlock()
 	}
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, f.upstream+r.URL.RequestURI(), strings.NewReader(string(body)))

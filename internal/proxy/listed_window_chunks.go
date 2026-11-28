@@ -63,7 +63,7 @@ func noteStatsReadOverflow(ctx context.Context, err error) {
 		switch {
 		case errors.Is(err, errBodyTooLarge):
 			m.over, m.overBytes = true, true
-		case isSeriesLimitError(err):
+		case isSeriesLimitError(err), isMetadataReadRowsError(err):
 			m.over = true
 		}
 	}
@@ -146,13 +146,13 @@ func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request,
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
 	if fold == nil || listedWindowChunksOff || !reads.bucketsOK || statsAggFunc == "" || *reads.rawRows || reads.counter || reads.quantile ||
-		!reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
+		!reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) && (metadataSeriesOf(r.Context()) == nil || !foldsOwnRange(r.FormValue("query"))) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
 	// A parser's series hash folds, in VictoriaLogs, the series that lie in one bucket (series_fold_read.go).
-	r = p.withSeriesFold(r, spec, manualFunc, fold)
+	r = p.withSeriesFold(r, spec, manualFunc, fold, origSpec.Window)
 	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
 	*reads.rawRows = whole
 	return handled

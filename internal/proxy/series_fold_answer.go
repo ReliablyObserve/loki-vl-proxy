@@ -152,7 +152,8 @@ func (s *seriesFoldRead) newFoldDecoder() (*foldDecoder, error) {
 		}
 		labels = append(labels, []byte(b))
 	}
-	sid := slices.IndexFunc(labels, func(l []byte) bool { return string(l) == dynamicSeriesHashLabel })
+	series := s.seriesLabel()
+	sid := slices.IndexFunc(labels, func(l []byte) bool { return string(l) == series })
 	if sid < 0 {
 		return nil, &statsBucketsUnreadableError{"folded read without its series hash"}
 	}

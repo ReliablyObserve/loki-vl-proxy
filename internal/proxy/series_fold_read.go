@@ -61,6 +61,9 @@ type seriesFoldRead struct {
 	// by is the grouping of one read's bucket stats (foldedQuery sets it on the read's own copy), the labels of its
 	// answer.
 	by []string
+	// stream says the series identity is the row's stream (with -structured-metadata-series-identity, its stream and
+	// structured metadata): the read copies _stream into the series hash field and groups by it in its place.
+	stream bool
 }
 
 // seriesFoldOff reads the series of a parser's identity one by one, as before the fold (tests compare the two).
@@ -72,7 +75,11 @@ var seriesFoldHash = logsql.PipeHash{Fields: []string{dynamicSeriesHashLabel}, R
 // withSeriesFold marks the bucket reads of a request of a parser's identity over a range longer than the step
 // (identityAhead) to fold the series that lie in one bucket, when its outer aggregation and function fold (one
 // vector aggregation, the matrix fold of the request). The extent cache is off for them.
-func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc string, fold *matrixFold) *http.Request {
+func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc string, fold *matrixFold, window time.Duration) *http.Request {
+	if read := streamSeriesFold(r.Context(), r.FormValue("query"), spec, manualFunc, fold, window); read != nil {
+		ctx := context.WithValue(context.WithValue(r.Context(), seriesFoldKey{}, read), statsExtentRequestKey{}, false)
+		return r.WithContext(ctx)
+	}
 	if seriesFoldOff || !identityAhead(r.Context()) || fold == nil || len(fold.levels) != 1 || !spec.gated() {
 		return r
 	}
@@ -114,6 +121,14 @@ func (p *Proxy) withSeriesFold(r *http.Request, spec statsCompatSpec, manualFunc
 	return r.WithContext(ctx)
 }
 
+// seriesLabel is the label of the answer that tells the series apart: the parser identity's hash, or the stream.
+func (s *seriesFoldRead) seriesLabel() string {
+	if s.stream {
+		return "_stream"
+	}
+	return dynamicSeriesHashLabel
+}
+
 // seriesFoldFrom is the fold of ctx's bucket reads, nil when they read every series.
 func seriesFoldFrom(ctx context.Context) *seriesFoldRead {
 	read, _ := ctx.Value(seriesFoldKey{}).(*seriesFoldRead)
@@ -129,6 +144,9 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 		return "", false
 	}
 	bucket, offset := slidingStatsGrid(start, hitStep)
+	if s.stream {
+		groupBy = streamSeriesBy(groupBy)
+	}
 	read, ok := lower.SeriesFold{Outer: s.outer, By: groupBy, Stats: s.stats, Columns: s.columns, Value: s.value, Bucket: bucket, Offset: offset}.Pipes()
 	if !ok {
 		return "", false
@@ -137,9 +155,19 @@ func (s *seriesFoldRead) query(baseQuery string, groupBy []string, statsAggFunc 
 	var b strings.Builder
 	b.Grow(len(base) + 2048)
 	b.WriteString(base)
+	if s.stream {
+		// The stream identity's series field is the row's stream, copied into the fold's series field.
+		b.WriteByte(' ')
+		b.WriteString(streamSeriesCopy)
+	}
 	for _, p := range read.Pipes {
 		b.WriteByte(' ')
 		b.WriteString(p.String())
+	}
+	if s.stream {
+		// The kept series answer their stream under its own name, as an unfolded read does.
+		b.WriteByte(' ')
+		b.WriteString(streamSeriesRename)
 	}
 	return b.String(), true
 }
@@ -258,7 +286,7 @@ func foldedWindows(entry manualSeriesSamples, merge withoutMerge, startNS, endNS
 // folded row (an empty series hash) go into its entry (Folded: the value column into Samples, the count column into
 // Counts, the others dropped), and the count the fold adds is dropped from every other row.
 func (s *seriesFoldRead) readsRow(seriesMap map[string]manualSeriesSamples, seriesKey string, metricObj *fj.Object, metric map[string]string, name string, values []byte, start time.Time, hitStep time.Duration) bool {
-	if hash := metricObj.Get(dynamicSeriesHashLabel); hash == nil || len(hash.GetStringBytes()) > 0 {
+	if hash := metricObj.Get(s.seriesLabel()); hash == nil || len(hash.GetStringBytes()) > 0 {
 		return s.added && name == lower.SeriesFoldCount
 	}
 	entry := seriesMap[seriesKey]

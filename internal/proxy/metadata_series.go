@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/url"
@@ -273,6 +274,16 @@ func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, param
 	}
 	limit := int64(p.seriesMetadataMaxReadRows)
 	bound := int64(p.limits().BufferedBackendBodyBytes)
+	if seriesFoldFrom(ctx) != nil {
+		// A folded read (series_fold_stream.go) groups a series across the buckets of its read, so it is never cut into
+		// slices; VictoriaLogs holds a group per series of the read, so one over the bound is refused as past its
+		// bound: the time chunks read it again in smaller chunks.
+		if rows <= limit {
+			return nil, false, nil
+		}
+		p.observeInternalOperation(ctx, "metadata_series_identity", "folded_over_rows", time.Since(started))
+		return nil, true, lokierr.LimitReached(flagMetadataSeriesMaxReadRows, limit, &metadataReadRowsError{rowLimitError{limit: int(limit), unit: "rows in one VictoriaLogs read", matches: rows}})
+	}
 	if path == statsQueryRangePath && matrixFoldFrom(ctx) != nil && bound > 0 && rows > bound/metadataSeriesRowBytes {
 		// A read the window evaluator folds in time chunks once it passes the stats body bound
 		// (rereadOverflowedInChunks): with a series per row about metadataSeriesRowBytes each, this one would pass it,
@@ -417,3 +428,12 @@ func seriesMetadataReadRowsOrDefault(n int) int {
 	}
 	return n
 }
+
+func isMetadataReadRowsError(err error) bool {
+	var e *metadataReadRowsError
+	return errors.As(err, &e)
+}
+
+// metadataReadRowsError is a folded read over -structured-metadata-series-max-read-rows: the time chunks read it
+// again in smaller chunks (noteStatsReadOverflow), and a single step over it is the chunks' limit error.
+type metadataReadRowsError struct{ rowLimitError }
