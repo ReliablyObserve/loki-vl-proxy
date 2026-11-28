@@ -105,34 +105,6 @@
    ]
   },
   {
-   "id": "explore-step-adapt",
-   "kind": "explore",
-   "query": "sum by (service_name) (sum_over_time({env=\"production\"} | json | unwrap duration_ms [1h]))",
-   "ranges": [
-    "5m"
-   ],
-   "ci_ranges": [
-    "5m"
-   ],
-   "covers": [
-    "limits/range-metric-step-adapt"
-   ]
-  },
-  {
-   "id": "explore-step-adapt-quantile",
-   "kind": "explore",
-   "query": "quantile_over_time(0.95, {env=\"production\"} | json | unwrap duration_ms [1h]) by (service_name)",
-   "ranges": [
-    "5m"
-   ],
-   "ci_ranges": [
-    "5m"
-   ],
-   "covers": [
-    "limits/range-metric-step-adapt"
-   ]
-  },
-  {
    "id": "explore-nested-json-filtered-rate",
    "kind": "explore",
    "query": "max(sum by (cluster) (rate({env=\"production\"} | json | __error__=\"\" [$__auto])))",
