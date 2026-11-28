@@ -2563,6 +2563,24 @@
    ]
   },
   {
+   "id": "explore-stream-grouped-parsers",
+   "kind": "explore",
+   "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [$__auto]))",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "covers": [
+    "semantics/stream-grouped-sum-skips-parsers",
+    "parser-json",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stream-grouped-sum-skips-parsers"
+   ]
+  },
+  {
    "id": "explore-parser-probe-drop",
    "kind": "explore",
    "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [$__auto]))",

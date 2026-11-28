@@ -114612,6 +114612,7 @@
       "warm_p50": 0.026
     }
   ],
+  "semantics/stream-grouped-sum-skips-parsers": [],
   "semantics/stream-label-shadowed-by-ingest-json-key": [
     {
       "baseline": "release",

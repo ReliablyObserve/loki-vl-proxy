@@ -203,6 +203,9 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	if inner := stripLabelTransforms(query); inner != query {
 		return p.handleOrderedJSONMetricUnderTransform(w, r, requestStart, query, inner, isRange)
 	}
+	if p.serveStreamGroupedParsers(w, r, query, isRange) {
+		return true
+	}
 	plan, ok := compileOrderedJSONMetric(query)
 	if !ok {
 		return p.handleOrderedJSONVectorMetric(w, r, requestStart, query, isRange)

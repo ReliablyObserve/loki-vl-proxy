@@ -77,6 +77,8 @@ type streamLabelNamesEntry struct {
 	fresh      time.Time // last successful refresh
 	tried      time.Time // last refresh start
 	refreshing bool
+	// settled is closed when the running refresh ends (awaitTenantStreamLabelNames).
+	settled chan struct{}
 }
 
 var (
@@ -215,6 +217,35 @@ func (st *streamLabelNamesState) mentionedNames(query string) map[string]bool {
 	return m
 }
 
+// awaitTenantStreamLabelNames is tenantStreamLabelNames for a reader that cannot decide without the names: when the
+// proxy has not listed them yet for the tenant, it waits for the refresh that call starts (bounded by the refresh's
+// own deadline and ctx), once per tenant and proxy; a failed refresh answers no name. Other readers keep the
+// never-blocking read.
+func (p *Proxy) awaitTenantStreamLabelNames(ctx context.Context) []string {
+	names := p.tenantStreamLabelNames(ctx)
+	if len(names) != 0 {
+		return names
+	}
+	st := &p.streamLabelNames
+	st.mu.Lock()
+	var settled chan struct{}
+	if e := st.byKey["slnames:"+getOrgID(ctx)]; e != nil && e.fresh.IsZero() {
+		settled = e.settled
+	}
+	st.mu.Unlock()
+	if settled == nil {
+		return names
+	}
+	timer := time.NewTimer(streamLabelNamesRefreshTimeout)
+	defer timer.Stop()
+	select {
+	case <-settled:
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+	return p.knownTenantStreamLabelNames(ctx)
+}
+
 // knownTenantStreamLabelNames is the tenant's stream label names as last known, read without starting a refresh or
 // counting an internal operation: the lowering shadow reads the names the request's translation has just read,
 // and must not change what the proxy asks VictoriaLogs or records.
@@ -259,7 +290,7 @@ func (p *Proxy) tenantStreamLabelNames(ctx context.Context) []string {
 	names := e.names
 	due := !e.refreshing && now.Sub(e.fresh) >= streamLabelNamesTTL && now.Sub(e.tried) >= streamLabelNamesRetry && st.base.Err() == nil
 	if due {
-		e.refreshing, e.tried = true, now
+		e.refreshing, e.tried, e.settled = true, now, make(chan struct{})
 		st.refreshes++
 		st.wg.Add(1)
 	}
@@ -302,6 +333,10 @@ func (p *Proxy) refreshStreamLabelNames(ctx context.Context, key string) {
 		e.refreshing = false
 		if err == nil {
 			e.names, e.fresh = usable, time.Now()
+		}
+		if e.settled != nil {
+			close(e.settled)
+			e.settled = nil
 		}
 	}
 	st.mu.Unlock()

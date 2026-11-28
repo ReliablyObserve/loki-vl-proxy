@@ -3882,6 +3882,79 @@
      "instant": true
     }
    ]
+  },
+  "parser-stream-grouped": {
+   "description": "A sum grouped by stream labels over `| json` and `| logfmt` with the errors dropped (the PS5 control of the parser-sum set). Loki writes a parsed key named like a stream label as name_extracted, so the answer is the query's with no parser; the proxy counts it with VictoriaLogs stats and serves it after an answer check and a one-row stream value check (semantics/stream-grouped-sum-skips-parsers). Before, the ordered JSON evaluator read every row and ran both parsers in the proxy: 400 past -manual-range-metric-row-limit at 24h. SG5 (no drop: Loki answers 400 on any line its JSON parser rejects) and SG6 (a parsed key) keep the evaluator: controls.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "SG1 grouped count, json, logfmt, drop",
+     "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SG2 grouped count, logfmt, json, drop",
+     "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | logfmt | json | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SG3 grouped rate, json, logfmt, drop",
+     "query": "sum by (level) (rate({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__ [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SG4 instant grouped count, json, logfmt, drop",
+     "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "SG5 grouped count, json, logfmt, no drop (control)",
+     "query": "sum by (level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "semantics/two-parsers-keep-one",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SG6 count by a parsed key, json, logfmt, drop (control)",
+     "query": "sum by (method) (count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/stream-grouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "semantics/two-parsers-keep-one",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

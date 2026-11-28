@@ -1,0 +1,34 @@
+id: vl-stream-grouped-label-checks
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  A stream filter `{k=~".+"}` selects the streams that hold the label k with a
+  value, so `NOT {k=~".+"}` finds the rows of streams without it. A row whose
+  stream holds k="v" reads `k:="v"` as its field, unless the row carries a
+  regular field of the same name (structured metadata, or a key VictoriaLogs
+  unpacked from the line at ingest), which the field filter then reads: so
+  `NOT (({k="v"} AND k:="v"))` finds a row whose stored field differs from its
+  stream label. Measured on VictoriaLogs v1.49.0 and v1.54.0 (2026-11-28,
+  serve oracle: TestStreamGroupedParsersMatchLoki; live:
+  TestVLCapability_StreamGroupedLabelChecks, the version matrix).
+proxy_usage: |
+  The stream grouped sum rule (semantics/stream-grouped-sum-skips-parsers,
+  internal/proxy/stream_grouped_parsers.go) serves the answer of a sum grouped
+  by stream labels over json and logfmt from the query with no parser only
+  when `<selector> AND (NOT {k=~".+"} OR ...) | fields _time | limit 1` finds
+  no row before the read, and, for a name the cut query reads from the stored
+  field, `<selector> AND (NOT (({k="v"} AND k:="v") OR ...)) | fields _time |
+  limit 1` over the answer's values finds none after it.
+fallback: |
+  A row found, a failed or refused check sends the request to the ordered JSON
+  evaluator, which reads raw rows as before. A release whose stream filter
+  missed the streams without the label would still be caught by the answer
+  check (their rows land in a series without it); one whose field filter read
+  the stream label over a regular field of the same name would not, so that
+  reading is held by TestVLCapability_StreamGroupedLabelChecks on every version
+  of the matrix and by the serve-oracle differential before a version is
+  supported.
+proves: []
