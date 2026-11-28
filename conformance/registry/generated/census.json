@@ -1695,6 +1695,7 @@
     "internal/logsql/refusal_test.go | vl-stats-pipe-after-stats",
     "internal/logsql/refusal_test.go | vl-stats-range-pipe-before-stats",
     "internal/logsql/reserved_fields_test.go | semantics/translator-writes-reserved-field-names",
+    "internal/logsql/series_metadata_test.go | metric-identity/structured-metadata-splits-series",
     "internal/logsql/stream_filter_any_test.go | semantics/service-name-stream-filter",
     "internal/logsql/stream_group_test.go | semantics/detected-level-stream-stats-without-level",
     "internal/lokierr/lokierr_test.go | architecture-syntax-package-layering",
@@ -2286,6 +2287,8 @@
     "internal/proxy/metadata_scan_sim_scenarios_test.go | backend-admission-and-heavy-query-queueing",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "internal/proxy/metadata_scan_sim_scenarios_test.go | limits/metadata-scan-adaptive-limit",
+    "internal/proxy/metadata_series_oracle_test.go | metric-identity/structured-metadata-splits-series",
+    "internal/proxy/metadata_series_test.go | metric-identity/structured-metadata-splits-series",
     "internal/proxy/metric_sample_limit_bench_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
     "internal/proxy/metric_sample_limit_test.go | limits/every-cap-is-a-flag",
     "internal/proxy/metric_sample_limit_test.go | limits/metric-sample-cap-is-a-flag-and-memory-bound",
@@ -2630,6 +2633,7 @@
     "internal/proxy/series_fold_read_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/series_fold_read_test.go | semantics/unwrap-identity-nan-partials",
     "internal/proxy/series_fold_read_test.go | semantics/unwrap-per-series-identity-raw-rows",
+    "internal/proxy/series_fold_stream_test.go | metric-identity/structured-metadata-splits-series",
     "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/series_limit_loki_cut_test.go | limits/drilldown-series-limit-range-cut-at-trip-step",
     "internal/proxy/series_limit_loki_cut_test.go | loki_api_v1_query",
@@ -3931,7 +3935,7 @@
       "operator": 6
     },
     "claiming_tests": {
-      "go": 928,
+      "go": 932,
       "playwright": 3
     },
     "page_kinds": {
@@ -3952,8 +3956,8 @@
     },
     "shape_covers_distinct": 124,
     "shapes_path_only": 10,
-    "unwired_items": 157,
-    "wired_items": 516
+    "unwired_items": 156,
+    "wired_items": 517
   },
   "gates": [
     "A/B shape selection",

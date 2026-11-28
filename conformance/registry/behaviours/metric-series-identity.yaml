@@ -47,6 +47,46 @@ perf:
   effort_exception: null
 
 decisions:
+  - id: structured-metadata-series-fold
+    chosen: 'with -structured-metadata-series-identity, a count_over_time or rate under vector aggregations by labels the read groups by (count, sum, avg, max, min; one or more levels, by only) is read in the time chunks of listed_window_chunks.go and folded by the series fold of series_fold_read.go: the read copies its rebuilt _stream into the fold''s series field, VictoriaLogs folds the series that lie wholly in one bucket into a row per group and bucket (their merged value and count), keeps the others as they are, and the kept series answer their stream under _stream; a folded read is never cut into slices, and one over -structured-metadata-series-max-read-rows rows is read again in smaller chunks sized by its row count'
+    over:
+      - 'reading every series (the identity''s first form): a series per line out of VictoriaLogs and through the proxy, 4x Loki at 6 h and 31-33 s at 24 h, most of it proxy CPU'
+      - 'cutting a folded read into slices of its buckets: a series spanning two slices would be folded once in each and counted twice'
+      - 'the stream fold for a binary operation''s operands or a without: their series are the answer''s or are matched by labels; the ratio of F1 is read through the existing rate/count rewrite, a count by under the fold'
+    why: |
+      With a per-line trace_id almost every series lies in one bucket. Loki''s answer at a step is the outer
+      aggregation over the series with lines in the window; a series wholly in one bucket has its whole value in that
+      bucket, so its contribution to every window that holds the bucket is its bucket value, and those of a group and
+      bucket merge exactly (a sum, an extreme, a count of series). The kept series are read as before.
+    evidence: 'TestStructuredMetadataSeriesMatchLoki (Loki engine oracle, VictoriaLogs v1.49.0 and v1.54.0, 2026-11-28): 88 of 88 answers equal Loki''s with the fold on (62-78 folded reads); TestStreamSeriesFold; stack (Loki 3.7.10, VictoriaLogs v1.54.0): F1-F4 at 1 h 0.12x-0.36x Loki, at 6 h 0.26x-0.75x Loki, at 24 h 11-14 s against 31-33 s before the fold, VictoriaLogs restart count unchanged'
+    code: [internal/proxy/series_fold_stream.go, internal/proxy/series_fold_read.go, internal/proxy/series_fold_answer.go, internal/proxy/metadata_series.go, internal/proxy/listed_window_chunks.go, internal/queryplan/lower/series_fold.go]
+    tests: [TestStructuredMetadataSeriesMatchLoki, TestStreamSeriesFold, TestSeriesFoldPipes]
+    quality: 'Every answer of the oracle set is Loki''s, folded or not.'
+    performance:
+      tracked: ['series-level-fine-step (bench/ab, both Loki profiles, flag on)', 'the pull request''s local tables']
+      bound: 'F1-F4 at or below Loki at 1 h and 6 h; VictoriaLogs holds at most -structured-metadata-series-max-read-rows rows per read'
+    pending: true
+  - id: structured-metadata-series-behind-declaration
+    chosen: 'behind -structured-metadata-series-identity (default off, the operator''s declaration that every stored non-stream field is structured metadata): every VictoriaLogs stats read of a query or query_range metric request that reads a series per stream (logsql.ReadsStreamIdentity) rebuilds each row''s _stream with set_stream_fields from the stream fields and the metadata fields under Loki''s names (sanitized, _extracted beside a stream label of the same name, per row; a dropped field left out), listed from field_names and stream_field_names over the read''s window widened to whole hours, once per request; the reads of rows the proxy evaluates a metric from (logsql.ReadsStreamRows) take it too, and a read of a series per stream that cannot take it (fields not listable, text not parsed, no window) fails the request rather than answer a series per stream; a rebuilt stats_query_range read over -structured-metadata-series-max-read-rows rows is read in slices of the extent cache''s bucket grid and joined; a read folded into its answer''s groups is bounded by -manual-range-metric-row-limit, Loki''s series limit applying to the folded answer'
+    over:
+      - 'the stream identity (kept as the default): every count/avg/min/max/stddev/topk/without and bare range answer differs where lines carry structured metadata'
+      - 'adding the metadata fields to every series-identity by-list of the lowering and the handlers: many writers (the lowering, the translator, the handlers'' by-clause rewrites), where the rebuilt _stream reaches every route through the one field they all read'
+      - 'pack_json or set_stream_fields over every field: VictoriaLogs has no exclusion filter, so _time and _msg would make every row a series'
+      - 'one whole read of the window: a day of per-line trace_id in one read ran a 4 GiB VictoriaLogs out of memory (five restarts)'
+    why: |
+      Loki''s sample labels are the stream labels, the entry''s structured metadata and the parsed labels. VictoriaLogs
+      stores structured metadata as the row''s other fields and nothing in a row tells them from fields an ingestion
+      route parsed out of the line, so the identity holds only where the operator declares how rows are written. A
+      field a row does not hold adds nothing to its _stream (VictoriaLogs skips empty tags), so the rows of a stream
+      without metadata keep their series byte for byte and a superset of the window''s fields gives the same answer.
+    evidence: 'TestStructuredMetadataSeriesMatchLoki (internal/proxy, Loki engine oracle, VictoriaLogs v1.49.0 and v1.54.0, 2026-11-28): 92 of 92 instant and range answers equal Loki''s over 23 shapes with the flag (60 differ without it), and with every stats read failing 76 answers the proxy evaluates from rows equal Loki''s (29 differed before reads of rows took the identity), 86 read in slices of a 30-row bound equal Loki''s (2 refused as unsliceable with Loki''s limit status), Loki''s series-limit error where Loki refuses; bench stack (Loki 3.7.10, VictoriaLogs v1.54.0, 2026-11-28): 18 of 18 shapes at 1h and 8 of 8 at 6h equal Loki series by series; 24h at 20s F1-F4 answer 200 in 31-33 s with the bound (off 8-9 s), VictoriaLogs peak 0.9 GiB, no restart'
+    code: [internal/logsql/series_metadata.go, internal/proxy/metadata_series.go, internal/proxy/backend.go]
+    tests: [TestStructuredMetadataSeriesMatchLoki, TestMetadataSeriesParams, TestMetadataSeriesListingFailureIsNotAnswered, TestMetadataSeriesRowReadsTakeTheIdentity, TestMetadataSeriesRowHistogramReadsLongWindows, TestMetadataSeriesListsAheadOfTheReads, TestMetadataSeriesKeysAndReadLimit, TestNewSeriesMetadata, TestWithSeriesMetadata, TestReadsStreamIdentity, TestParseCopyPrefixToTop]
+    quality: 'With the flag every answer of the oracle set is Loki''s; without it nothing changes.'
+    performance:
+      tracked: ['series-level-fine-step (bench/ab, both Loki profiles, flag on)', 'the pull request''s local tables (1h/6h vs Loki, 24h on vs off)']
+      bound: 'series-level shapes over per-line metadata read about a VictoriaLogs group per line: 4x-5x Loki at 6h (owner decides the default)'
+    pending: true
   - id: max-of-max-reads-group-rows
     chosen: 'max over max_over_time and min over min_over_time (by labels or none) after a json or logfmt parser are one stats pipe by the clause over the group''s rows: no series identity (no second unpack and hash after a parser of every key, no per-series stats after an extraction list, whose logfmt unpack reads the unwrapped key and the clause labels the list names only)'
     over:

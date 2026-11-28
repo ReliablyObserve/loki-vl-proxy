@@ -119,6 +119,8 @@ type proxyRuntimeConfig struct {
 	jsonLineFieldsAsLineKeys            bool
 	detectedLevelBodyScan               bool
 	serviceNameStreamLabelOnly          bool
+	structuredMetadataSeries            bool
+	smSeriesReadRows                    int
 	serviceNameStreamRoute              bool
 	serviceNameRouteMinWindow           time.Duration
 	serviceNameRouteViolationTTL        time.Duration
@@ -718,6 +720,8 @@ func run(
 	backendDefaultMsgValue := fs.String("backend-default-msg-value", "", "VictoriaLogs -defaultMsgValue when it is customized. Rows whose _msg is empty, starts with VictoriaLogs' default \"missing _msg field\" text, or equals this value get their log line rebuilt as a JSON object of the row's non-stream fields")
 	jsonLineFieldsAsLineKeys := fs.Bool("json-line-fields-as-line-keys", false, "Read every stored field of a row whose _msg is VictoriaLogs' missing-message placeholder (its -defaultMsgValue, or -backend-default-msg-value) as a key of the row's JSON line, as Loki holds a JSON line pushed to VictoriaLogs' Loki push route without disable_message_parsing=1: the fields are no labels until `| json` (structured metadata without a parser, parsed labels after `| logfmt` otherwise), and a query that reads a label no stage can give such a line (an unwrap or a label filter after `| logfmt` or without a parser) leaves those rows out, in VictoriaLogs. VictoriaLogs cannot tell such a line's keys from structured metadata pushed beside it, so with this on that structured metadata is hidden too, and so are the fields of any other row stored without a message (jsonline rows and OpenTelemetry map bodies without one, attributes included): leave it off when such rows carry structured metadata or attributes, and prefer pushing with disable_message_parsing=1, which keeps the line and needs no flag. Acts in the Loki-compatible profile only (-label-style=underscores with -metadata-field-mode=translated, the defaults) and needs a non-empty VictoriaLogs -defaultMsgValue")
 	serviceNameStreamLabelOnly := fs.Bool("service-name-stream-label-only", false, "Declare that VictoriaLogs stores service_name only as a stream label (or not at all) and service.name never as a regular field of a row whose stream has a service.name label (no structured metadata, log attribute or JSON key named service_name, none named service.name beside a service.name resource attribute or stream field). A {service_name=\"x\"} selector then also sends a stream filter, so VictoriaLogs reads only the streams whose service_name or service.name stream label can give x (with service.name as a stream field, the streams of that service). Answers stay the same while the declaration holds; a row it does not hold for can be missed. Off: the derived service_name filter alone, which VictoriaLogs evaluates over every stream of the window")
+	structuredMetadataSeries := fs.Bool("structured-metadata-series-identity", false, "Declare that every field VictoriaLogs stores for a row, other than its stream fields, is the row's Loki structured metadata (rows reach VictoriaLogs through the Loki push API or OTLP with the line stored as sent: no JSON or logfmt parsing at ingest, such as /insert/loki/api/v1/push?disable_message_parsing=1, and no jsonline or other writer adding fields). Metric queries then name their series as Loki does, by the stream labels and the line's structured metadata (Loki's names: sanitized, _extracted beside a stream label of the same name), so count, avg, min, max, stddev, stdvar, topk, bottomk, sort, quantile, without, binary operations and bare range functions read one value per Loki series: VictoriaLogs lists the fields of each read's window (field_names and stream_field_names, cached per hour) and rebuilds every row's _stream from them, in stats reads and in the reads of rows the proxy evaluates a metric from; a read whose fields cannot be listed fails the request. Sums by labels read as before. A line with a per-line trace_id is a series of its own, on both sides: series counts, VictoriaLogs work and proxy memory grow with the lines of such streams, and a query past the series limit answers Loki's limit error. Where the declaration is false, a field parsed out of the line at ingest splits series Loki would not split. Off: a series per stream")
+	smSeriesReadRows := fs.Int("structured-metadata-series-max-read-rows", 250000, "With -structured-metadata-series-identity: the rows one VictoriaLogs stats read that takes the identity may group. A read whose filter matches more rows in its window (one count per read) is sent in slices of its step buckets, one after another, each about half this many rows, and the answers are joined (exact: every bucket depends only on its own rows); a read over it whose buckets cannot be read apart answers Loki's limit error. It bounds VictoriaLogs' memory, which holds a stats group per series and bucket: a day of the bench generator's per-line trace_id in one read ran a 4 GiB VictoriaLogs out of memory, the sliced reads peaked at 0.9 GiB. Lower it for a smaller VictoriaLogs; 0 or less sends every read whole")
 	serviceNameStreamRoute := fs.Bool("service-name-stream-route", false, "Off by default; opt in. Read a log query of one service ({service_name=\"x\"}, a positive matcher with a value, no declared -stream-fields matcher) from the streams that can hold that service, through VictoriaLogs' stream index, when a VictoriaLogs read sent beside it over the same window and tenant finds no row the narrowing leaves out; otherwise the read is sent again with the derived service_name filter alone, so answers are always the derived filter's. Each narrowed log read costs one more VictoriaLogs read, which reads the other streams of the window: VictoriaLogs reads 1.2x to 1.5x the bytes and, measured under concurrent load, throughput fell 24% to 48%. Opt in only for a large, mostly idle VictoriaLogs with long log reads of a service and parser pipes; where VictoriaLogs stores service_name only as a stream label, prefer -service-name-stream-label-only. Metric and instant queries, other endpoints and reads shorter than -service-name-stream-route-min-window keep the derived filter alone; outcomes are counted in loki_vl_proxy_internal_operation_total{operation=\"service_name_stream_route\"}. -service-name-stream-label-only, when set, replaces it")
 	serviceNameRouteMinWindow := fs.Duration("service-name-stream-route-min-window", 30*time.Minute, "Shortest log read window -service-name-stream-route narrows; a shorter read gains nothing on a first read (the read beside it costs what the derived filter costs). 0 narrows every window")
 	serviceNameRouteViolationTTL := fs.Duration("service-name-stream-route-violation-ttl", time.Hour, "How long a row -service-name-stream-route found the narrowing leaves out keeps that tenant's service on the derived service_name filter alone, with no read beside it (kept in memory and pushed to the peers). 0 remembers nothing: every log read of the service is narrowed and proven again")
@@ -1099,6 +1103,8 @@ func run(
 			jsonLineFieldsAsLineKeys:            *jsonLineFieldsAsLineKeys,
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
 			serviceNameStreamLabelOnly:          *serviceNameStreamLabelOnly,
+			structuredMetadataSeries:            *structuredMetadataSeries,
+			smSeriesReadRows:                    *smSeriesReadRows,
 			serviceNameStreamRoute:              *serviceNameStreamRoute,
 			serviceNameRouteMinWindow:           *serviceNameRouteMinWindow,
 			serviceNameRouteViolationTTL:        *serviceNameRouteViolationTTL,
@@ -2574,6 +2580,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		JSONLineFieldsAsLineKeys:           cfg.jsonLineFieldsAsLineKeys,
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
 		ServiceNameStreamLabelOnly:         cfg.serviceNameStreamLabelOnly,
+		StructuredMetadataSeriesIdentity:   cfg.structuredMetadataSeries,
+		MetadataSeriesMaxReadRows:          seriesReadRowsConfig(cfg.smSeriesReadRows),
 		ServiceNameStreamRoute:             cfg.serviceNameStreamRoute,
 		ServiceNameStreamRouteMinWindow:    cfg.serviceNameRouteMinWindow,
 		ServiceNameStreamRouteViolationTTL: cfg.serviceNameRouteViolationTTL,
@@ -3250,4 +3258,13 @@ func logClientAuthUsers(logger *slog.Logger, msg, path string, u *clientauth.Use
 	if c := u.LowestCost(); c > 0 && c < 10 {
 		logger.Warn("auth users file holds bcrypt hashes below cost 10, cheap to brute-force if the file leaks; rehash them, for example with htpasswd -nbBC 12", "path", path, "lowest_cost", c)
 	}
+}
+
+// seriesReadRowsConfig maps -structured-metadata-series-max-read-rows to the proxy's setting: 0 or less sends every
+// read whole (the proxy reads a negative value so), any other value is the bound.
+func seriesReadRowsConfig(n int) int {
+	if n <= 0 {
+		return -1
+	}
+	return n
 }

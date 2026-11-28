@@ -1847,7 +1847,7 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		return nil, nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
-	limit := p.resolvedMaxStatsQuerySeries(ctx)
+	limit := p.statsReadSeriesLimit(ctx)
 	withPresence := strings.Contains(statsAggFunc, " as __sample_count")
 	body, err := p.readStatsBucketBody(ctx, resp.Body, resp.ContentLength, limit, statsResultsPerSeries(withPresence, aux != "")+deviationResults(statsAggFunc)+fold.extraResults())
 	if err != nil {
@@ -1920,7 +1920,8 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		metricObj := mv.GetObject()
 		var metric map[string]string
 		var seriesKey string
-		if streamGrouped {
+		// A folded row of the stream identity has no stream: its labels are the read's other columns.
+		if streamGroupedRow(streamGrouped, fold, metricObj) {
 			derived := statsGroupDerivedLevel(metricObj, streamGroupedByDetectedLevel)
 			entry := p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy)
 			metric, seriesKey = entry.translated, entry.key

@@ -57,13 +57,15 @@ func TestSeriesFoldPipes(t *testing.T) {
 	if _, err := logsql.Parse(base + got); err != nil {
 		t.Fatalf("the folded read does not parse: %v", err)
 	}
-	// The outer aggregation's merge of the folded values: a sum for sum and avg, the extreme for max and min.
+	// The outer aggregation's merge of the folded values: a sum for sum and avg (and for count, which reads the series
+	// count), the extreme for max and min.
 	extreme := SeriesFold{By: []string{"__lvp_sid"}, Stats: []logsql.StatsFuncAlias{{Func: logsql.Max{Field: "__lvp_v"}, Alias: "c"}}, Columns: []string{"c"}, Value: "c", Bucket: "1s", Offset: "-1ns"}
 	for op, tail := range map[logql.VectorOp]string{
-		logql.VectorMax: `| stats by (_time, __lvp_sid) any(c) as c, max(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
-		logql.VectorMin: `| stats by (_time, __lvp_sid) any(c) as c, min(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
-		logql.VectorSum: `| stats by (_time, __lvp_sid) any(c) as c, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
-		logql.VectorAvg: `| stats by (_time, __lvp_sid) any(c) as c, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
+		logql.VectorMax:   `| stats by (_time, __lvp_sid) any(c) as c, max(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
+		logql.VectorMin:   `| stats by (_time, __lvp_sid) any(c) as c, min(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
+		logql.VectorSum:   `| stats by (_time, __lvp_sid) any(c) as c, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
+		logql.VectorAvg:   `| stats by (_time, __lvp_sid) any(c) as c, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
+		logql.VectorCount: `| stats by (_time, __lvp_sid) any(c) as c, sum(__lvp_fold) as __lvp_fold, count() as __lvp_fc`,
 	} {
 		extreme.Outer = op
 		got, ok := seriesFoldText(t, extreme)
@@ -81,7 +83,7 @@ func TestSeriesFoldPipes(t *testing.T) {
 	// No fold: an aggregation that does not fold, or a read without the series hash, a value, a grid, columns or
 	// stats.
 	for name, f := range map[string]SeriesFold{
-		"count":      {Outer: logql.VectorCount, Stats: avgStats, By: avg.By, Columns: avg.Columns, Value: avg.Value, Bucket: "1s"},
+		"stddev":     {Outer: logql.VectorStddev, Stats: avgStats, By: avg.By, Columns: avg.Columns, Value: avg.Value, Bucket: "1s"},
 		"no by":      {Outer: logql.VectorSum, Stats: avgStats, Columns: avg.Columns, Value: avg.Value, Bucket: "1s"},
 		"no hash":    {Outer: logql.VectorSum, Stats: avgStats, By: []string{"app"}, Columns: avg.Columns, Value: avg.Value, Bucket: "1s"},
 		"no value":   {Outer: logql.VectorSum, Stats: avgStats, By: avg.By, Columns: avg.Columns, Bucket: "1s"},

@@ -378,6 +378,39 @@ class CallsHeaderFlagTest(unittest.TestCase):
                          [("release", False, ["-backend=x"]), ("main", False, ["-backend=x"])])
 
 
+    def test_start_proxies_gives_the_metadata_series_flag_to_the_builds_that_know_it_in_both_profiles(self):
+        class P(stack.Proxy):
+            def start(self):
+                pass
+
+        specs = [("base", "/bin/base", "/t1", 1000), ("pr", "/bin/pr", "/t2", 1002)]
+        proxies = []
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(stack, "proxy_command", return_value=(["-backend=x", "-structured-metadata-series-identity=false"], {})), \
+                mock.patch.object(stack, "source_align_default", return_value=False), \
+                mock.patch.object(stack, "Proxy", P):
+            for profile in stack.PROFILES:
+                stack.start_proxies(specs, out, mock.Mock(vl="http://vl"), "svc", proxies, profile=profile,
+                                    supported={"base": False, "pr": False}, sm_series={"base": False, "pr": True})
+        by = {(p.name, p.profile): p for p in proxies}
+        for profile in stack.PROFILES:
+            self.assertEqual(by[("pr", profile)].args.count("-structured-metadata-series-identity=true"), 1)
+            self.assertNotIn("-structured-metadata-series-identity=false", by[("pr", profile)].args)
+            self.assertTrue(by[("pr", profile)].sm_series)
+            self.assertFalse(by[("base", profile)].sm_series)
+            self.assertIn("-structured-metadata-series-identity=false", by[("base", profile)].args)  # not touched
+
+    def test_metadata_series_probe(self):
+        with tempfile.TemporaryDirectory() as d:
+            record = os.path.join(d, "argv")
+            knows = fake_binary(d, f'echo "$@" > {record}; echo "flag: help requested" >&2; exit 1\n')
+            self.assertTrue(stack.probe_sm_series_support(knows))
+            with open(record) as f:
+                self.assertEqual(f.read().split(), ["-structured-metadata-series-identity=true", "-help"])
+            old = fake_binary(d, 'echo "flag provided but not defined: -structured-metadata-series-identity" >&2; exit 1\n')
+            self.assertFalse(stack.probe_sm_series_support(old))
+
+
 class AlignFlagTest(unittest.TestCase):
     def test_probe_tells_a_build_that_knows_the_flag_from_one_that_does_not(self):
         with tempfile.TemporaryDirectory() as d:

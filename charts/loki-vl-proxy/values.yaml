@@ -380,6 +380,8 @@ extraArgs:
   # stream-response: "true"  # chunked transfer encoding for large results
   # Stream selector optimization — list VL _stream_fields labels for fast index path
   # stream-fields: "app,env,namespace"
+  # structured-metadata-series-identity: "false"  # declare every stored non-stream field is Loki structured metadata (Loki push API or OTLP, line stored as sent): metric series are then Loki's, per stream and structured-metadata set; see the configuration reference for the cost before turning it on
+  # structured-metadata-series-max-read-rows: "250000"  # with the identity on: rows one VictoriaLogs read may group; a larger read is sent in slices of its buckets (bounds VictoriaLogs memory)
   # service-name-stream-label-only: "false"  # declare service_name is stored only as a stream label and service.name never as a regular field beside a service.name stream label: {service_name="x"} then also sends a stream filter (VictoriaLogs reads only that service's streams); see the configuration reference before turning it on
   # service-name-stream-route: "false"  # off by default; opt in only for a large, mostly idle VictoriaLogs: each log read of one service is narrowed to its streams and checked by one more VictoriaLogs read (more VictoriaLogs work, lower throughput under load; see docs/configuration.md "service_name stream filter")
   # service-name-stream-route-min-window: "30m"  # shortest log read window the route narrows (0: every window)

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +52,16 @@ type statsReadMeter struct {
 	chunks          bool
 	bytes           int
 	series          int
+	// rowsLoad is a folded read's rows over -structured-metadata-series-max-read-rows (metadata_series.go): the chunk
+	// is sized by it, as by its series and bytes.
+	rowsLoad float64
+}
+
+// noteStatsReadRows records a folded read's rows against their bound.
+func noteStatsReadRows(ctx context.Context, rows, limit int64) {
+	if m, _ := ctx.Value(statsReadMeterKey{}).(*statsReadMeter); m != nil && limit > 0 {
+		m.rowsLoad = max(m.rowsLoad, float64(rows)/float64(limit))
+	}
 }
 
 // statsReadChunks reports a read whose caller reads its steps again in time chunks when it passes the body bound.
@@ -71,7 +82,7 @@ func noteStatsReadOverflow(ctx context.Context, err error) {
 		switch {
 		case errors.Is(err, errBodyTooLarge):
 			m.over, m.overBytes = true, true
-		case isSeriesLimitError(err):
+		case isSeriesLimitError(err), isMetadataReadRowsError(err):
 			m.over = true
 		}
 	}
@@ -115,6 +126,13 @@ const listedChunkShrink = 4
 
 // listedChunkLoad is the share of a read's bound a chunk is sized to use.
 const listedChunkLoad = 0.5
+
+// listedRowsLoad is the share of -structured-metadata-series-max-read-rows a folded read's chunk is sized to: its rows
+// are counted before it is sent (a read over the bound is never sent), so it can fill most of the bound.
+const listedRowsLoad = 0.9
+
+// listedRowsShrinkMargin is the share of listedRowsLoad a folded chunk refused over its row bound is cut to.
+const listedRowsShrinkMargin = 0.8
 
 // listedWindowChunksOff reads the windows in one read, as before the chunks (tests measure the two).
 var listedWindowChunksOff bool
@@ -166,13 +184,14 @@ func (p *Proxy) rereadOverflowedInChunks(w http.ResponseWriter, r *http.Request,
 // whether it did.
 func (p *Proxy) listedWindowChunksRoute(w http.ResponseWriter, r *http.Request, reads listedChunkReads, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc, statsAggFunc string, start, end time.Time, step, bucket, shift time.Duration) bool {
 	fold := matrixFoldFrom(r.Context())
-	if !reads.chunkable(r, statsAggFunc) || !reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) {
+	if !reads.chunkable(r, statsAggFunc) || !reads.overflowed && !p.identityWindows(r.Context(), r.FormValue("query")) &&
+		(metadataSeriesOf(r.Context()) == nil || !foldsOwnRange(r.FormValue("query"))) {
 		return false
 	}
 	chunked := p.withSlidingWithoutCut(r, spec, origSpec, manualFunc, statsAggFunc, step)
 	routes := p.statsBucketRoutes(spec, chunked, bucket, origSpec.Window != step)
 	// A parser's series hash folds, in VictoriaLogs, the series that lie in one bucket (series_fold_read.go).
-	r = p.withSeriesFold(r, spec, manualFunc, fold)
+	r = p.withSeriesFold(r, spec, manualFunc, fold, origSpec.Window)
 	handled, whole := p.writeListedWindowChunks(w, r, routes, manualFunc, start, end, step, origSpec.Window, bucket, shift, fold)
 	*reads.rawRows = whole
 	return handled
@@ -189,7 +208,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 	if n <= 0 || bucketSteps < 1 || len(fold.levels) == 0 {
 		return false, false
 	}
-	budget := p.resolvedMaxStatsQuerySeries(ctx)
+	budget := p.statsReadSeriesLimit(ctx)
 	maxBytes := p.limits().BufferedBackendBodyBytes
 	sizeKey := listedChunkSizeKey(ctx, r.FormValue("query"), step, bucket)
 	size := min64(n, bucketSteps)
@@ -230,7 +249,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		}
 		switch {
 		case meter.over && last > first:
-			size, halved = max(1, (last-first+1)/listedChunkShrink), true
+			size, halved = max(1, (last-first+1)/listedChunkShrinkFor(*meter)), true
 			continue
 		case meter.over:
 			noteReadRoute(ctx, readRouteStepIndependent) // one step's window: no coarser step reads less of it
@@ -297,9 +316,10 @@ func listedChunkBucketSteps(step, window, bucket time.Duration) int64 {
 // listedChunkLoad of the tighter of the two bounds (the series before the fold, the body bytes), at least one step
 // and at most bucketSteps.
 func nextListedChunkSize(read, bucketSteps int64, m statsReadMeter, budget, bodyBound int) int64 {
-	load := 0.0
+	// A folded read's rows are known before it is sent and refused over the bound, so its chunks fill most of it.
+	load := m.rowsLoad * listedChunkLoad / listedRowsLoad
 	if budget > 0 {
-		load = float64(m.series) / float64(budget)
+		load = max(load, float64(m.series)/float64(budget))
 	}
 	if bodyBound > 0 {
 		load = max(load, float64(m.bytes)/float64(bodyBound))
@@ -347,4 +367,14 @@ func (p *Proxy) noteWindowReadOverflow(r *http.Request, start, end time.Time, st
 	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
 	size := max(1, n/listedChunkShrink)
 	p.setLocalReadCacheWithTTL(listedChunkSizeKey(r.Context(), r.FormValue("query"), step, bucket), []byte(strconv.FormatInt(size, 10)), listedChunkSizeTTL)
+}
+
+// listedChunkShrinkFor divides a chunk whose read passed its bound: by listedChunkShrink, or for a folded read refused
+// over its row bound before it was sent, by what makes it fit.
+func listedChunkShrinkFor(m statsReadMeter) int64 {
+	if m.rowsLoad > 0 {
+		// The chunk's read reaches back a range before its first step: a margin under the share it is sized to.
+		return max(1, int64(math.Ceil(m.rowsLoad/(listedRowsLoad*listedRowsShrinkMargin))))
+	}
+	return listedChunkShrink
 }

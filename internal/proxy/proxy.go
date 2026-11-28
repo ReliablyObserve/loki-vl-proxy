@@ -286,6 +286,13 @@ type Config struct {
 	// a positive service_name selector matcher then also sends the stream filter of the streams that can hold its
 	// rows (translate.ServiceNameStreamFilter). Zero value: the derivation's filter alone.
 	ServiceNameStreamLabelOnly bool
+	// StructuredMetadataSeriesIdentity is the operator's statement that every stored field of a row that is not a
+	// stream field is its structured metadata: a metric query's series are then Loki's, a series per stream and
+	// structured-metadata set (metadata_series.go). Zero value: a series per stream.
+	StructuredMetadataSeriesIdentity bool
+	// MetadataSeriesMaxReadRows bounds the rows of one VictoriaLogs read that takes the identity: a read
+	// over it is sent in slices of its buckets (metadata_series.go). Zero: the default, 250000; negative: no slices.
+	MetadataSeriesMaxReadRows int
 	// ServiceNameStreamRoute turns on the automatic service_name stream filter (service_name_route.go): a log query
 	// read narrowed to the streams that can hold its service, kept only when a VictoriaLogs read beside it finds no
 	// row the narrowing leaves out. -service-name-stream-route, off by default (as the zero value).
@@ -908,6 +915,9 @@ type Proxy struct {
 	jsonLineFieldsAsLineKeys          bool
 	detectedLevelBodyScan             bool
 	serviceNameStreamLabelOnly        bool
+	structuredMetadataSeries          bool
+	seriesSpecs                       seriesSpecCache
+	seriesMetadataMaxReadRows         int
 	serviceNameStreamRoute            bool
 	serviceNameRouteMinWindow         time.Duration
 	serviceNameRouteViolationTTL      time.Duration
@@ -1712,6 +1722,8 @@ func New(cfg Config) (*Proxy, error) {
 		jsonLineFieldsAsLineKeys:              cfg.JSONLineFieldsAsLineKeys,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		serviceNameStreamLabelOnly:            cfg.ServiceNameStreamLabelOnly,
+		structuredMetadataSeries:              cfg.StructuredMetadataSeriesIdentity,
+		seriesMetadataMaxReadRows:             seriesMetadataReadRowsOrDefault(cfg.MetadataSeriesMaxReadRows),
 		serviceNameStreamRoute:                cfg.ServiceNameStreamRoute,
 		serviceNameRouteMinWindow:             cfg.ServiceNameStreamRouteMinWindow,
 		serviceNameRouteViolationTTL:          cfg.ServiceNameStreamRouteViolationTTL,
@@ -2958,6 +2970,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// Loki's structured-metadata series for the stats reads of a series per stream (metadata_series.go).
+	r = r.WithContext(p.withMetadataSeries(r.Context(), logqlQuery))
 	// The window evaluator notes the step and bucket grid it reads, for the error log line (read_budget.go).
 	r = r.WithContext(withReadGridNote(r.Context()))
 
@@ -3441,6 +3455,14 @@ func (p *Proxy) appendResponseProfileCacheKey(dst []byte, r *http.Request, endpo
 	if p.serviceNameStreamLabelOnly && strings.Contains(r.FormValue("query"), "service_name") {
 		dst = append(dst, "/sn-stream"...)
 	}
+	// A metric answer read with Loki's structured-metadata series (-structured-metadata-series-identity) is kept apart
+	// from one read without it; every key stays as it was while the flag is off, and for the queries the split cannot
+	// change (metadataSplitChanges), which read as without it. Version 2: a build before it answered a request whose
+	// answer the evaluator of rows built with a series per stream (reads of rows did not take the identity), so no
+	// answer kept by such a build on disk or on a peer is served.
+	if p.structuredMetadataSeries && query && metadataSplitChanges(r.FormValue("query")) {
+		dst = append(dst, metadataSeriesKeyPart...)
+	}
 	return dst
 }
 
@@ -3487,6 +3509,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
 	r = p.withPlaceholderExclusion(r, logqlQuery)
+	// Loki's structured-metadata series for the stats reads of a series per stream (metadata_series.go).
+	r = r.WithContext(p.withMetadataSeries(r.Context(), logqlQuery))
 	if p.log.Enabled(r.Context(), slog.LevelDebug) {
 		p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 	}

@@ -17,6 +17,11 @@ why: |
   trace_id, span_id and the other structured metadata), for every spelling of
   stddev and stdvar; it is the same series-identity deviation, not a
   difference of the statistic.
+  With -structured-metadata-series-identity (off by default: the operator's
+  declaration that every stored non-stream field is structured metadata)
+  the proxy reads Loki's series (decision
+  structured-metadata-series-behind-declaration of metric-series-identity,
+  TestStructuredMetadataSeriesMatchLoki); the default stays the stream.
 request:
   method: GET
   path: /loki/api/v1/query

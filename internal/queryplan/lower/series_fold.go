@@ -101,7 +101,8 @@ var folded = logsql.FieldFilter{Field: seriesFoldBlank, Op: logsql.FieldOpExact,
 func (f SeriesFold) Pipes() (SeriesFoldRead, bool) {
 	var outer logsql.StatsFunc
 	switch f.Outer {
-	case logql.VectorSum, logql.VectorAvg:
+	case logql.VectorSum, logql.VectorAvg, logql.VectorCount:
+		// A count reads the series count alone (SeriesFoldSeriesCount); the merged values ride along unread.
 		outer = logsql.Sum{Field: SeriesFoldField}
 	case logql.VectorMax:
 		outer = logsql.Max{Field: SeriesFoldField}
