@@ -210,9 +210,15 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 	if e, ok := memo.find(filter, from, to); ok {
 		return e.spec, e.ok, nil
 	}
+	scope := p.contextScopeFingerprint(ctx)
+	if e, ok := p.seriesSpecs.find(scope, filter, from, to, time.Now()); ok {
+		memo.add(e)
+		return e.spec, e.ok, nil
+	}
 	align := metadataSeriesDiscoveryAlign.Nanoseconds()
 	lo := from / align * align
-	hi := (to + align - 1) / align * align
+	// An hour past the window's last hour: a window that moves on reads the same listing until it is an hour later.
+	hi := (to+align-1)/align*align + align
 	params := url.Values{}
 	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
@@ -234,7 +240,15 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 		return logsql.SeriesMetadata{}, false, err
 	}
 	spec, ok := logsql.NewSeriesMetadata(stream, fields, SanitizeLabelName)
-	memo.add(metadataSeriesEntry{filter: filter, lo: lo, hi: hi, spec: spec, ok: ok})
+	e := metadataSeriesEntry{filter: filter, lo: lo, hi: hi, spec: spec, ok: ok}
+	memo.add(e)
+	// A listing whose window reaches into the last -query-range-freshness can miss fields of rows still arriving: it
+	// is kept for that long; an older one for an hour.
+	ttl := time.Hour
+	if hi > time.Now().Add(-p.queryRangeFreshness).UnixNano() {
+		ttl = max(p.queryRangeFreshness, time.Minute)
+	}
+	p.seriesSpecs.add(scope, e, time.Now().Add(ttl))
 	return spec, ok, nil
 }
 
@@ -657,4 +671,52 @@ func (p *Proxy) seriesMetadataListing(ctx context.Context, path, prefix string, 
 	fields := listingValues(items)
 	p.storeFieldNames(key, fields)
 	return fields, nil
+}
+
+// seriesSpecCache keeps the identities the proxy listed, by tenant scope and filter: a request whose window lies in a
+// listed window takes that identity (a superset of its rows' fields) until it expires. Bounded: at most
+// seriesSpecCacheMax filters, a few windows each; a full cache drops an expired or the oldest filter.
+type seriesSpecCache struct {
+	mu      sync.Mutex
+	entries map[string][]seriesSpecEntry
+}
+
+type seriesSpecEntry struct {
+	metadataSeriesEntry
+	expires time.Time
+}
+
+const seriesSpecCacheMax = 1024
+
+func (c *seriesSpecCache) find(scope, filter string, from, to int64, now time.Time) (metadataSeriesEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.entries[scope+"\x00"+filter] {
+		if now.Before(e.expires) && e.lo <= from && to <= e.hi {
+			return e.metadataSeriesEntry, true
+		}
+	}
+	return metadataSeriesEntry{}, false
+}
+
+func (c *seriesSpecCache) add(scope string, e metadataSeriesEntry, expires time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[string][]seriesSpecEntry{}
+	}
+	key := scope + "\x00" + e.filter
+	if _, ok := c.entries[key]; !ok && len(c.entries) >= seriesSpecCacheMax {
+		for k := range c.entries {
+			delete(c.entries, k) // any one: the cache is a bound, not an LRU
+			break
+		}
+	}
+	kept := c.entries[key][:0]
+	for _, old := range c.entries[key] {
+		if time.Now().Before(old.expires) && len(kept) < 3 {
+			kept = append(kept, old)
+		}
+	}
+	c.entries[key] = append(kept, seriesSpecEntry{metadataSeriesEntry: e, expires: expires})
 }

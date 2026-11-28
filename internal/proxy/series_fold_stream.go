@@ -133,9 +133,15 @@ func streamSeriesFold(ctx context.Context, query string, spec statsCompatSpec, m
 
 // foldedStreamRow reports a row of a folded read of the stream identity that folds series (its stream blank).
 func (s *seriesFoldRead) foldedStreamRow(metricObj *fj.Object) bool {
-	if !s.stream {
+	if s == nil || !s.stream {
 		return false
 	}
 	v := metricObj.Get("_stream")
 	return v == nil || len(v.GetStringBytes()) == 0
+}
+
+// streamGroupedRow reports a row of a read grouped by the stream whose labels are its stream's: every row of such a
+// read but a folded row of the stream identity.
+func streamGroupedRow(streamGrouped bool, fold *seriesFoldRead, metricObj *fj.Object) bool {
+	return streamGrouped && !fold.foldedStreamRow(metricObj)
 }

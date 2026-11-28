@@ -900,6 +900,7 @@ type Proxy struct {
 	detectedLevelBodyScan                 bool
 	serviceNameStreamLabelOnly            bool
 	structuredMetadataSeries              bool
+	seriesSpecs                           seriesSpecCache
 	seriesMetadataMaxReadRows             int
 	serviceNameStreamRoute                bool
 	serviceNameRouteMinWindow             time.Duration

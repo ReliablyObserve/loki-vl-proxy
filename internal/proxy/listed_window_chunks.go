@@ -242,12 +242,7 @@ func (p *Proxy) writeListedWindowChunks(w http.ResponseWriter, r *http.Request, 
 		}
 		switch {
 		case meter.over && last > first:
-			shrink := int64(listedChunkShrink)
-			if meter.rowsLoad > 0 {
-				// A folded read over its row bound is refused before it is sent: the chunk that fits is known.
-				shrink = int64(math.Ceil(meter.rowsLoad / listedChunkLoad))
-			}
-			size, halved = max(1, (last-first+1)/shrink), true
+			size, halved = max(1, (last-first+1)/listedChunkShrinkFor(*meter)), true
 			continue
 		case meter.over:
 			p.writeErr(w, ctx, p.listedStepOverflowError(meter.overBytes))
@@ -363,4 +358,13 @@ func (p *Proxy) noteWindowReadOverflow(r *http.Request, start, end time.Time, st
 	n := stepCount(start.UnixNano(), end.UnixNano(), step.Nanoseconds())
 	size := max(1, n/listedChunkShrink)
 	p.setLocalReadCacheWithTTL(listedChunkSizeKey(r.Context(), r.FormValue("query"), step, bucket), []byte(strconv.FormatInt(size, 10)), listedChunkSizeTTL)
+}
+
+// listedChunkShrinkFor divides a chunk whose read passed its bound: by listedChunkShrink, or for a folded read refused
+// over its row bound before it was sent, by what makes it fit.
+func listedChunkShrinkFor(m statsReadMeter) int64 {
+	if m.rowsLoad > 0 {
+		return max(1, int64(math.Ceil(m.rowsLoad/listedChunkLoad)))
+	}
+	return listedChunkShrink
 }

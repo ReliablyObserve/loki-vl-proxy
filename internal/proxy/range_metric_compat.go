@@ -1900,11 +1900,8 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		metricObj := mv.GetObject()
 		var metric map[string]string
 		var seriesKey string
-		if streamGrouped && fold != nil && fold.foldedStreamRow(metricObj) {
-			// A folded row of the stream identity has no stream: its labels are the read's other columns.
-			metric = p.statsGroupMetric(metricObj, vlToLoki)
-			seriesKey = canonicalLabelsKey(metric)
-		} else if streamGrouped {
+		// A folded row of the stream identity has no stream: its labels are the read's other columns.
+		if streamGroupedRow(streamGrouped, fold, metricObj) {
 			derived := statsGroupDerivedLevel(metricObj, streamGroupedByDetectedLevel)
 			entry := p.buildMetricSeriesEntry(string(metricObj.Get("_stream").GetStringBytes()), strings.TrimSpace(string(metricObj.Get("level").GetStringBytes())), derived, groupBy, byExplicit, origGroupBy)
 			metric, seriesKey = entry.translated, entry.key
