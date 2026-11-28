@@ -106,14 +106,14 @@ func TestWithSeriesMetadata(t *testing.T) {
 // conformance: metric-identity/structured-metadata-splits-series
 func TestReadsStreamIdentity(t *testing.T) {
 	for q, want := range map[string]bool{
-		`app:="a" | stats by (_stream, level, detected_level) count() as __lvp_inner | stats by (app) count()`: true,
+		`app:="a" | stats by (_stream, level, detected_level) count() as __lvp_inner | stats by (app) count()`:                true,
 		`app:="a" | set_stream_fields __lvp_p_*, level, _stream | rename _stream as __lvp_sid | stats by (__lvp_sid) count()`: true,
-		`app:="a" | copy _stream as __s | stats by (__s) count()`:          true,
-		`app:="a" | stats by (app) count()`:                                false,
-		`app:="a" | stats count()`:                                         false,
-		`app:="a"`:                                                         false,
-		`app:="a" | fields _time, _stream, _msg`:                           false,
-		`app:="a" | stats by (app) count() | stats by (_stream) count()`:   true,
+		`app:="a" | copy _stream as __s | stats by (__s) count()`:                                                             true,
+		`app:="a" | stats by (app) count()`:      false,
+		`app:="a" | stats count()`:               false,
+		`app:="a"`:                               false,
+		`app:="a" | fields _time, _stream, _msg`: false,
+		`app:="a" | stats by (app) count() | stats by (_stream) count()`:        true,
 		`app:="a" | stats by (app) count() | rename _stream as x | sort by (x)`: false,
 	} {
 		parsed, err := Parse(q)

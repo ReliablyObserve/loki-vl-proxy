@@ -2,13 +2,21 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
+	"math"
+	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 )
+
+// flagStructuredMetadataSeriesMaxReadRows bounds the rows of one rebuilt VictoriaLogs read.
+const flagStructuredMetadataSeriesMaxReadRows = "-structured-metadata-series-max-read-rows"
 
 // Loki names a metric series by the stream labels and the entry's structured metadata, so a stream whose lines carry
 // a per-line trace_id is a series per line; the proxy's series is the stream (metric-identity/structured-metadata-
@@ -36,6 +44,25 @@ type metadataSeriesKey struct{}
 type metadataSeriesMemo struct {
 	mu      sync.Mutex
 	entries []metadataSeriesEntry
+	counts  map[string]int64
+}
+
+func (m *metadataSeriesMemo) rows(key string) (int64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n, ok := m.counts[key]
+	return n, ok
+}
+
+func (m *metadataSeriesMemo) setRows(key string, n int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.counts == nil {
+		m.counts = map[string]int64{}
+	}
+	if len(m.counts) < 64 {
+		m.counts[key] = n
+	}
 }
 
 type metadataSeriesEntry struct {
@@ -183,4 +210,168 @@ func (p *Proxy) statsReadSeriesLimit(ctx context.Context) int {
 		return rows
 	}
 	return limit
+}
+
+// A rebuilt read holds a VictoriaLogs stats group per series and bucket, and with a per-line trace_id a series per
+// line: one stats_query_range read of a day of such lines held them all at once and ran VictoriaLogs out of memory.
+// Such a read is sent in slices of the bucket grid (the stats extent cache's: statsExtentRequestFor, gapParams,
+// statsExtentFetch, renderStatsExtentPieces), one after another, each over at most -structured-metadata-series-
+// max-read-rows rows by a count of the read's rows: every bucket of an answer depends only on its own rows
+// (statsExtentQueryCacheable), so the joined slices are the whole read's answer. VictoriaLogs holds the groups of one
+// slice; the proxy holds the joined answer, which the stats body bound bounds as it bounds the whole read
+// (-backend-max-buffered-response-bytes, past which the time-chunked window evaluator takes over as before).
+
+// slicedSeriesMetadataRead answers a rebuilt stats_query_range read over more rows than the bound in slices, and
+// reports whether it did. A read within the bound is sent as it is (false). A read over it whose buckets cannot be
+// read apart answers Loki's limit error naming -structured-metadata-series-max-read-rows, never an unbounded read.
+func (p *Proxy) slicedSeriesMetadataRead(ctx context.Context, path string, params url.Values) (*http.Response, bool, error) {
+	if path != statsQueryRangePath || p.seriesMetadataMaxReadRows <= 0 || metadataSeriesOf(ctx) == nil {
+		return nil, false, nil
+	}
+	if fetch, _ := ctx.Value(statsExtentFetchKey{}).(bool); fetch {
+		return nil, false, nil
+	}
+	text := params.Get("query")
+	if !strings.Contains(text, "| set_stream_fields ") {
+		return nil, false, nil
+	}
+	q, err := logsql.Parse(text)
+	if err != nil || !logsql.HoldsSeriesMetadata(*q) {
+		return nil, false, nil
+	}
+	started := time.Now()
+	rows, err := p.seriesMetadataReadRows(ctx, logsql.Query{Filter: q.Filter}.String(), params)
+	if err != nil {
+		p.observeInternalOperation(ctx, "metadata_series_identity", "count_failed", time.Since(started))
+		return nil, true, err
+	}
+	limit := int64(p.seriesMetadataMaxReadRows)
+	if rows <= limit {
+		return nil, false, nil
+	}
+	req, ok := p.statsExtentRequestFor(ctx, params)
+	if !ok {
+		p.observeInternalOperation(ctx, "metadata_series_identity", "over_rows_unsliced", time.Since(started))
+		return nil, true, lokierr.LimitReached(flagStructuredMetadataSeriesMaxReadRows, limit, &rowLimitError{limit: int(limit), unit: "rows in one VictoriaLogs read", matches: rows})
+	}
+	gaps := metadataSeriesSlices(req.first, req.last, rows, limit)
+	fetchCtx := context.WithValue(context.WithValue(ctx, statsExtentFetchKey{}, true), statsExtentHeavyKey{}, true)
+	bound := int64(p.limits().BufferedBackendBodyBytes)
+	if bound <= 0 {
+		bound = math.MaxInt64
+	}
+	var used int64
+	pieces := make([]*statsExtentFragment, 0, len(gaps))
+	for _, gap := range gaps {
+		f, refused, err := p.statsExtentFetch(fetchCtx, req, gap, bound-used)
+		switch {
+		case err != nil:
+			return nil, true, err
+		case refused != nil:
+			return refused, true, nil
+		case f == nil:
+			// Past the body bound (or an answer that cannot be taken apart): what the whole read would answer.
+			p.observeInternalOperation(ctx, "metadata_series_identity", "sliced_over_body", time.Since(started))
+			return nil, true, newBackendBodyTooLarge(bound)
+		}
+		used += statsExtentFragmentBytes(f)
+		pieces = append(pieces, f)
+	}
+	body, ok := renderStatsExtentPieces(pieces)
+	if !ok || int64(len(body)) > bound {
+		return nil, true, newBackendBodyTooLarge(bound)
+	}
+	p.observeInternalOperation(ctx, "metadata_series_identity", "sliced", time.Since(started))
+	return statsExtentResponse(body), true, nil
+}
+
+// metadataSeriesSlices cuts the buckets [first, last] into slices of about half the bound's rows each, assuming the
+// read's rows spread evenly over its buckets; each slice holds at least one bucket.
+func metadataSeriesSlices(first, last, rows, limit int64) [][2]int64 {
+	buckets := last - first + 1
+	n := min64(buckets, (2*rows+limit-1)/limit)
+	if n < 1 {
+		n = 1
+	}
+	out := make([][2]int64, 0, n)
+	for i := int64(0); i < n; i++ {
+		from, to := first+i*buckets/n, first+(i+1)*buckets/n-1
+		out = append(out, [2]int64{from, to})
+	}
+	return out
+}
+
+// statsExtentFragmentBytes is about the bytes f takes in an answer.
+func statsExtentFragmentBytes(f *statsExtentFragment) int64 {
+	var n int64
+	for _, s := range f.series {
+		n += int64(len(s.metric)) + 16
+		for _, pt := range s.points {
+			n += int64(len(pt.raw)) + 1
+		}
+	}
+	return n
+}
+
+// seriesMetadataReadRows is the rows filter matches in the read's window (params' start and end): one count, kept for
+// the request (its time chunks and operands share the read's filter).
+func (p *Proxy) seriesMetadataReadRows(ctx context.Context, filter string, params url.Values) (int64, error) {
+	memo := metadataSeriesOf(ctx)
+	key := filter + "\x00" + params.Get("start") + "\x00" + params.Get("end")
+	if rows, ok := memo.rows(key); ok {
+		return rows, nil
+	}
+	count := url.Values{}
+	count.Set("query", filter+" | stats count() as rows")
+	count.Set("start", params.Get("start"))
+	count.Set("end", params.Get("end"))
+	count.Set("time", params.Get("end"))
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query", count)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, err := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, p.redactedBackendStatusError("stats_query backend", resp.StatusCode, body)
+	}
+	var answer struct {
+		Data struct {
+			Result []struct {
+				Value []any `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return 0, err
+	}
+	var rows int64
+	for _, r := range answer.Data.Result {
+		if len(r.Value) == 2 {
+			if s, ok := r.Value[1].(string); ok {
+				n, _ := strconv.ParseInt(s, 10, 64)
+				rows += n
+			}
+		}
+	}
+	memo.setRows(key, rows)
+	return rows, nil
+}
+
+// defaultSeriesMetadataMaxReadRows is -structured-metadata-series-max-read-rows' default: a read of 6 h of the bench
+// generator (about 700,000 groups) fit VictoriaLogs' 4 GiB, a day of it did not; a quarter of a million rows per read
+// leaves room for reads beside it.
+const defaultSeriesMetadataMaxReadRows = 250_000
+
+func seriesMetadataReadRowsOrDefault(n int) int {
+	switch {
+	case n == 0:
+		return defaultSeriesMetadataMaxReadRows
+	case n < 0:
+		return 0
+	}
+	return n
 }

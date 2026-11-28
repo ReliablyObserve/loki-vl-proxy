@@ -3,8 +3,8 @@ package proxy
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"

@@ -549,6 +549,18 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		// Loki's structured-metadata series (metadata_series.go), ahead of the extent cache, which keys the rebuilt query.
 		params = p.metadataSeriesParams(ctx, path, params)
 	}
+	if resp, ok, err := p.slicedSeriesMetadataRead(ctx, path, params); ok {
+		// A rebuilt read over more rows than VictoriaLogs should group at once, read in slices (metadata_series.go).
+		if err == nil && stripUnwrapCounter != nil {
+			if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
+				return nil, err
+			}
+		}
+		if err == nil && stripJSONMarks != nil {
+			resp, _, err = p.jsonStripResponse(ctx, resp, stripJSONMarks, path, sentParams)
+		}
+		return resp, err
+	}
 	if resp, ok, err := p.statsExtentPost(ctx, path, params); ok {
 		if err == nil && stripUnwrapCounter != nil {
 			if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {

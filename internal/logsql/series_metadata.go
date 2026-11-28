@@ -210,6 +210,9 @@ func (s SeriesMetadata) withoutDropped(rest []Pipe) []Pipe {
 	return pipes
 }
 
+// HoldsSeriesMetadata reports a query WithSeriesMetadata wrote an identity into.
+func HoldsSeriesMetadata(q Query) bool { return holdsSeriesMetadata(q) }
+
 // holdsSeriesMetadata reports a query an identity was written into already: a set_stream_fields pipe that does not
 // read _stream (the proxy's other set_stream_fields pipes, the parser identities, keep the stream in it).
 func holdsSeriesMetadata(q Query) bool {
