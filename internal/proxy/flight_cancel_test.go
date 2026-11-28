@@ -218,7 +218,9 @@ func TestParserProbeFollowerOutlivesItsLeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
-	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [1h]))`
+	// A filter after the parsers keeps the probe: a sum with no label and no filter after its parsers runs none and
+	// sends no probe (semantics/ungrouped-sum-skips-parsers).
+	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ | route!="" [1h]))`
 	leaderCtx, cancelLeader := context.WithCancel(context.Background())
 	leader := make(chan string, 1)
 	go func() {
