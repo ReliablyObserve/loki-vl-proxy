@@ -366,7 +366,8 @@ func BenchmarkParserProbeDrop(b *testing.B) {
 //
 // conformance: semantics/log-range-default-window, semantics/parser-probe-drop-keeps-range, loki_api_v1_query_range
 func TestRangeParserProbeReadsTheRequestWindow(t *testing.T) {
-	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ [5m]))`
+	// A filter after the parsers keeps the probe: the sum without it runs no parser (TestUngroupedParserSumSendsNoProbe).
+	const query = `sum(count_over_time({app="x"} | json | logfmt | drop __error__, __error_details__ | level!="" [5m]))`
 	endAt := strconv.FormatInt(parserProbeAt/1e9, 10)
 	for _, tc := range []struct {
 		name   string
