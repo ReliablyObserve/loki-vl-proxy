@@ -58,8 +58,10 @@ func dropBlankNames(sel *queryplan.LogSelect, i int, st *queryplan.Drop, metric 
 // dropBlankCandidate reports a name of the drop at stage i whose removed value a later stage reads (dropBlankNames).
 func dropBlankCandidate(sel *queryplan.LogSelect, i int, st *queryplan.Drop, name string, bare bool) bool {
 	level := translate.IsLevelSource(name)
-	return !(derivedName(name) || bare && !level || len(name) > 1 && name[:2] == "__" ||
-		!stageReads(sel.Stages[i+1:], name) || level && rewritesLevel(sel, i, name))
+	if derivedName(name) || bare && !level || len(name) > 1 && name[:2] == "__" {
+		return false
+	}
+	return stageReads(sel.Stages[i+1:], name) && (!level || !rewritesLevel(sel, i, name))
 }
 
 // dropHoistReader is the label filter stage after the drop at stage i that the plan writes reading the stored value
