@@ -216,11 +216,19 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
 	params.Set("end", strconv.FormatInt(hi, 10))
+	// The two listings are read side by side: neither needs the other.
+	var stream []string
+	var streamErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stream, streamErr = p.seriesMetadataListing(ctx, "/select/logsql/stream_field_names", "smsfn:", params)
+	}()
 	fields, err := p.seriesMetadataListing(ctx, "/select/logsql/field_names", "smfn:", params)
-	if err != nil {
-		return logsql.SeriesMetadata{}, false, err
+	<-done
+	if err == nil {
+		err = streamErr
 	}
-	stream, err := p.seriesMetadataListing(ctx, "/select/logsql/stream_field_names", "smsfn:", params)
 	if err != nil {
 		return logsql.SeriesMetadata{}, false, err
 	}
@@ -391,15 +399,19 @@ func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesId
 	return hist.rows(from, to), nil
 }
 
-// rowHistogram is the rows a filter matches per whole hour of [lo, hi).
+// metadataSeriesRowBucket is the grain of a request's row counts: a read's rows are those of every minute it touches,
+// at most two minutes more than its own.
+const metadataSeriesRowBucket = time.Minute
+
+// rowHistogram is the rows a filter matches per whole minute of [lo, hi).
 type rowHistogram struct {
 	lo, hi int64
 	hours  []int64
 }
 
-// rows is the rows of every hour [from, to] touches: at least the rows of [from, to].
+// rows is the rows of every minute [from, to] touches: at least the rows of [from, to].
 func (h rowHistogram) rows(from, to int64) int64 {
-	align := metadataSeriesDiscoveryAlign.Nanoseconds()
+	align := metadataSeriesRowBucket.Nanoseconds()
 	var n int64
 	for i, c := range h.hours {
 		start := h.lo + int64(i)*align
@@ -410,18 +422,18 @@ func (h rowHistogram) rows(from, to int64) int64 {
 	return n
 }
 
-// seriesMetadataRowHistogram reads the rows read's filters match per hour of [from, to] widened to whole hours, in one
-// stats_query_range read: the request's reads (its time chunks, its operands) are bounded from it without a read
+// seriesMetadataRowHistogram reads the rows read's filters match per minute of [from, to] widened to whole minutes, in
+// one stats_query_range read: the request's reads (its time chunks, its operands) are bounded from it without a read
 // each.
 func (p *Proxy) seriesMetadataRowHistogram(ctx context.Context, read logsql.SeriesIdentityRead, from, to int64) (rowHistogram, error) {
-	align := metadataSeriesDiscoveryAlign.Nanoseconds()
+	align := metadataSeriesRowBucket.Nanoseconds()
 	h := rowHistogram{lo: from / align * align, hi: (to/align + 1) * align}
 	h.hours = make([]int64, (h.hi-h.lo)/align)
 	count := url.Values{}
 	count.Set("query", read.RowCount())
 	count.Set("start", strconv.FormatInt(h.lo, 10))
 	count.Set("end", strconv.FormatInt(h.hi-1, 10))
-	count.Set("step", "1h")
+	count.Set("step", "60s")
 	// The count is a read of its own: not the request's folded read, not one its chunk's meter counts.
 	countCtx := context.WithValue(context.WithValue(ctx, seriesFoldKey{}, (*seriesFoldRead)(nil)), statsReadMeterKey{}, (*statsReadMeter)(nil))
 	resp, err := p.vlPost(countCtx, statsQueryRangePath, count)
