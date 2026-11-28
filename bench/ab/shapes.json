@@ -3949,6 +3949,57 @@
      "instant": true
     }
    ]
+  },
+  "parser-sum": {
+   "description": "Issue #1821 item 4: a sum with no by or without clause of a count or a rate over bare `| json` and `| logfmt` parsers runs no parser in Loki. The query plan writes it with no parser pipe and the proxy sends no parser probe (semantics/ungrouped-sum-skips-parsers).",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "PS1 Drilldown count, json, logfmt, drop",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/ungrouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PS2 instant Drilldown count, json, logfmt, drop",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [1h]))",
+     "covers": [
+      "semantics/ungrouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "PS3 rate, json, logfmt, drop",
+     "query": "sum(rate({env=\"production\", app=\"api-gateway\"} | json | logfmt | drop __error__, __error_details__ [5m]))",
+     "covers": [
+      "semantics/ungrouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "PS4 count over logfmt alone",
+     "query": "sum(count_over_time({env=\"production\", app=\"api-gateway\"} | logfmt [5m]))",
+     "covers": [
+      "semantics/ungrouped-sum-skips-parsers",
+      "parser-json",
+      "parser-logfmt",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

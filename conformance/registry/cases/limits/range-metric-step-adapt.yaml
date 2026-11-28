@@ -1,0 +1,83 @@
+id: limits/range-metric-step-adapt
+title: A range metric query whose read at the requested step passes a proxy read bound is answered at the closest step to it that fits (a multiple of it, or the finest fitting step when the multiple is more than twice coarser), with Loki's warning
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - heavy-metric-fetch-bounds
+consumer: explore
+why: |
+  Issue #1795, the adaptive step. The proxy reads a range metric as a bucket
+  grid: (range + window) / gcd(step, window) buckets per series. Past
+  11,000 buckets it reads the raw rows of the window instead. Grafana's step
+  over a short range (about 50 ms over 80 s) with a [1h] window is 73,600
+  buckets, so the shapes that the window recurrence does not serve read raw
+  rows. A busy window then passes -manual-range-metric-row-limit or
+  -backend-max-buffered-response-bytes, and the proxy answered Loki's limit
+  error (400 `limit reached while evaluating the query`, 500
+  `rpc error: code = ResourceExhausted ...`) where Loki answers 200. This
+  covered per-stream count_over_time, unwrap sum/avg/max/quantile, topk over
+  `| json`, binary operations and several parser stages (measured with
+  real VictoriaLogs, rankedParserFixture).
+
+  The step layer (internal/proxy/step_adapt.go, read_budget.go
+  effectiveStep) serves the request as sent first. Only a limit error of
+  such a read, which the step sizes, makes it serve the request again at
+  the closest step that fits (owner 2026-11-28, "close to loki"). Fitting
+  means every window within the bucket bound, and a read that failed within
+  the bound holding at most -range-metric-step-budget-bytes of its buckets.
+  The closest step is the smallest whole multiple of the requested step that
+  fits, unless that is more than twice the finest step of whole milliseconds
+  that fits; then it is that finest step. At 50 ms over [1h] the step is
+  400 ms (a multiple). At 53 ms it is 360 ms (223 points over 80 s), not the
+  19.08 s multiple (5 points). The answer is Loki's answer to the query at
+  the effective step, with timestamps anchored as Loki anchors a request at
+  it: its multiples inside the requested range. On a multiple every point is also one of Loki's points at the
+  requested step. The answer carries Loki's warnings field and the header
+  X-Proxy-Step-Adjusted. It is counted by loki_vl_proxy_step_adjusted_total
+  and never cached as such.
+
+  Unchanged:
+  - a request that fits, byte for byte, with the same VictoriaLogs calls;
+  - Loki's own limits and errors;
+  - a failed read whose cost a coarser step does not lower (raw rows read
+    for another reason than the step, one step's window, the series of a
+    window);
+  - instant and log queries, /index/volume_range and /patterns, whose points
+    depend on the step;
+  - windows that follow the step ($__auto).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (peer_ip) (sum_over_time({app="edge-json"} | json | unwrap bytes [1h]))'
+    start: '2025-12-31T23:58:40Z'
+    end: '2026-01-01T00:00:00Z'
+    step: '50ms'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  expect: |
+    200 with one warning `step raised from 50ms to 400ms to fit the query
+    limits`; the answer equals Loki's (recorded Loki engine) answer to the
+    same query at the effective step, and on a multiple every point is
+    Loki's at the requested step too (VictoriaLogs v1.49 and v1.54, bounds on
+    and off the step grid). With -range-metric-step-mode=off the
+    limit error main answers; a request that fits with the mode off is the
+    same bytes from the same VictoriaLogs requests in adaptive mode.
+gap:
+  status: fixed
+  fixed_by: '#1854'
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy step_adapt.go (the step layer) and read_budget.go (effectiveStep)'
+  loki: 'answers 200 at the requested step: its engine evaluates each step from the lines, so a short range at a fine step with a long window is no read limit'
+  proxy: 'answered its own read bound (400 limit reached while evaluating the query, or 500 rpc error: code = ResourceExhausted) before the fix; now answers Loki''s answer at the closest step that fits, with Loki''s warnings field'
+  planned_test: 'TestEffectiveStep, FuzzEffectiveStep, TestStepLayer_* (internal/proxy); TestRangeStepAdaptMatchesLoki (internal/querycorpus); visual scenes explore-step-adapt and explore-step-adapt-quantile, judged against Loki at the effective step (bench/visual compare.py)'
+  clusters: []
+loki_parity: |
+  Loki answers at the requested step (its engine evaluates each step from
+  the lines). The proxy answers Loki's answer at a coarser step, the
+  closest that fits, and says so in Loki's warnings field. This is a recorded intended difference
+  (decision range-metric-step-adapt): it replaces a limit error, never an
+  answer.

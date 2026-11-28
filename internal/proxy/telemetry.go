@@ -44,6 +44,8 @@ type requestTelemetry struct {
 	// failure is the failure the request answered through the error layer,
 	// for the error cache (error_flights.go).
 	failure flightFailure
+	// stepAdapt is the step layer's view of the request's current attempt (step_adapt.go).
+	stepAdapt *stepAttempt
 	// predictedRefusal: a call of the request was answered by a predicted
 	// VictoriaLogs refusal instead of being sent (vl_refusal.go).
 	predictedRefusal bool
@@ -54,14 +56,15 @@ type requestTelemetry struct {
 	// request's later lines (query_caller.go); callerResolved is set with them.
 	callerAttrs    []any
 	callerResolved bool
+	// statsPrefixCapture: the response cache captures the gzip encoding of
+	// this answer up to its stats (query_stats_cache.go); statsSuffix holds
+	// the bytes the stats layer wrote after that point. It sits in the padding
+	// after the flag above.
+	statsPrefixCapture bool
+	statsSuffix        []byte
 	// statsWriter fills the stats of a query or query_range answer while the
 	// handler runs (query_stats.go).
 	statsWriter *queryStatsWriter
-	// statsPrefixCapture: the response cache captures the gzip encoding of
-	// this answer up to its stats (query_stats_cache.go); statsSuffix holds
-	// the bytes the stats layer wrote after that point.
-	statsPrefixCapture bool
-	statsSuffix        []byte
 	// statsTotals are the Loki-meaning totals derived for this answer
 	// (query_stats_totals.go).
 	statsTotals statsTotals

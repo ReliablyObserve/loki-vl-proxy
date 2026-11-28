@@ -266,6 +266,7 @@ Last run: 2026-11-21T14:20:35Z on `4a63b99e`, window [1795265520, 1795269120].
 | `semantics/unwrap-sample-validity` — unwrap emits no sample for a missing label or a value that does not convert, and converts like Loki (fixed) | #680 | 2 | 4 |
 | `semantics/keep-before-unwrap-identity-in-operands` — Under label_replace, a keep before an unwrap decides the operand's series like Loki (fixed) | #1726 | 2 | 2 |
 | `semantics/label-replace-around-ranking-and-vector` — label_replace around topk, bottomk, sort or sort_desc answers the ranked series relabelled, like Loki (fixed; vector() is semantics/label... | #1726 | 2 | 2 |
+| `limits/range-metric-step-adapt` — A range metric query whose read at the requested step passes a proxy read bound is answered at the closest step to it that fits (a multip... | #1854 | 0 | 0 |
 | `profiles/json-extraction-list-exposes-only-listed` — Extraction lists (`\| json msg="msg"`, `\| logfmt op`) expose only selected fields (fixed) | cf203629987b042cb2edb5022c77d6cf1a121c45 | 0 | 0 |
 | `profiles/keep-removes-derived-service-name` — `\| keep` removes service_name the proxy derived for a stream without one (fixed) | 90dc4542842eb4c03fea851b52bbda94dce08910 | 0 | 0 |
 | `profiles/keep-structured-metadata-key` — `\| keep` retains a mapped structured-metadata key (fixed) | #971 | 0 | 0 |

@@ -115401,6 +115401,7 @@
   ],
   "semantics/translator-writes-unpack-as-unpack-json": [],
   "semantics/two-parsers-keep-one": [],
+  "semantics/ungrouped-sum-skips-parsers": [],
   "semantics/ungrouped-sum-skips-unpack": [],
   "semantics/unwrap-conversion-error": [
     {

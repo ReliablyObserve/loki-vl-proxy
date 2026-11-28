@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -751,6 +753,12 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}
+	if p.planSkipsParsers(logql) && p.translationRunsNoParser(ctx, logql) {
+		// The plan writes no parser for the query and the request's translation is that text: neither parser is
+		// run, so there is nothing to choose.
+		p.observeInternalOperation(ctx, "prefer_working_parser", "parsers_unread", time.Since(opStart))
+		return logql
+	}
 
 	// Mixed metric requests retain logfmt flags until typed admission above.
 	// The existing sampled fallback evaluates them as unflagged logfmt.
@@ -804,6 +812,52 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
 		return logql
 	}
+}
+
+// planSkipsParsers reports a query the typed lowering serves with no stage from its first parser on
+// (lower.SkipsParsers: a sum that needs no label of a count or a rate over bare json and logfmt parsers, or over an
+// unpack), also under a ranking, which translates the sum as a query of its own: Loki runs no parser for it, so the
+// parser probe has nothing to choose (semantics/ungrouped-sum-skips-parsers). It reads the query's shared plan, and
+// holds only where the lowering serves such a sum (the VectorAgg flip, -query-plan-lowering on, a text the
+// translator's readers accept); everywhere else the probe runs as before.
+func (p *Proxy) planSkipsParsers(query string) bool {
+	if !p.queryPlanLowering || !slices.Contains(p.flippedConstructs, "VectorAgg") {
+		return false
+	}
+	plan := resolvedPlan(strings.TrimSpace(query))
+	if plan == nil {
+		return false
+	}
+	if rank, ok := plan.Root.(*queryplan.Rank); ok {
+		plan = &queryplan.Plan{Root: rank.In}
+	}
+	return (lower.SkipsParsers(plan) || lower.SkipsParsersWrapped(plan)) && writesTranslatorText(plan, lower.Profile{})
+}
+
+// translationRunsNoParser reports a query whose translation for this request, under its own profile (label mode,
+// stream fields, capabilities, aliases), holds no unpack_json or unpack_logfmt pipe:
+// the lowering served the sum with no parser. Where it did not (a profile the lowering turns away, a text it leaves
+// to the string translator), the query keeps today's probe, so the probe is skipped only where no parser runs. The
+// translation is cached, so the handler's own translation of the same text that follows is a cache hit.
+func (p *Proxy) translationRunsNoParser(ctx context.Context, query string) bool {
+	// Under rankings and label_replace calls the handlers translate the sum as a query of its own: its text is
+	// the one to read.
+	if expr, ok := sharedLogQLExpr(strings.TrimSpace(query)); ok {
+		inner := underRankings(expr)
+		if _, sum := inner.(*logqlpkg.VectorAggregation); !sum {
+			return false
+		}
+		if inner != expr {
+			query = logqlpkg.CanonicalSpelling(inner.String())
+		}
+	}
+	text, err := p.translateQueryWithContext(ctx, query)
+	if err != nil {
+		return false
+	}
+	// The LogsQL the proxy is about to send, not the client's query: a pipe is always printed by its name, so a text
+	// without either name holds no unpack pipe. A quoted value that holds a name only keeps the probe, today's path.
+	return !strings.Contains(text, "unpack_json") && !strings.Contains(text, "unpack_logfmt")
 }
 
 // preferWorkingParserAt is preferWorkingParser for an instant query evaluated
@@ -2128,7 +2182,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		status := p.fail(w, r, timestampParamError("start", r.FormValue("start")))
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	endNanos, ok := parseFlexibleUnixNanos(r.FormValue("end"))
@@ -2140,13 +2194,13 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 			err = lokierr.EndBeforeStart()
 		}
 		status := p.fail(w, r, err)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
 		status := p.fail(w, r, stepParamError(r.FormValue("step")))
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		return
 	}
 
@@ -2182,7 +2236,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, fetchStart, r.FormValue("end"))
 	if err != nil {
 		status := p.writeErr(w, r.Context(), err)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
+		p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), time.Since(start))
 		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
 		return
 	}
@@ -2242,7 +2296,7 @@ func (p *Proxy) tryBareParserLogRangeBuckets(w http.ResponseWriter, r *http.Requ
 	}
 	status := p.writeHitsRangeMetricMatrix(w, spec.funcName, series, time.Unix(0, startNanos), time.Unix(0, endNanos), time.Duration(stepNanos), spec.rangeWindow)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), status), elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), status), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, status != http.StatusOK)
 	return true
 }
@@ -2315,7 +2369,7 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
+	p.recordRangeRequest(r.Context(), "query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	return true
 }

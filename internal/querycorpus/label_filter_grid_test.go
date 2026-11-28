@@ -310,6 +310,12 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				delegated["known divergence "+knownSkippedUnpack]++
 				continue
 			}
+			if lower.WritesSkippedParsers(plan) && !sameAsTranslator(got, legacy) {
+				// A sum with no clause of a count or a rate over bare json and logfmt parsers: the plan writes no stage
+				// from the first parser on, held to Loki (TestParserSumMatchesLoki).
+				delegated["known divergence "+knownSkippedParsers]++
+				continue
+			}
 			spelling := translatorspelling.Case(q, plan)
 			if routed, _ := routedRoot(plan); !routed && spelling != "" && !sameAsTranslator(got, legacy) {
 				// A spelling the translator reads otherwise than the plan, which the proxy serves: held to a spelling or

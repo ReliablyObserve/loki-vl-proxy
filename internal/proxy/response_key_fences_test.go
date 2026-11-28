@@ -54,6 +54,16 @@ func twoParserFence(query string) string {
 	return twoParserMetricResponseKeyVersion(containsWord(query, "json", other), containsWord(query, "logfmt", other), query, other)
 }
 
+// skippedParsersFence is the fence of a sum that needs no label over bare json and logfmt parsers
+// (semantics/ungrouped-sum-skips-parsers), read on its own after the two-parser fence.
+func skippedParsersFence(query string) string {
+	other := spelledOtherwise(query)
+	if !containsWord(query, "json", other) && !containsWord(query, "logfmt", other) {
+		return ""
+	}
+	return skippedParsersResponseKeyVersion(query)
+}
+
 // rankOverBinaryLabelReplaceFence is the instant compat site's fence before the rune fence
 // (semantics/rank-binary-operand-label-replace-once), read on its own.
 func rankOverBinaryLabelReplaceFence(query string) string {
@@ -230,7 +240,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			endpoint := strings.TrimSuffix(strings.TrimPrefix(shape.path, "/loki/api/v1/"), "_nostep")
 
 			// The rune fence (rune_response_fence.go) ends the compat chains and is empty for a valid query.
-			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+unpackFence(query)+twoParserFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)
+			oldCompatQuery, oldCompatRange, oldInner := oldCompatQueryFences(r, query)+rankOverBinaryLabelReplaceFence(query)+unpackFence(query)+twoParserFence(query)+skippedParsersFence(query)+runeResponseKeyVersion(query), oldCompatQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)+skippedParsersFence(query)+runeResponseKeyVersion(query), oldInnerQueryRangeFences(r, query)+unpackFence(query)+twoParserFence(query)+skippedParsersFence(query)
 			if expr, ok := sharedLogQLExpr(fenceVariablesResolved(query)); ok && containsMixedParserMetric(expr) {
 				oldCompatQuery += mixedParserMetricResponseVersion
 				oldCompatRange += mixedParserMetricResponseVersion
@@ -258,7 +268,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
 				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion, keywordLabelResponseVersion,
 				streamLevelSeriesResponseVersion, rankOverBinaryResponseVersion, rankOverBinaryLabelReplaceResponseVersion, unpackMetricResponseVersion,
-				markerBytesLabelValueResponseVersion, numericEqualityResponseVersion,
+				markerBytesLabelValueResponseVersion, numericEqualityResponseVersion, skippedParsersResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true

@@ -29,12 +29,20 @@ proxy: |
   -manual-range-metric-row-limit rather than buffering rows it cannot hold.
   Every one of these bounds is an operator flag that can be raised as well as
   lowered.
+  When a range metric query_range fails one of these read bounds where Loki
+  would answer, the step layer (step_adapt.go, decision range-metric-step-adapt)
+  serves it again at the closest step to it whose reads fit (a multiple of it,
+  or the finest fitting step when the multiple is more than twice coarser),
+  with Loki's warnings field. It never raises a bound: every
+  effective read is held to the same limits.
 
 implementation:
   - internal/proxy/sliding_window_stats.go
   - internal/proxy/manual_metric_budget.go
   - internal/proxy/range_metric_compat.go
   - internal/proxy/metric_agg.go
+  - internal/proxy/step_adapt.go
+  - internal/proxy/read_budget.go
 
 cases:
   - limits/raw-metric-row-precheck
@@ -43,3 +51,30 @@ cases:
   - semantics/sliding-window-recurrence-exact
   - semantics/tumbling-window-single-grid
   - limits/drilldown-7d-breakdown-response-limit
+  - limits/range-metric-step-adapt
+
+decisions:
+  - id: range-metric-step-adapt
+    chosen: 'Serve a range metric query_range as sent; only when its answer is the limit error of a read the proxy bounds itself (and that the step sizes), serve it again at the smallest whole multiple of its step whose reads fit, or at the finest fitting step of whole milliseconds when that multiple is more than twice coarser, anchored as Loki anchors a request at that step, with Loki''s warning; remember the step per replica; adaptive is the default mode'
+    over: ['estimating the read before it runs and coarsening a request that fits (changes answers and VictoriaLogs calls of requests that work today)', 'a VictoriaLogs cardinality probe before every fine-step read (an extra call per request)', 'multiples of the requested step only (53 ms over [1h]: 19.08 s, 5 points over 80 s, where 360 ms fits with 223; the owner measured 400-500 ms as right for that request)', 'raising a bound', 'answering at the coarser step without a warning']
+    why: |
+      Owner 2026-11-27/28 (#1795): "we need adaptive"; every range metric
+      query is adjusted automatically, a user sets nothing, adaptive is the
+      default, off and floor stay operator options; queries that fit today
+      change nothing; adjusted answers carry Loki's warning, are visible in
+      metrics and logs, and are never cached as such; Loki's own limits and
+      errors are never adjusted. Owner 2026-11-28 on the 53 ms case: "close
+      to loki", read as: as close to Loki's answer as the limits allow, its
+      point density included. A multiple of the requested step keeps every
+      returned time a time of Loki's answer at the requested step; the finest
+      fitting step keeps the density; every answer is Loki's answer at the
+      effective step.
+    evidence: 'TestRangeStepAdaptMatchesLoki (recorded Loki engine and VictoriaLogs v1.49.0/v1.54.0): see the PR body for the measured runs'
+    code: [internal/proxy/step_adapt.go, internal/proxy/read_budget.go, internal/proxy/http_utils.go, internal/proxy/middleware.go, internal/proxy/proxy.go]
+    tests: [TestEffectiveStep, FuzzEffectiveStep, TestStepLayer_ThroughTheRouteChain, TestStepLayer_StepIndependentFailureReadsOnce, TestStepLayer_EachReplicaLearnsOnItsOwn, TestStepLayer_FittingRequestIsServedAsSent, TestStepLayer_RetriesAtTheSmallestMultipleThatFits, TestStepLayer_LokiErrorsAreAnsweredAsBefore, TestStepLayer_FloorAndCeiling, TestStepLayer_WarningJoinsTheAnswersWarnings, TestStepLayer_HeldFailureIsCountedOnce, TestStepLayer_Metrics, TestRangeWindows, TestRangeStepAdaptMatchesLoki]
+    quality: |
+      Every adjusted point equals Loki's at its time and every point of
+      Loki's answer on the effective grid is present (differential, both grid
+      modes, both VictoriaLogs versions); a request that fits is the mode-off
+      answer byte for byte from the same VictoriaLogs requests.
+    performance: 'A fitting request pays one writer allocation and two telemetry lock round trips (benchstat in the PR body); an adjusted request pays its failed read once per replica per 10 minutes, then reads the effective request''s cached answer'

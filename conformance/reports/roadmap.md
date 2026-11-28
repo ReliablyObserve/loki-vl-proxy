@@ -33,7 +33,7 @@ Proven in part; the rest is named in the item's cases.
 | `cache-restart-handover` — A replica restarted gracefully starts with its previous memory hot set, never serving an entry past its expiry or for another build | — | 0 / 0 | 19 | Unit-proven in internal/cache and internal/proxy; the stack proof is TestFleet_RestartHandoverKeepsTheResponseCacheWarm  |
 | `cache-reuse-retention` — Under capacity pressure the memory cache keeps entries that are read again, and can hand evicted reused entries to the disk cache, without changing a TTL or an answer | — | 0 / 0 | 3 | Unit-proven in internal/cache, internal/metrics and cmd/proxy: the segment invariants over random and concurrent operati |
 | `cache-sizing-signals` — The cache says whether a larger budget or a longer TTL would answer more, how large the working set is, how long until a key is asked again, and its byte hit ratio per answer class | — | 0 / 0 | 3 | Unit-proven in internal/cache, internal/metrics, internal/proxy and cmd/proxy (exact ghost, working-set, reuse and byte  |
-| `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 6 / 6 | 11 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
+| `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | — | 7 / 7 | 13 | Proven for grouped counts and byte sums: the two-grid recurrence, the tumbling single grid, the per-grid row limit and t |
 | `json-metric-unparsed-line-lookup-once` — A `| json` metric looks up a line Loki's parser rejects once, and one spelling sends one set of VictoriaLogs requests | — | 0 / 0 | 1 | Unit-proven against a fake VictoriaLogs (internal/proxy/ ordered_json_unparsed_row_test.go). The stack check is the per- |
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 8 / 8 | 15 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 0 / 4 | 53 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
@@ -83,10 +83,10 @@ No file under `conformance/registry/state/` gives these a state yet.
 | `backend-url-path-prefix` — A backend URL with a path keeps that path on every request the proxy sends | — | 0 / 0 | 1 | — |
 | `backend-version-source` — The operator can name where the VictoriaLogs release comes from, and the probes check it | — | 0 / 0 | 2 | — |
 | `cache-key-credential-digest` — Credentials enter cache keys only as keyed digests | — | 0 / 0 | 5 | — |
-| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 14 | — |
+| `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | — | 0 / 0 | 15 | — |
 | `client-authentication` — Caller authentication is off by default; on, every route but the probes, /metrics and the peer routes needs a Basic or bearer credential | — | 0 / 0 | 5 | — |
 | `field-mapping-label-names` — 'The operator chooses the names a mapped field shows in answers: one per field, its own, its aliases or both' | — | 1 / 1 | 11 | — |
-| `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 7 | — |
+| `loki-error-phases` — Loki's error phases and which metric queries fail on a pipeline error | — | 4 / 4 | 8 | — |
 | `observability-metrics-histograms-and-labels` — Duration histograms tell a slow request from a timeout, and the proxy's endpoint label survives a scrape | — | 0 / 0 | 4 | — |
 | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | — | 0 / 0 | 8 | — |
 | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | — | 0 / 0 | 5 | — |
