@@ -430,7 +430,8 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stag
 				numericAlreadyFailed = failed
 			}
 		} else {
-			filter = labelFilter(lbl.Expr, &lb)
+			// A filter on a label a matcher drop before it removes reads the stored value (dropHoistedFilter).
+			filter = dropHoistedFilter(sel, i, labelFilter(lbl.Expr, &lb), lb.label, prof.metric)
 		}
 		if lb.bad != "" {
 			return filterStages{}, &NotLoweredError{Construct: lb.bad}
