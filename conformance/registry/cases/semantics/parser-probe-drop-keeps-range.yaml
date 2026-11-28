@@ -1,0 +1,96 @@
+id: semantics/parser-probe-drop-keeps-range
+title: "Keeping one of `| json` and `| logfmt` leaves the range of a metric query in place (fixed)"
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+  - parser-json
+  - parser-logfmt
+consumer: drilldown
+why: |
+  A query naming both `| json` and `| logfmt` that the ordered mixed-parser evaluator does not take makes the proxy
+  read 25 lines of the evaluated window and keep one of the two stages (preferWorkingParser,
+  internal/proxy/query_translation.go). The other stage was removed with a text pattern that, on a metric query,
+  took everything after the stage's word up to the next `|`. When that stage was the last one before the range
+  (`... | json | logfmt [3h]))` with json kept, `... | logfmt | json [3h]))` with logfmt kept) the range, the offset
+  and the closing parentheses went with it: an instant query answered 400 "log queries are not supported as an
+  instant query type, please change your query to a range query type", a range query answered log streams read
+  with the cut LogQL text as a VictoriaLogs phrase, and a bare range function answered 500, where Loki answers 200
+  (#1821, follow-up to #1825). The probe's log query was read with a text pattern too: it took a
+  quantile_over_time's parameter into the log query (`0.9, {...} | json | ...`) and missed a range with an offset,
+  so the probe sent VictoriaLogs a malformed query and the query kept both stages.
+
+  A range request without start or end sent the probe without a time range too (the handler passed the bounds as
+  sent), so VictoriaLogs scanned the whole retention for the 25 newest lines, while the metric read itself used
+  Loki's default window.
+
+  Fixed: the query is read once by the parser (logql.ReadParserStages, the precedent being
+  logql.StripParserFlags): the probe reads the log query of the first range aggregation as written (the parsed
+  tree's text for a log query or one inside label_replace), and the stage the probe does not keep is removed where
+  the parser read it (the stage's `|`, the blank before it and its words go, the rest of the text stays as written,
+  the arguments of label_replace and approx_topk are read the same way). A query that does not parse is left as it
+  is. A range probe without start or end reads the window Loki reads the request with (lokiRangeBounds: end now,
+  start an hour or `since` before). Answers cached by an earlier build for a metric query naming both parsers are
+  not served: their keys carry the fence `@two-parser-metric-v1:` (one more cache miss per such query).
+  The instant query the probe leaves is offered to the route that answers that query sent alone (the ordered JSON
+  evaluator: `sum(count_over_time({...} | json [r]))` from VictoriaLogs stats), which the query naming both parsers
+  was not offered before the probe; it read every line of the window (`| limit 1000001`) and answered the row
+  limit's 400 past it. A log query_range without start or end read the whole retention (the step alignment moves
+  metric queries only): every read now uses the window Loki reads the request with.
+
+  TestParserProbeDropMatchesRecordedLoki holds 1,792 requests to Loki's recorded engine answers: both parser orders
+  with and without a drop of the error labels, plus the one-parser controls; count, rate, bytes_over_time,
+  bytes_rate and absent_over_time, bare and under sum, sum by, sum without, max, min, avg, count, stddev, stdvar,
+  topk, bottomk, sort, sort_desc, label_replace, a nested aggregation, a binary with a number and an offset, and
+  quantile_over_time over an unwrap for the probe's log query (a function over an unwrap has the unwrap as its last
+  stage, so it never met the cut); instant and range; over JSON, logfmt, mixed and plain lines. approx_topk is
+  held by the parser tests only (the Loki engine oracle did not answer its rows within ten minutes). No request
+  shows the cut and every probe is well formed and bounded (main: 108 cut answers, 39 reads of LogQL text as a
+  phrase, 71 malformed or unbounded probes); 76 rows answer as Loki where main did not (two-parser rows matching
+  Loki: 514 to 590 of 896; controls 705 of 896 on both), and no row that answered as Loki on main differs now.
+  Thirteen instant rows (max, min, avg, count, stddev, stdvar or sum without over a bare count_over_time without a
+  drop of the error labels, on logfmt or mixed lines) answered 400 on main with the cut's own message where Loki
+  answers 400 JSONParserErr; they answer 200 now, as the other parser order of each of them already did on main
+  (the JSON parser error check does not run on a query naming both parsers: semantics/two-parsers-keep-one). The
+  rows that still differ are that open difference (the probe keeps one parser where Loki runs both) and
+  differences their one-parser forms share; they are listed in
+  internal/proxy/testdata/parser_probe_drop_known_differences.txt, a list that may only shrink.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(count_over_time({service_name="ingress"} | json | logfmt [3h]))'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: "Loki's 200 vector; the VictoriaLogs reads carry LogsQL, never the LogQL text."
+corpus:
+  dimensions:
+    shapes:
+      - query: 'sum(count_over_time({app="probe-drop"} | logfmt | json [3h]))'
+      - query: 'count_over_time({app="probe-drop"} | json | logfmt [1h] offset 1h)'
+      - query: 'quantile_over_time(0.9, {app="probe-drop"} | json | logfmt | unwrap x [5m])'
+      - query: 'label_replace(sum(count_over_time({app="probe-drop"} | json | logfmt [30m])), "copy", "$1", "route", "(.*)")'
+gap:
+  status: fixed
+  fixed_by: "#1832"
+  impact: drilldown-visible
+  effort: S
+  area: "internal/proxy/query_translation.go preferWorkingParser (parserProbeLogQuery, rangeParserProbeWindow), internal/proxy/range_metric_compat.go twoParserMetricResponseKeyVersion, internal/logql/parser_stages.go ReadParserStages"
+  loki: "200 with the metric answer; both stages run on every line"
+  proxy: "the stage the probe does not keep is removed from the parsed query; the range and the rest of the query stay"
+  planned_test: 'TestParserProbeDropMatchesRecordedLoki, TestParserProbeDropReadsTheTree, TestRangeParserProbeReadsTheRequestWindow, TestLogRangeWithoutBoundsReadsLokisWindow, TestParserProbeDropRejectsOldCopies (internal/proxy), TestDropParserStages, TestDropParserStagesKeepsTheTree, TestReadParserStagesLogQuery, FuzzDropParserStages (internal/logql), TestCompat_ParserProbeDropKeepsTheRange, TestCompat_LogRangeWithoutBoundsReadsTheLastHour (test/e2e-compat, core)'
+  visual: none
+  visual_reason: 'the failing Drilldown and Explore panels showed an error or no data; the fixed answer is the Loki answer the recorded differential holds; live captures are owed'
+  clusters: []
+
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

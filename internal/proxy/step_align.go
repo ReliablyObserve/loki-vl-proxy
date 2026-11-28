@@ -162,6 +162,37 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	return aligned, true
 }
 
+// withLokiRangeBounds is r with the bound a range request leaves out (start or end) set to the one Loki reads it
+// with (lokiRangeBounds: end now, start an hour or since before), as Unix nanoseconds, in the form and the URL; r
+// itself when it names both, or when a bound it names does not parse (the handlers answer Loki's error for it). A
+// log query is not moved by the step alignment, so without this its reads, the parser probe's too, went to
+// VictoriaLogs with no time range and VictoriaLogs read the whole retention (#1821).
+func withLokiRangeBounds(r *http.Request, now time.Time) *http.Request {
+	start, end := strings.TrimSpace(r.FormValue("start")), strings.TrimSpace(r.FormValue("end"))
+	if start != "" && end != "" {
+		return r
+	}
+	s, e, ok := lokiRangeBounds(r, now)
+	if !ok || e.Before(s) {
+		return r
+	}
+	if start == "" {
+		start = strconv.FormatInt(s.UnixNano(), 10)
+	}
+	if end == "" {
+		end = strconv.FormatInt(e.UnixNano(), 10)
+	}
+	bounded := r.WithContext(r.Context())
+	bounded.Form = withAlignedBounds(r.Form, start, end)
+	if r.Method == http.MethodPost {
+		bounded.PostForm = withAlignedBounds(r.PostForm, start, end)
+	}
+	u := *r.URL
+	u.RawQuery = rawQueryWithBounds(r.URL.RawQuery, start, end)
+	bounded.URL = &u
+	return bounded
+}
+
 // withAlignedBounds is a copy of values with start and end replaced; the
 // other entries share their slices with values, which is not written.
 func withAlignedBounds(values url.Values, start, end string) url.Values {
