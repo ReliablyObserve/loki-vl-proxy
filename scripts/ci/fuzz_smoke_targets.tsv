@@ -242,3 +242,4 @@ smoke	internal/cache	FuzzPeerBulkStream	12s	-	peer bulk restore stream decode an
 smoke	internal/metrics	FuzzParseDurationBuckets	12s	-	-metrics.duration-buckets accepts only a bounded, finite, ascending list of bounds above zero
 smoke	internal/cache	FuzzRetentionOperations	12s	-	cache reuse retention segments
 smoke	internal/cache	FuzzSizingGhostLRU	12s	-	cache sizing ghost LRU bounds
+smoke	internal/proxy	FuzzBuildMetricSeriesEntryMatchesReference	12s	-	labels and key of a stream-grouped stats series against the copying form
