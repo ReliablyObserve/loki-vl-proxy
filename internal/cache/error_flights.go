@@ -116,6 +116,17 @@ type Answer struct {
 	// answer only when its own exact key is the same, and a failure is held
 	// under it.
 	Key string
+	// Cost is the backend work measured while the answer was built, when its
+	// builder recorded it: what each request it answers instead of running
+	// avoided. A held failure read from a peer carries none.
+	Cost BuildCost
+}
+
+// BuildCost is backend work: calls, their summed time, decoded body bytes and
+// raw-query rows. Recorded is false when nothing measured it.
+type BuildCost struct {
+	Calls, Nanos, Bytes, Rows int64
+	Recorded                  bool
 }
 
 func (a *Answer) size(key string) int {

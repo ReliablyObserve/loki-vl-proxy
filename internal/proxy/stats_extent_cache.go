@@ -22,6 +22,7 @@ import (
 	"github.com/klauspost/compress/s2"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
 // The stats extent cache answers the stats_query_range calls of a metric
@@ -138,7 +139,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	// A read of these buckets that just finished may still be being stored:
 	// its buckets are the ones this lookup would read again.
 	p.statsExtentPending.wait(ctx, req.key)
-	chunks := p.loadStatsExtentChunks(ctx, req, lastStored)
+	chunks, chunkTiers := p.loadStatsExtentChunkTiers(ctx, req, lastStored, true)
 	var covered [][2]int64
 	for _, c := range chunks {
 		if from, to := max(c.from, req.first), statsExtentMin(c.to, req.last); from <= to {
@@ -203,11 +204,16 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 		}
 	}
 	pieces := make([]*statsExtentFragment, 0, len(chunks)+len(fragments))
-	for _, c := range chunks {
+	var used []int64 // the chunks whose buckets the answer reads, not fetched again
+	for j, c := range chunks {
 		// The stored buckets the reads do not hold (all but the ones a
 		// merged read of several gaps took again).
+		n := len(pieces)
 		for _, r := range statsExtentGaps(max(c.from, req.first), statsExtentMin(c.to, req.last), append([][2]int64(nil), gaps...)) {
 			pieces = append(pieces, c.slice(r[0], r[1]))
+		}
+		if len(pieces) > n {
+			used = append(used, j)
 		}
 	}
 	pieces = append(pieces, fragments...)
@@ -217,6 +223,11 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	body, ok := renderStatsExtentPieces(pieces)
 	if !ok {
 		return p.statsExtentPassThrough(fetchCtx, req)
+	}
+	for _, j := range used {
+		// Stored buckets the answer used instead of reading them: their share
+		// of the reads that stored them is not recorded (vl_reuse.go).
+		p.noteReuse(ctx, metrics.ReuseStatsExtent, metrics.ReuseTierOf(chunkTiers[j]), metrics.VLWork{}, false)
 	}
 	// Kept off the request path: re-encoding a split is the costliest part
 	// of a partial answer.
@@ -589,17 +600,31 @@ func readStatsExtentBody(body io.Reader, limit int64) (data []byte, whole bool, 
 // loadStatsExtentChunks reads the stored splits of req, side by side: a
 // miss may ask the disk tier and a peer.
 func (p *Proxy) loadStatsExtentChunks(ctx context.Context, req *statsExtentRequest, lastStored int64) map[int64]*statsExtentChunk {
+	chunks, _ := p.loadStatsExtentChunkTiers(ctx, req, lastStored, false)
+	return chunks
+}
+
+// loadStatsExtentChunkTiers is loadStatsExtentChunks that also reports, with tiers set, the tier each chunk was
+// read from (vl_reuse.go).
+func (p *Proxy) loadStatsExtentChunkTiers(ctx context.Context, req *statsExtentRequest, lastStored int64, tiers bool) (map[int64]*statsExtentChunk, map[int64]string) {
 	firstChunk := statsExtentFloorDiv(req.first, req.chunk)
 	lastChunk := statsExtentFloorDiv(statsExtentMin(req.last, lastStored), req.chunk)
 	found := make([]*statsExtentChunk, lastChunk-firstChunk+1)
+	var foundTiers []string
+	if tiers {
+		foundTiers = make([]string, len(found))
+	}
 	var wg sync.WaitGroup
 	for j := firstChunk; j <= lastChunk; j++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			raw, ok := p.cacheGet(ctx, p.cache, req.chunkKey(j))
+			raw, tier, ok := p.cacheGetWithTier(ctx, p.cache, req.chunkKey(j))
 			if !ok {
 				return
+			}
+			if tiers {
+				foundTiers[j-firstChunk] = tier
 			}
 			c, err := decodeStatsExtentChunk(raw)
 			if err != nil || c.from < j*req.chunk || c.to >= (j+1)*req.chunk || c.from > c.to {
@@ -610,12 +635,19 @@ func (p *Proxy) loadStatsExtentChunks(ctx context.Context, req *statsExtentReque
 	}
 	wg.Wait()
 	chunks := make(map[int64]*statsExtentChunk, len(found))
+	var chunkTiers map[int64]string
+	if tiers {
+		chunkTiers = make(map[int64]string, len(found))
+	}
 	for i, c := range found {
 		if c != nil {
 			chunks[firstChunk+int64(i)] = c
+			if tiers {
+				chunkTiers[firstChunk+int64(i)] = foundTiers[i]
+			}
 		}
 	}
-	return chunks
+	return chunks, chunkTiers
 }
 
 func statsExtentResponse(body []byte) *http.Response {

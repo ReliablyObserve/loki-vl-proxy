@@ -23,6 +23,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -68,6 +69,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		flow := telemetry.flow.metricsFlow(elapsed)
 		flow.CacheReads = telemetry.cacheReads.counts()
 		p.metrics.RecordRequestFlow(endpoint, route, flow)
+		served := servedClass(sc.code, telemetry.flow.vlCalls, telemetry.flow.cacheHits(), telemetry.reuse)
+		p.metrics.RecordServedRequest(endpoint, route, served, elapsed, int64(sc.bytesWritten), metrics.VLWork{
+			Calls: int64(telemetry.flow.vlCalls), Duration: telemetry.flow.vlDur, Bytes: telemetry.flow.vlBytes, Rows: telemetry.flow.vlRows})
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
@@ -182,6 +186,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows, "flow.served", served.String(),
+			"flow.reuse.recorded", int(telemetry.reuse.recorded), "flow.reuse.unknown", int(telemetry.reuse.unknown))
 		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {

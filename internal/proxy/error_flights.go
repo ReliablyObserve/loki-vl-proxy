@@ -323,6 +323,8 @@ type flightLead struct {
 	answerCode   int
 	answerHeader http.Header
 	answerClass  cache.ErrorClass
+	// rt is the leader's request telemetry: the answer's build cost (vl_reuse.go).
+	rt *requestTelemetry
 }
 
 // BuildAnswer is the leader's answer, carrying its exact key when the flight
@@ -334,6 +336,10 @@ func (l *flightLead) BuildAnswer() *cache.Answer {
 	// and builds no exact key.
 	if l.key.r != nil && l.answerClass != cache.ErrorRequest {
 		a.Key = l.key.exactKey()
+	}
+	if l.rt != nil {
+		w := l.rt.buildWork()
+		a.Cost = cache.BuildCost{Calls: w.Calls, Nanos: int64(w.Duration), Bytes: w.Bytes, Rows: w.Rows, Recorded: true}
 	}
 	return a
 }
@@ -583,7 +589,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		// A failure of this pre-key is held: read it under the exact key.
 		if held := ef.Peek(k.exactKey()); held != nil {
 			p.errorFlightCounters.held[held.Class].Add(1)
-			p.writeFlightAnswer(endpoint, route, w, r, held, start)
+			p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 			return
 		}
 	}
@@ -594,7 +600,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		if p.windowFreeHeldUntil.Load() > now {
 			if held := ef.Peek(wk); held != nil {
 				p.errorFlightCounters.held[held.Class].Add(1)
-				p.writeFlightAnswer(endpoint, route, w, r, held, start)
+				p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 				return
 			}
 		}
@@ -609,7 +615,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 	if held := p.heldRefusal(k.prefix, endpoint, r); held != nil {
 		// VictoriaLogs refuses this query whatever its window (vl_refusal.go).
 		p.errorFlightCounters.held[held.Class].Add(1)
-		p.writeFlightAnswer(endpoint, route, w, r, held, start)
+		p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 		return
 	}
 	for round := 0; round < maxFlightRounds; round++ {
@@ -617,7 +623,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		held, f, leads := ef.Join(key, &lead.fl)
 		if held != nil {
 			p.errorFlightCounters.held[held.Class].Add(1)
-			p.writeFlightAnswer(endpoint, route, w, r, held, start)
+			p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 			return
 		}
 		if leads {
@@ -629,7 +635,7 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 				if held := ef.Peek(k.exactKey()); held != nil {
 					ef.Finish(key, f, cache.OutcomeUnshared, nil, cache.Policy{})
 					p.errorFlightCounters.held[held.Class].Add(1)
-					p.writeFlightAnswer(endpoint, route, w, r, held, start)
+					p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 					return
 				}
 			}
@@ -653,15 +659,20 @@ func (p *Proxy) serveFlight(endpoint, route string, w http.ResponseWriter, r *ht
 		switch outcome {
 		case cache.OutcomeFailed:
 			p.errorFlightCounters.coalesced[answer.Class].Add(1)
-			p.writeFlightAnswer(endpoint, route, w, r, answer, start)
+			p.writeFlightAnswer(endpoint, route, w, r, answer, start, metrics.ReuseRequestFlight)
 			return
 		case cache.OutcomeSucceeded:
 			p.errorFlightCounters.succeeded.Add(1)
-			p.writeFlightAnswer(endpoint, route, w, r, answer, start)
+			p.writeFlightAnswer(endpoint, route, w, r, answer, start, metrics.ReuseRequestFlight)
 			return
 		case cache.OutcomeStored:
-			p.errorFlightCounters.succeeded.Add(1)
 			run(w, r, nil)
+			// The leader's answer is in the response cache: a follower the
+			// cache answered read it instead of running (counted there as a
+			// response reuse); one whose read missed ran on its own.
+			if cacheResultOf(r.Context()) == "hit" {
+				p.errorFlightCounters.succeeded.Add(1)
+			}
 			return
 		case cache.OutcomeReleased:
 			run(w, r, nil)
@@ -715,7 +726,7 @@ func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWrit
 	held, f, leads := p.errorFlights.Join(wk, &probe.fl)
 	if held != nil {
 		p.errorFlightCounters.held[held.Class].Add(1)
-		p.writeFlightAnswer(endpoint, route, w, r, held, start)
+		p.writeFlightAnswer(endpoint, route, w, r, held, start, metrics.ReuseHeldFailure)
 		return true
 	}
 	if leads {
@@ -731,7 +742,7 @@ func (p *Proxy) serveWindowFreeProbe(endpoint, route string, w http.ResponseWrit
 	}
 	if outcome == cache.OutcomeFailed {
 		p.errorFlightCounters.coalesced[answer.Class].Add(1)
-		p.writeFlightAnswer(endpoint, route, w, r, answer, start)
+		p.writeFlightAnswer(endpoint, route, w, r, answer, start, metrics.ReuseRequestFlight)
 		return true
 	}
 	return false // the backend answered the probe: this request runs as usual
@@ -753,6 +764,7 @@ func probeMarkerKey(wk string) string { return wk + "\x00probe" }
 // it would have run.
 func (p *Proxy) leadFlight(endpoint string, w http.ResponseWriter, r *http.Request, lead *flightLead, run func(http.ResponseWriter, *http.Request, *flightLead)) {
 	key, f := lead.key.join, lead.f
+	lead.rt = getRequestTelemetry(r.Context())
 	outcome := cache.OutcomeReleased
 	var (
 		build      cache.AnswerBuilder
@@ -968,8 +980,16 @@ func flightHeader(h http.Header) http.Header {
 }
 
 // writeFlightAnswer writes an answer another request produced, as it wrote it.
-func (p *Proxy) writeFlightAnswer(endpoint, route string, w http.ResponseWriter, r *http.Request, a *cache.Answer, start time.Time) {
+// layer is how the answer was reused: an identical request's answer in flight
+// (request_flight) or a held failure (held_failure).
+func (p *Proxy) writeFlightAnswer(endpoint, route string, w http.ResponseWriter, r *http.Request, a *cache.Answer, start time.Time, layer metrics.ReuseLayer) {
 	setCacheResult(r.Context(), "hit")
+	built := metrics.VLWork{Calls: a.Cost.Calls, Duration: time.Duration(a.Cost.Nanos), Bytes: a.Cost.Bytes, Rows: a.Cost.Rows}
+	if layer == metrics.ReuseRequestFlight {
+		p.noteSharedWork(r.Context(), layer, built, a.Cost.Recorded)
+	} else {
+		p.noteReuse(r.Context(), layer, metrics.ReuseL1Memory, built, a.Cost.Recorded)
+	}
 	h := w.Header()
 	for name, values := range a.Header {
 		if name != "Content-Type" && name != "X-Content-Type-Options" {

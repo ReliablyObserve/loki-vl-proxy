@@ -124,6 +124,9 @@ type DrilldownBurstCoalescer struct {
 	pending   map[burstKey]*burstGroup
 	window    time.Duration
 	maxFields int
+	// onJoined, when set, is told of a request whose field the fused call of
+	// another request read.
+	onJoined func(context.Context)
 }
 
 func newDrilldownBurstCoalescer(windowMs, maxFields int) *DrilldownBurstCoalescer {
@@ -155,6 +158,7 @@ func (c *DrilldownBurstCoalescer) Submit(
 		return nil, err
 	}
 	ch := make(chan fieldResult, 1)
+	joined := false
 
 	c.mu.Lock()
 	g := c.pending[key]
@@ -179,11 +183,18 @@ func (c *DrilldownBurstCoalescer) Submit(
 	} else {
 		g.fields = append(g.fields, field)
 		g.chans = append(g.chans, ch)
+		joined = true
 	}
 	c.mu.Unlock()
 
 	select {
 	case res := <-ch:
+		if joined && res.err == nil && c.onJoined != nil {
+			// Read by the fused call another request started: its own scan
+			// was never sent. The fused call's cost is not this field's, so
+			// the reuse has no recorded cost.
+			c.onJoined(ctx)
+		}
 		return res.series, res.err
 	case <-ctx.Done():
 		g.shared.Leave()

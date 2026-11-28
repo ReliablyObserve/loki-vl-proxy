@@ -86,6 +86,11 @@ type Coalescer struct {
 	CoalescedSaved atomic.Int64   // backend calls avoided by duplicate requests
 	WaitCount      atomic.Int64
 	WaitNanos      atomic.Int64
+	// OnCall, when set, gives the context a shared call runs on, from the call's shared context (set before the
+	// first call). OnShare, when set, is told of a caller that got a shared call's answer without running it: its
+	// own context and the context the call ran on (OnCall's).
+	OnCall  func(context.Context) context.Context
+	OnShare func(waiter, call context.Context)
 }
 
 func NewCoalescer() *Coalescer {
@@ -122,10 +127,12 @@ type SharedValuer interface {
 // is closed.
 type flight struct {
 	shared *SharedContext
-	done   chan struct{}
-	resp   *coalescedResponse
-	err    error
-	joined int // callers that took part in the call, the leader included
+	// callCtx is the context fn runs on, set before fn starts.
+	callCtx context.Context
+	done    chan struct{}
+	resp    *coalescedResponse
+	err     error
+	joined  int // callers that took part in the call, the leader included
 	// ctxEnded: the shared context had ended (its deadline, or every waiter
 	// left) when the call failed, read before the call is closed.
 	ctxEnded bool
@@ -186,6 +193,10 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 		// a cancelled call is never handed to a later caller.
 		executed = true
 		f = &flight{shared: NewSharedContext(ctx, true), done: make(chan struct{}), joined: 1}
+		f.callCtx = f.shared.Context()
+		if c.OnCall != nil {
+			f.callCtx = c.OnCall(f.callCtx)
+		}
 		c.flights[key] = f
 		go c.run(key, f, fn)
 	}
@@ -201,16 +212,22 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 	c.flightMu.Lock()
 	shared = f.joined > 1
 	c.flightMu.Unlock()
-	// A caller whose call did not execute avoided a backend call, even on shared failure.
-	if shared && !executed {
+	if f.err != nil {
+		inherited = !executed && f.ctxEnded &&
+			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
+	}
+	// A caller whose call did not execute avoided a backend call, even on shared failure; one that starts the call
+	// again after an inherited cancellation (do) avoided nothing.
+	if shared && !executed && !inherited {
 		c.CoalescedSaved.Add(1)
 		c.WaitCount.Add(1)
 		c.WaitNanos.Add(time.Since(started).Nanoseconds())
 	}
 	if f.err != nil {
-		inherited = !executed && f.ctxEnded &&
-			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
 		return 0, nil, nil, nil, shared, inherited, f.err
+	}
+	if !executed && c.OnShare != nil {
+		c.OnShare(ctx, f.callCtx)
 	}
 	if shared {
 		c.CoalescedTotal.Add(1)
@@ -234,7 +251,7 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 		c.flightMu.Unlock()
 		close(f.done)
 	}()
-	resp, err := fn(f.shared.Context())
+	resp, err := fn(f.callCtx)
 	if err != nil {
 		f.err, f.ctxEnded = err, f.shared.Context().Err() != nil
 		return

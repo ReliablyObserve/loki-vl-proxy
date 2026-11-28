@@ -54,6 +54,11 @@ type requestTelemetry struct {
 	// request's later lines (query_caller.go); callerResolved is set with them.
 	callerAttrs    []any
 	callerResolved bool
+	// reuse counts the answers the request reused (vl_reuse.go), in the padding after the flag above.
+	reuse flowReuse
+	// shared is the VictoriaLogs work the request received from calls it shared (vl_reuse.go), nil until it shares
+	// one.
+	shared *sharedWork
 	// statsWriter fills the stats of a query or query_range answer while the
 	// handler runs (query_stats.go).
 	statsWriter *queryStatsWriter
@@ -103,6 +108,7 @@ type requestTelemetrySnapshot struct {
 	internalDurationByType map[string]time.Duration
 	flow                   flowCounters
 	cacheReads             flowReads
+	reuse                  flowReuse
 }
 
 type requestRouteMeta struct {
@@ -160,6 +166,17 @@ func setCacheResult(ctx context.Context, result string) {
 	rt.mu.Lock()
 	rt.cacheResult = result
 	rt.mu.Unlock()
+}
+
+// cacheResultOf is the request's cache result so far ("bypass" outside a request).
+func cacheResultOf(ctx context.Context) string {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return "bypass"
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.cacheResult
 }
 
 func splitHostPortValue(addr string) (string, int) {
@@ -300,6 +317,7 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		internalDurationByType: internalDurationByType,
 		flow:                   rt.flow,
 		cacheReads:             rt.cacheReads,
+		reuse:                  rt.reuse,
 	}
 }
 
