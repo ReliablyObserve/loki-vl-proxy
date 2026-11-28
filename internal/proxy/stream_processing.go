@@ -632,7 +632,7 @@ type cachedLogQueryStreamDescriptor struct {
 	translatedLabels map[string]string
 	// collisionLabels are the stream labels a parsed key collides with: the
 	// translated labels, and in -field-mapping-label-mode both every name the
-	// answer gives a mapped field (withBothStreamNames).
+	// answer gives a mapped field the stream stores (bothCollisionLabels).
 	collisionLabels map[string]string
 }
 
@@ -1213,7 +1213,7 @@ func (p *Proxy) logRowStreamDescriptor(rawStream []byte, s logRowStream, levelBy
 		streamLabels:     s.labels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
-		collisionLabels:  p.bothCollisionLabels(translatedLabels),
+		collisionLabels:  p.bothCollisionLabels(rawLabels, translatedLabels),
 	}
 	descriptorCache[string(key)] = desc
 	return desc
@@ -1271,7 +1271,7 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 		streamLabels:     baseLabels,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
-		collisionLabels:  p.bothCollisionLabels(translatedLabels),
+		collisionLabels:  p.bothCollisionLabels(rawLabels, translatedLabels),
 	}
 	descriptorCache[cacheKey] = desc
 	return desc

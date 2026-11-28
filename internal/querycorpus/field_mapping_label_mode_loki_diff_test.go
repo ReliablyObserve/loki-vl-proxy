@@ -641,8 +641,9 @@ const (
 	// alias mode rule that every name of a mapping is a query name.
 	fmKnownAliasBase = "alias mode: the -label-style name of a mapped field reads the field after a parser"
 	// fmKnownBothNative: in the both mode a stream that stores pod itself (never renamed) also carries k8s_pod_name
-	// in the answer (the both layer adds every name of the field the answer label pod reads), so its parsed
-	// k8s_pod_name is renamed beside it; a Loki storing both names holds pod alone on such a stream.
+	// in the answer (the both layer adds every name of the field the answer label pod reads); a Loki storing both
+	// names holds pod alone on such a stream. Its parsed k8s_pod_name keeps its name (only a stream that stores the
+	// mapped field collides with the -label-style name).
 	fmKnownBothNative = "both mode: a stream storing the alias itself gains the -label-style name"
 	// fmKnownBothBaseGrouping: in the both mode a grouping by the -label-style name fills the field from the parsed
 	// alias key (pod) where the stream lacks the field, not from the parsed k8s_pod_name key. These rows (and the alias
@@ -674,7 +675,6 @@ var fmKnown = map[string]string{
 	`both log {service_name="fm-logfmt"} | logfmt | pod_extracted=~".+-1"`:                                                                  fmKnownBothNative,
 	`both metric sum by (k8s_pod_name) (count_over_time({service_name="fm-json"} | json [5m]))`:                                             fmKnownBothBaseGrouping,
 	`both metric sum by (k8s_pod_name) (count_over_time({service_name="fm-logfmt"} | logfmt [5m]))`:                                         fmKnownBothBaseGrouping,
-	`both metric sum by (k8s_pod_name_extracted) (count_over_time({service_name="fm-json"} | json [5m]))`:                                   fmKnownBothNative,
 }
 
 // TestFieldMappingLabelModesMatchLoki replays the recorded answers through the handlers: the unset and original

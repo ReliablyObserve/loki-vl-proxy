@@ -721,6 +721,25 @@ func FuzzFieldMappingLabelMode(f *testing.F) {
 						t.Fatalf("both: added %q is no listed name", k)
 					}
 				}
+				// The collision labels of a stream descriptor: never overwrite a
+				// label, and add only listed names of a field the stream stores.
+				p := &Proxy{labelTranslator: lt}
+				raw := map[string]string{field1: "a1"}
+				translated := map[string]string{lt.ToLoki(field1): "a1", label2: "v2"}
+				collision := p.bothCollisionLabels(raw, translated)
+				for k, v := range translated {
+					if collision != nil && collision[k] != v {
+						t.Fatalf("both: collision label %q overwritten: %q -> %q", k, v, collision[k])
+					}
+				}
+				for k := range collision {
+					if _, had := translated[k]; had {
+						continue
+					}
+					if !slices.Contains(lt.listing[field1], k) {
+						t.Fatalf("both: collision name %q is no listed name of the stored field %q (%v)", k, field1, lt.listing)
+					}
+				}
 			}
 			for _, m := range mappings {
 				if m.VLField == "" || m.LokiLabel == "" {

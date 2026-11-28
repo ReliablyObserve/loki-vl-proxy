@@ -893,6 +893,7 @@
     ],
     "loki_api_v1_tail": [
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/field_mapping_collision_test.go",
       "internal/proxy/plan_defect_test.go",
       "internal/proxy/tail_backend_errors_test.go",
       "internal/proxy/tail_backend_retry_test.go",
@@ -4369,6 +4370,7 @@
     "internal/proxy/field_mapping_collision_test.go": [
       "field-mapping-label-names",
       "loki_api_v1_query_range",
+      "loki_api_v1_tail",
       "semantics/field-mapping-label-modes"
     ],
     "internal/proxy/field_mapping_labels_test.go": [

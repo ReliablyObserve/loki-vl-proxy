@@ -772,6 +772,11 @@ type tailPipeline struct {
 	exposure        *lineFieldExposure
 	lineFields      map[string]bool
 	lineFormat      string
+	// bothNames: the both mode adds every name of a mapped field to the stream
+	// labels of a query with stages, as bothNamesLayer does for query_range,
+	// except the names bothSkip holds.
+	bothNames bool
+	bothSkip  map[string]bool
 	// resume tracks what a native tail delivered, so a stream reopened after
 	// a backend outage carries on from there (tail_retry.go).
 	resume tailResume
@@ -790,7 +795,7 @@ const tailScanBufferInitial = 4 * 1024
 
 func (p *Proxy) newTailPipeline(query string, levelAsMetadata bool) *tailPipeline {
 	lq, err := parseLogQLQuery(noFlowCtx, query)
-	return &tailPipeline{
+	tp := &tailPipeline{
 		query:           query,
 		noop:            err == nil && len(lq.Pipeline) == 0,
 		levelAsMetadata: levelAsMetadata,
@@ -798,6 +803,12 @@ func (p *Proxy) newTailPipeline(query string, levelAsMetadata bool) *tailPipelin
 		lineFields:      logQueryLineFields(query),
 		lineFormat:      extractLineFormatTemplate(query),
 	}
+	if !tp.noop && p.labelTranslator.answersBothNames() {
+		var all bool
+		tp.bothSkip, all = p.bothNamesSkip(noFlowCtx, query)
+		tp.bothNames = !all
+	}
+	return tp
 }
 
 // tailEntry is one entry of a tail frame.
@@ -873,6 +884,14 @@ func (p *Proxy) tailEntries(ctx context.Context, tp *tailPipeline, rows []byte) 
 	for _, s := range streams {
 		labels, _ := s["stream"].(map[string]string)
 		values, _ := s["values"].([]interface{})
+		if tp.bothNames {
+			// The stream labels may be a shared descriptor map: names are
+			// added to a copy.
+			named := cloneStringMap(labels)
+			if p.labelTranslator.addBothNames(named, tp.bothSkip) {
+				labels = named
+			}
+		}
 		_, storedLevel := labels[detectedLevelLabel]
 		if tp.levelAsMetadata && storedLevel {
 			// Loki's tail encoder differs from its query encoder here
