@@ -46,7 +46,7 @@ type metadataSeriesKey struct{}
 type metadataSeriesMemo struct {
 	mu      sync.Mutex
 	entries []metadataSeriesEntry
-	counts  map[string]int64
+	hists   map[string][]rowHistogram
 	// rebuilt are the reads the request rebuilt, by their rebuilt text.
 	rebuilt map[string]logsql.SeriesIdentityRead
 }
@@ -74,21 +74,25 @@ func (m *metadataSeriesMemo) rebuiltRead(text string) (logsql.SeriesIdentityRead
 	return r, ok
 }
 
-func (m *metadataSeriesMemo) rows(key string) (int64, bool) {
+func (m *metadataSeriesMemo) histogram(filter string, from, to int64) (rowHistogram, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	n, ok := m.counts[key]
-	return n, ok
+	for _, h := range m.hists[filter] {
+		if h.lo <= from && to < h.hi {
+			return h, true
+		}
+	}
+	return rowHistogram{}, false
 }
 
-func (m *metadataSeriesMemo) setRows(key string, n int64) {
+func (m *metadataSeriesMemo) addHistogram(filter string, h rowHistogram) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.counts == nil {
-		m.counts = map[string]int64{}
+	if m.hists == nil {
+		m.hists = map[string][]rowHistogram{}
 	}
-	if len(m.counts) < 64 {
-		m.counts[key] = n
+	if len(m.hists) < 16 && len(m.hists[filter]) < 4 {
+		m.hists[filter] = append(m.hists[filter], h)
 	}
 }
 
@@ -212,11 +216,11 @@ func (p *Proxy) seriesMetadataFor(ctx context.Context, memo *metadataSeriesMemo,
 	params.Set("query", filter)
 	params.Set("start", strconv.FormatInt(lo, 10))
 	params.Set("end", strconv.FormatInt(hi, 10))
-	fields, err := p.fetchAllFieldNamesCached(ctx, params)
+	fields, err := p.seriesMetadataListing(ctx, "/select/logsql/field_names", "smfn:", params)
 	if err != nil {
 		return logsql.SeriesMetadata{}, false, err
 	}
-	stream, err := p.fetchStreamFieldNamesCached(ctx, params)
+	stream, err := p.seriesMetadataListing(ctx, "/select/logsql/stream_field_names", "smsfn:", params)
 	if err != nil {
 		return logsql.SeriesMetadata{}, false, err
 	}
@@ -370,48 +374,92 @@ func statsExtentFragmentBytes(f *statsExtentFragment) int64 {
 // the request (its time chunks and operands share the read's filter).
 func (p *Proxy) seriesMetadataReadRows(ctx context.Context, read logsql.SeriesIdentityRead, params url.Values) (int64, error) {
 	memo := metadataSeriesOf(ctx)
-	key := read.Filter() + "\x00" + params.Get("start") + "\x00" + params.Get("end")
-	if rows, ok := memo.rows(key); ok {
-		return rows, nil
+	from, okFrom := parseFlexibleUnixNanos(params.Get("start"))
+	to, okTo := parseFlexibleUnixNanos(params.Get("end"))
+	if !okFrom || !okTo || to < from {
+		return 0, errors.New("metadata series read without a window")
 	}
+	filter := read.Filter()
+	hist, ok := memo.histogram(filter, from, to)
+	if !ok {
+		var err error
+		if hist, err = p.seriesMetadataRowHistogram(ctx, read, from, to); err != nil {
+			return 0, err
+		}
+		memo.addHistogram(filter, hist)
+	}
+	return hist.rows(from, to), nil
+}
+
+// rowHistogram is the rows a filter matches per whole hour of [lo, hi).
+type rowHistogram struct {
+	lo, hi int64
+	hours  []int64
+}
+
+// rows is the rows of every hour [from, to] touches: at least the rows of [from, to].
+func (h rowHistogram) rows(from, to int64) int64 {
+	align := metadataSeriesDiscoveryAlign.Nanoseconds()
+	var n int64
+	for i, c := range h.hours {
+		start := h.lo + int64(i)*align
+		if start <= to && start+align > from {
+			n += c
+		}
+	}
+	return n
+}
+
+// seriesMetadataRowHistogram reads the rows read's filters match per hour of [from, to] widened to whole hours, in one
+// stats_query_range read: the request's reads (its time chunks, its operands) are bounded from it without a read
+// each.
+func (p *Proxy) seriesMetadataRowHistogram(ctx context.Context, read logsql.SeriesIdentityRead, from, to int64) (rowHistogram, error) {
+	align := metadataSeriesDiscoveryAlign.Nanoseconds()
+	h := rowHistogram{lo: from / align * align, hi: (to/align + 1) * align}
+	h.hours = make([]int64, (h.hi-h.lo)/align)
 	count := url.Values{}
 	count.Set("query", read.RowCount())
-	count.Set("start", params.Get("start"))
-	count.Set("end", params.Get("end"))
-	count.Set("time", params.Get("end"))
-	resp, err := p.vlPost(ctx, "/select/logsql/stats_query", count)
+	count.Set("start", strconv.FormatInt(h.lo, 10))
+	count.Set("end", strconv.FormatInt(h.hi-1, 10))
+	count.Set("step", "1h")
+	// The count is a read of its own: not the request's folded read, not one its chunk's meter counts.
+	countCtx := context.WithValue(context.WithValue(ctx, seriesFoldKey{}, (*seriesFoldRead)(nil)), statsReadMeterKey{}, (*statsReadMeter)(nil))
+	resp, err := p.vlPost(countCtx, statsQueryRangePath, count)
 	if err != nil {
-		return 0, err
+		return rowHistogram{}, err
 	}
 	defer resp.Body.Close()
 	body, err := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 	if err != nil {
-		return 0, err
+		return rowHistogram{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return 0, p.redactedBackendStatusError("stats_query backend", resp.StatusCode, body)
+		return rowHistogram{}, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 	var answer struct {
 		Data struct {
 			Result []struct {
-				Value []any `json:"value"`
+				Values [][]any `json:"values"`
 			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &answer); err != nil {
-		return 0, err
+		return rowHistogram{}, err
 	}
-	var rows int64
 	for _, r := range answer.Data.Result {
-		if len(r.Value) == 2 {
-			if s, ok := r.Value[1].(string); ok {
-				n, _ := strconv.ParseInt(s, 10, 64)
-				rows += n
+		for _, v := range r.Values {
+			if len(v) != 2 {
+				continue
+			}
+			ts, _ := v[0].(float64)
+			c, _ := v[1].(string)
+			n, _ := strconv.ParseInt(c, 10, 64)
+			if i := (int64(ts*1e9) - h.lo) / align; i >= 0 && i < int64(len(h.hours)) {
+				h.hours[i] += n
 			}
 		}
 	}
-	memo.setRows(key, rows)
-	return rows, nil
+	return h, nil
 }
 
 // metadataSeriesRowBytes is the fewest bytes a series of one row takes in a rebuilt read's answer (its _stream with
@@ -497,4 +545,21 @@ func splitFreeAggregation(op logql.VectorOp, ra *queryplan.RangeAgg) bool {
 		return ra.Op == logql.RangeMinOverTime
 	}
 	return false
+}
+
+// seriesMetadataListing is a field listing of params' window in one VictoriaLogs call (cached as the label listings
+// are): the identity's listings need no per-day or per-hour pieces of the window, which a cold request would read one
+// by one.
+func (p *Proxy) seriesMetadataListing(ctx context.Context, path, prefix string, params url.Values) ([]string, error) {
+	key := p.metadataFieldNamesCacheKey(ctx, prefix, params)
+	if fields, ok := p.cachedFieldNames(ctx, key); ok {
+		return fields, nil
+	}
+	items, err := p.fetchVLListingOnce(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
+	fields := listingValues(items)
+	p.storeFieldNames(key, fields)
+	return fields, nil
 }
