@@ -473,7 +473,7 @@ func (w *stepAnswerWriter) Write(b []byte) (int, error) {
 	return w.body.Write(b)
 }
 
-// stepVerdicts remember, per replica, the multiple of the step a request needed.
+// stepVerdicts remember, per replica, the step a request needed (eff), or that no coarser step answered it (eff 0).
 type stepVerdicts struct {
 	seed maphash.Seed
 	n    atomic.Int64
@@ -711,8 +711,14 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 		if p.stepVerdicts != nil && p.stepVerdicts.n.Load() > 0 {
 			if sr, ok := p.stepRequestOf(r, lim); ok {
 				sr.verdict = p.verdictKey(r, sr.query, sr.stepRaw, sr.in.endNs-sr.in.startNs)
-				if v, found := p.stepVerdicts.get(sr.verdict, time.Now()); found && v.eff > sr.in.step {
-					if p.serveAtStep(w, r, rt, cached, sr, v.eff, lim.mode, v.reason, "learned", nil) {
+				if v, found := p.stepVerdicts.get(sr.verdict, time.Now()); found {
+					if v.eff == 0 {
+						// No coarser step answered this request on this replica: it is served as sent, without
+						// trying them again.
+						next(w, r)
+						return
+					}
+					if v.eff > sr.in.step && p.serveAtStep(w, r, rt, cached, sr, v.eff, lim.mode, v.reason, "learned", nil) {
 						return
 					}
 				}
@@ -734,6 +740,10 @@ func (p *Proxy) rangeStepLayer(next, cached http.HandlerFunc) http.HandlerFunc {
 					}
 					if p.serveAtStep(w, r, rt, cached, sr, eff, lim.mode, st.first().reason, "retry", hw) {
 						return
+					}
+					if sr.verdict != 0 {
+						// Remember that no coarser step answered, so a repeat costs what it costs as sent.
+						p.stepVerdicts.put(sr.verdict, 0, st.first().reason, time.Now())
 					}
 				}
 			}
@@ -786,6 +796,9 @@ func (p *Proxy) serveAtStep(w http.ResponseWriter, r *http.Request, rt *requestT
 			// fails the same way past its read bound, so the effective request's answer is the request's.
 			if hw != nil {
 				hw.restoreHeaders()
+			}
+			if sr.verdict != 0 && p.stepVerdicts != nil {
+				p.stepVerdicts.put(sr.verdict, eff, reason, time.Now())
 			}
 			p.writeStepAnswer(w, out, nil)
 			return true

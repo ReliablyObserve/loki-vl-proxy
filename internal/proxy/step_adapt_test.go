@@ -714,3 +714,29 @@ func TestStepLayer_EffectiveRequestsOwnErrorIsTheAnswer(t *testing.T) {
 		t.Fatalf("%d %q, want the effective request's %d %q", rec.Code, rec.Body.String(), direct.Code, direct.Body.String())
 	}
 }
+
+// TestStepLayer_NoStepAnswersIsRemembered: when no coarser step answers a request (Loki's own message size, a read
+// the step does not lower enough), a repeat is served as sent without trying the coarser steps again.
+//
+// conformance: limits/range-metric-step-adapt
+func TestStepLayer_NoStepAnswersIsRemembered(t *testing.T) {
+	p := stepTestProxy(t, nil)
+	stub := &stepStub{p: p, fits: 24 * time.Hour}
+	effective := &stepStub{p: p, fits: 24 * time.Hour}
+	h := p.rangeStepLayer(stub.serve, effective.serve)
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		h(rec, stepRequestFor(stepTestQuery, 50*time.Millisecond, "t"))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("run %d: %d %s", i, rec.Code, rec.Body.String())
+		}
+	}
+	if got := len(effective.seen()); got == 0 || got > stepAdaptMaxRetries {
+		t.Fatalf("%d effective requests over two runs, want the first run's only (1..%d)", got, stepAdaptMaxRetries)
+	}
+	first := len(effective.seen())
+	h(httptest.NewRecorder(), stepRequestFor(stepTestQuery, 50*time.Millisecond, "t"))
+	if len(effective.seen()) != first || len(stub.seen()) != 3 {
+		t.Fatalf("a repeat tried coarser steps again: %v / %v", stub.seen(), effective.seen())
+	}
+}
