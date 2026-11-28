@@ -24,6 +24,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
@@ -70,6 +71,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		flow := telemetry.flow.metricsFlow(elapsed)
 		flow.CacheReads = telemetry.cacheReads.counts()
 		p.metrics.RecordRequestFlow(endpoint, route, flow)
+		served := servedClass(sc.code, telemetry.flow.vlCalls, telemetry.flow.cacheHits(), telemetry.reuse)
+		p.metrics.RecordServedRequest(endpoint, route, served, elapsed, int64(sc.bytesWritten), metrics.VLWork{
+			Calls: int64(telemetry.flow.vlCalls), Duration: telemetry.flow.vlDur, Bytes: telemetry.flow.vlBytes, Rows: telemetry.flow.vlRows})
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
@@ -163,7 +167,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		for key, value := range telemetry.internalDurationByType {
 			internalDurationByTypeMs[key] = value.Milliseconds()
 		}
-		logAttrs := make([]interface{}, 0, 80)
+		logAttrs := make([]interface{}, 0, 88) // 88 values: 1408 B, a size class
 		logAttrs = append(logAttrs,
 			"http.route", route,
 			"url.path", r.URL.Path,
@@ -184,6 +188,14 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
 		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
+		// The rows and reuse counts are written only when the request had them, so other lines keep their size.
+		logAttrs = append(logAttrs, "flow.served", servedClassNames[served])
+		if telemetry.flow.vlRows > 0 {
+			logAttrs = append(logAttrs, "flow.vl.rows", telemetry.flow.vlRows)
+		}
+		if telemetry.reuse.recorded > 0 || telemetry.reuse.unknown > 0 {
+			logAttrs = append(logAttrs, "flow.reuse.recorded", int(telemetry.reuse.recorded), "flow.reuse.unknown", int(telemetry.reuse.unknown))
+		}
 		logAttrs = telemetry.inventory.appendLogAttrs(logAttrs)
 		logAttrs = append(logAttrs, p.callerLogAttrs(reqCtx)...)
 		if len(telemetry.upstreamCallsByType) > 0 {

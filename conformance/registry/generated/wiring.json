@@ -1014,6 +1014,11 @@
       "internal/proxy/query_flow_test.go",
       "internal/proxy/slow_query_log_test.go"
     ],
+    "observability-vl-savings": [
+      "internal/metrics/vl_savings_test.go",
+      "internal/middleware/coalescer_hooks_test.go",
+      "internal/proxy/vl_reuse_test.go"
+    ],
     "operator-and": [
       "internal/proxy/binary_physical_test.go",
       "internal/querycorpus/binary_ops_loki_diff_test.go",
@@ -1654,6 +1659,7 @@
     ],
     "semantics/error-coalescing-no-inherited-cancel": [
       "internal/middleware/coalescer_cancel_test.go",
+      "internal/middleware/coalescer_hooks_test.go",
       "internal/proxy/error_flights_edge_test.go",
       "internal/proxy/error_flights_test.go",
       "internal/proxy/flight_cancel_test.go",
@@ -3419,7 +3425,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 780,
+  "registry_items": 781,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/answer_cache_ttl_test.go": [
@@ -3872,11 +3878,18 @@
     "internal/metrics/scrape_assets_test.go": [
       "observability-metrics-histograms-and-labels"
     ],
+    "internal/metrics/vl_savings_test.go": [
+      "observability-vl-savings"
+    ],
     "internal/middleware/coalescer_body_limit_test.go": [
       "limits/label-values-response-cap"
     ],
     "internal/middleware/coalescer_cancel_test.go": [
       "backend-deadlines-and-cancellation",
+      "semantics/error-coalescing-no-inherited-cancel"
+    ],
+    "internal/middleware/coalescer_hooks_test.go": [
+      "observability-vl-savings",
       "semantics/error-coalescing-no-inherited-cancel"
     ],
     "internal/proxy/absent_label_replace_test.go": [
@@ -5943,6 +5956,9 @@
     "internal/proxy/vl_regexp_class_test.go": [
       "quality/probe-regexp-parse-cost"
     ],
+    "internal/proxy/vl_reuse_test.go": [
+      "observability-vl-savings"
+    ],
     "internal/proxy/volume_segments_test.go": [
       "loki_api_v1_index_volume",
       "quality/index-volume-settled-segments"
@@ -7666,7 +7682,7 @@
       "observability-metrics-histograms-and-labels"
     ]
   },
-  "tests_with_markers": 925,
+  "tests_with_markers": 928,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -7823,5 +7839,5 @@
     "versions/rejected-stats-query-wording-vl-1.47",
     "versions/release-unknown-behind-vmauth"
   ],
-  "wired_items": 512
+  "wired_items": 513
 }

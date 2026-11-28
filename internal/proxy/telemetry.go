@@ -61,7 +61,12 @@ type requestTelemetry struct {
 	// the bytes the stats layer wrote after that point. It sits in the padding
 	// after the flag above.
 	statsPrefixCapture bool
-	statsSuffix        []byte
+	// reuse counts the answers the request reused (vl_reuse.go), in the padding after the flags above.
+	reuse       flowReuse
+	statsSuffix []byte
+	// shared is the VictoriaLogs work the request received from calls it shared (vl_reuse.go), nil until it shares
+	// one.
+	shared *sharedWork
 	// statsWriter fills the stats of a query or query_range answer while the
 	// handler runs (query_stats.go).
 	statsWriter *queryStatsWriter
@@ -82,13 +87,15 @@ type requestTelemetry struct {
 	inventoryAdmissionDeadline time.Time
 	// The slow-query log's trace of the request (slow_query_log.go): kept when traceOn, from start, until
 	// traceClosed (the request's log line).
-	start        time.Time
-	traceOn      bool
-	traceClosed  bool
-	planChecked  bool // the request's first VictoriaLogs call has been checked against its planning budget
+	start       time.Time
+	traceOn     bool
+	traceClosed bool
+	planChecked bool // the request's first VictoriaLogs call has been checked against its planning budget
+	// traceCache is the cache steps kept, bounded by slowTraceMaxCacheSteps; a byte in the padding after the flags
+	// above leaves room for shared without a larger allocation of the telemetry.
+	traceCache   uint8
 	trace        []slowTraceStep
 	traceDropped int
-	traceCache   int // cache steps kept, bounded by slowTraceMaxCacheSteps
 }
 
 type requestTelemetrySnapshot struct {
@@ -106,6 +113,7 @@ type requestTelemetrySnapshot struct {
 	internalDurationByType map[string]time.Duration
 	flow                   flowCounters
 	cacheReads             flowReads
+	reuse                  flowReuse
 }
 
 type requestRouteMeta struct {
@@ -163,6 +171,17 @@ func setCacheResult(ctx context.Context, result string) {
 	rt.mu.Lock()
 	rt.cacheResult = result
 	rt.mu.Unlock()
+}
+
+// cacheResultOf is the request's cache result so far ("bypass" outside a request).
+func cacheResultOf(ctx context.Context) string {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return "bypass"
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.cacheResult
 }
 
 func splitHostPortValue(addr string) (string, int) {
@@ -303,6 +322,7 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		internalDurationByType: internalDurationByType,
 		flow:                   rt.flow,
 		cacheReads:             rt.cacheReads,
+		reuse:                  rt.reuse,
 	}
 }
 

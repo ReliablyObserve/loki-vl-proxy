@@ -86,6 +86,49 @@ type Coalescer struct {
 	CoalescedSaved atomic.Int64   // backend calls avoided by duplicate requests
 	WaitCount      atomic.Int64
 	WaitNanos      atomic.Int64
+	// OnShare, when set (before the first call), is told of a caller that got a shared call's answer without
+	// running it: the caller's context and the work measured for the call (CallWorkFrom of the call's context).
+	OnShare func(waiter context.Context, work *CallWork)
+}
+
+// CallWork is the backend work recorded for one shared call while it ran: whoever measures a backend call made
+// with the call's context (CallWorkFrom) adds to it. It is complete once the call's answer is read.
+type CallWork struct {
+	Calls, Nanos, Bytes, Rows atomic.Int64
+	// parent is the work of the shared call this one runs inside, if any: a call's work includes its inner calls.
+	parent *CallWork
+}
+
+// Add records one measured piece of backend work in the call and in every call it runs inside.
+func (w *CallWork) Add(calls, nanos, bytes, rows int64) {
+	for ; w != nil; w = w.parent {
+		w.Calls.Add(calls)
+		w.Nanos.Add(nanos)
+		w.Bytes.Add(bytes)
+		w.Rows.Add(rows)
+	}
+}
+
+type callWorkKey struct{}
+
+// CallWorkFrom is the work of the shared call ctx belongs to, or nil outside one.
+func CallWorkFrom(ctx context.Context) *CallWork {
+	w, _ := ctx.Value(callWorkKey{}).(*CallWork)
+	return w
+}
+
+// callContext is the context a shared call runs on: the call's shared context, carrying its work. It lives in
+// the flight, so a call allocates nothing more for it.
+type callContext struct {
+	context.Context
+	work *CallWork
+}
+
+func (c *callContext) Value(key any) any {
+	if _, ok := key.(callWorkKey); ok {
+		return c.work
+	}
+	return c.Context.Value(key)
 }
 
 func NewCoalescer() *Coalescer {
@@ -122,10 +165,13 @@ type SharedValuer interface {
 // is closed.
 type flight struct {
 	shared *SharedContext
-	done   chan struct{}
-	resp   *coalescedResponse
-	err    error
-	joined int // callers that took part in the call, the leader included
+	// callCtx is the context fn runs on and work what was measured for the call, both set before fn starts.
+	callCtx callContext
+	work    CallWork
+	done    chan struct{}
+	resp    *coalescedResponse
+	err     error
+	joined  int // callers that took part in the call, the leader included
 	// ctxEnded: the shared context had ended (its deadline, or every waiter
 	// left) when the call failed, read before the call is closed.
 	ctxEnded bool
@@ -186,6 +232,8 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 		// a cancelled call is never handed to a later caller.
 		executed = true
 		f = &flight{shared: NewSharedContext(ctx, true), done: make(chan struct{}), joined: 1}
+		f.work.parent = CallWorkFrom(ctx)
+		f.callCtx = callContext{Context: f.shared.Context(), work: &f.work}
 		c.flights[key] = f
 		go c.run(key, f, fn)
 	}
@@ -201,16 +249,22 @@ func (c *Coalescer) doOnce(ctx context.Context, key string, fn func(context.Cont
 	c.flightMu.Lock()
 	shared = f.joined > 1
 	c.flightMu.Unlock()
-	// A caller whose call did not execute avoided a backend call, even on shared failure.
-	if shared && !executed {
+	if f.err != nil {
+		inherited = !executed && f.ctxEnded &&
+			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
+	}
+	// A caller whose call did not execute avoided a backend call, even on shared failure; one that starts the call
+	// again after an inherited cancellation (do) avoided nothing.
+	if shared && !executed && !inherited {
 		c.CoalescedSaved.Add(1)
 		c.WaitCount.Add(1)
 		c.WaitNanos.Add(time.Since(started).Nanoseconds())
 	}
 	if f.err != nil {
-		inherited = !executed && f.ctxEnded &&
-			(errors.Is(f.err, context.Canceled) || errors.Is(f.err, context.DeadlineExceeded))
 		return 0, nil, nil, nil, shared, inherited, f.err
+	}
+	if !executed && c.OnShare != nil {
+		c.OnShare(ctx, &f.work)
 	}
 	if shared {
 		c.CoalescedTotal.Add(1)
@@ -234,7 +288,7 @@ func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.R
 		c.flightMu.Unlock()
 		close(f.done)
 	}()
-	resp, err := fn(f.shared.Context())
+	resp, err := fn(&f.callCtx)
 	if err != nil {
 		f.err, f.ctxEnded = err, f.shared.Context().Err() != nil
 		return

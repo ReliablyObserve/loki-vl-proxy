@@ -148,6 +148,14 @@ type Cache struct {
 	segFreeN int
 }
 
+// MaxEntries is the memory tier's entry bound (-cache-max), 0 for a disabled cache.
+func (c *Cache) MaxEntries() int {
+	if c == nil || c.disabled {
+		return 0
+	}
+	return c.maxEntries
+}
+
 // MaxEntrySizeBytes returns the largest object this cache will retain.
 // Entries larger than this threshold are rejected to protect the cache from
 // a single oversized response consuming a disproportionate share of memory.

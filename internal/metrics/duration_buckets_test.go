@@ -185,6 +185,9 @@ func recordEveryHistogram(m *Metrics, d time.Duration) {
 	m.RecordQueryRangeWindowPrefilterDuration(d)
 	m.RecordQueryRangeWindowCount(3)
 	m.RecordUpstreamCallsPerRequest("query_range", 2)
+	m.RecordServedRequest("query_range", "", ServedVL, d, 1, VLWork{Calls: 1, Duration: d})
+	m.RecordVLReuse("query_range", "", ReuseResponse, ReuseL1Memory, VLWork{Calls: 1, Duration: d}, true)
+	m.RecordVLReuse("query_range", "", ReuseWindow, ReuseL3Peer, VLWork{}, false)
 }
 
 var durationFamilies = []string{
@@ -197,6 +200,7 @@ var durationFamilies = []string{
 	"loki_vl_proxy_window_fetch_seconds",
 	"loki_vl_proxy_window_merge_seconds",
 	"loki_vl_proxy_window_prefilter_duration_seconds",
+	"loki_vl_proxy_served_request_duration_seconds",
 }
 
 // conformance: observability-metrics-histograms-and-labels

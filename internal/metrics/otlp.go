@@ -310,6 +310,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics, p.requestMetrics(now)...)
 	metrics = append(metrics, p.upstreamFanoutMetrics(now)...)
 	metrics = append(metrics, p.cacheReadsPerRequestMetrics(now)...)
+	metrics = append(metrics, p.savingsMetrics(now)...)
 	metrics = append(metrics, p.tenantMetrics(now)...)
 	metrics = append(metrics, p.clientErrorMetrics(now)...)
 	metrics = append(metrics, p.endpointCacheMetrics(now)...)

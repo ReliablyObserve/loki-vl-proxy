@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/lokierr"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/gorilla/websocket"
 )
@@ -834,25 +836,26 @@ func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Req
 // compatCacheLookup checks the edge cache first, then the routing-scoped
 // shared cache for completed query and series replies. The same freshness
 // rule applies to both tiers, including replies recovered from disk or peers.
-func (p *Proxy) compatCacheLookup(endpoint string, r *http.Request, key string, ttl time.Duration) ([]byte, time.Duration, string, bool) {
+// A hit also reports the tier that answered it.
+func (p *Proxy) compatCacheLookup(endpoint string, r *http.Request, key string, ttl time.Duration) ([]byte, time.Duration, string, string, bool) {
 	value, remaining, age, ok := p.cacheGetWithAge(r.Context(), p.compatCache, key)
 	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
-		return value, remaining, "", true
+		return value, remaining, "", "l1_memory", true
 	}
 	if p.cache == nil {
-		return nil, 0, "", false
+		return nil, 0, "", "", false
 	}
 	switch endpoint {
 	case "query", "query_range", "series":
 	default:
-		return nil, 0, "", false
+		return nil, 0, "", "", false
 	}
 	sharedKey := key + ":routing:" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
-	value, remaining, age, _, ok = p.cacheGetSharedWithAge(r.Context(), p.cache, sharedKey)
+	value, remaining, age, tier, ok := p.cacheGetSharedWithAge(r.Context(), p.cache, sharedKey)
 	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
-		return value, remaining, sharedKey, true
+		return value, remaining, sharedKey, tier, true
 	}
-	return nil, 0, sharedKey, false
+	return nil, 0, sharedKey, "", false
 }
 
 func (p *Proxy) storeCompatSharedReply(key string, body []byte, ttl time.Duration) {
@@ -926,11 +929,13 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 // serveCompatHit answers r from the edge cache or the routing-scoped shared
 // cache; it returns the shared key a miss stores under.
 func (p *Proxy) serveCompatHit(endpoint, route string, w http.ResponseWriter, r *http.Request, cacheKey string, ttl time.Duration, start time.Time) (bool, string) {
-	cached, remainingTTL, sharedKey, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
+	cached, remainingTTL, sharedKey, tier, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
 	if !ok {
 		return false, sharedKey
 	}
 	setCacheResult(r.Context(), "hit")
+	// The build work of a shared reply is recorded under both keys (compatCacheMiss).
+	p.noteCachedReuse(r.Context(), cmp.Or(sharedKey, cacheKey), metrics.ReuseResponse, tier)
 	// A query answer gets this request's stats (query_stats_cache.go).
 	if !p.serveCompatHitWithStats(w, r, cacheKey, cached, remainingTTL) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1011,6 +1016,9 @@ func (p *Proxy) compatCacheMiss(endpoint string, w http.ResponseWriter, r *http.
 			p.storeCompatSharedReply(sharedKey, value, ttl)
 			p.storeCompatOversizedReply(sharedKey, cacheKey, value, ttl)
 			recordFlowCacheStore(r.Context(), cacheKey, len(value))
+			if rt := getRequestTelemetry(r.Context()); rt != nil {
+				p.noteBuilt(rt.buildWork(), cacheKey, sharedKey)
+			}
 			storedBody = body
 			lead.markStored()
 		}

@@ -53,6 +53,8 @@ type Metrics struct {
 
 	// Per-request work and phase times, and per-lookup cache times (request_flow.go)
 	flow *flowMetrics
+	// savings is what the proxy saved VictoriaLogs and its clients (vl_savings.go).
+	savings *savingsMetrics
 
 	// Singleflight coalescing stats
 	coalescedTotal         atomic.Int64 // requests served from coalesced results
@@ -457,6 +459,7 @@ func NewMetricsWithDurationBuckets(maxTenantLabels, maxClientLabels int, exportS
 		loweringShadowTotal:        make(map[string]*atomic.Int64),
 		planDefectsTotal:           make(map[string]*atomic.Int64),
 		flow:                       newFlowMetrics(durationBuckets),
+		savings:                    newSavingsMetrics(durationBuckets),
 		durationBuckets:            durationBuckets,
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
@@ -2577,6 +2580,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.writeRequestFlowMetrics(&sb)
+	m.writeSavingsMetrics(&sb)
 
 	// Singleflight coalescing stats
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_total Requests served from coalesced results.\n")

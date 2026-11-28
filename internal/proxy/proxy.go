@@ -850,6 +850,9 @@ type Proxy struct {
 	queryTracker  *metrics.QueryTracker
 	coalescer     *mw.Coalescer
 	errorFlights  *cache.ErrorFlights
+	// buildCosts is the VictoriaLogs work measured while each cached answer was built (vl_reuse.go); nil without a
+	// cache.
+	buildCosts *buildCostLedger
 	// flightShares maps a request flight (*cache.Flight) its leader runs to the
 	// shared context the leader's handler runs on (leadFlight): a follower joins
 	// it, so the run ends only when the last of its requests went away.
@@ -1863,6 +1866,13 @@ func New(cfg Config) (*Proxy, error) {
 		}
 	}
 	p.metrics.SetCoalescerStatsProvider(coalescerStats)
+	if _, _, on := cfg.Cache.Tiers(); on || cfg.CompatCache != nil {
+		p.buildCosts = newBuildCostLedger(cfg.Cache.MaxEntries() + cfg.CompatCache.MaxEntries())
+	}
+	p.coalescer.OnShare = p.coalescedCallShared
+	if p.drilldownCoalescer != nil {
+		p.drilldownCoalescer.onJoined = func(ctx context.Context) { p.noteSharedWork(ctx, metrics.ReuseBurst, metrics.VLWork{}, false) }
+	}
 	p.metrics.SetErrorFlightStatsProvider(p.errorFlightStats)
 	// A release leaves the capability window six re-probe intervals (and a probe round) after it was last seen: behind a
 	// load balancer each read reaches one random member, and a window this wide keeps the chance that an older member

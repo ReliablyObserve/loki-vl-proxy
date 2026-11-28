@@ -27,6 +27,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
@@ -518,16 +519,19 @@ func (p *Proxy) fetchQueryRangeWindow(
 	// with fewer rows, as an earlier version read later windows, cannot
 	// answer a request which needs more rows from the same aligned window.
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, windowLimit, window, shape, categorizedLabels, emitStructuredMetadata)
-	if cached, _, _, ok := p.cacheGetShared(ctx, p.cache, cacheKey); ok {
+	if cached, _, tier, ok := p.cacheGetShared(ctx, p.cache, cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
 			if err := json.Unmarshal(decompressed, &entry); err == nil {
 				p.metrics.RecordQueryRangeWindowCacheHit()
+				p.noteCachedReuse(ctx, cacheKey, metrics.ReuseWindow, tier)
 				return entry, nil
 			}
 		}
 	}
 	p.metrics.RecordQueryRangeWindowCacheMiss()
+	// The window's VictoriaLogs work is its build cost (vl_reuse.go).
+	fetchCtx, built := withWorkScope(fetchCtx)
 
 	windowQuery := withQueryDirectionSort(logsqlQuery, r.FormValue("direction"))
 	params := url.Values{}
@@ -584,6 +588,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 					// L1, L2 and its peer owner. A restart or another frontend can then
 					// reuse settled windows without reading VictoriaLogs again.
 					p.cache.SetWithTTL(cacheKey, compressed, ttl)
+					p.noteBuilt(built.work(), cacheKey)
 				}
 			}
 			return cacheEntry, nil

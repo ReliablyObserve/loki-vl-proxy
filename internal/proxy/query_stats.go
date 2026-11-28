@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
@@ -130,8 +131,12 @@ func recordFlowQueue(ctx context.Context, d time.Duration) {
 }
 
 func recordFlowVLRows(ctx context.Context, rows int64) {
+	if rows <= 0 {
+		return
+	}
+	addScopeWork(ctx, metrics.VLWork{Rows: rows})
 	rt := getRequestTelemetry(ctx)
-	if rt == nil || rows <= 0 {
+	if rt == nil {
 		return
 	}
 	rt.mu.Lock()

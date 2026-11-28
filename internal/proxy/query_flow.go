@@ -285,6 +285,7 @@ func (rt *requestTelemetry) recordParseSince(start time.Time) {
 
 // recordFlowVL counts a VictoriaLogs call timed to the end of its body (the slow-query log's definition).
 func recordFlowVL(ctx context.Context, d time.Duration, bytes int64) {
+	addScopeWork(ctx, metrics.VLWork{Calls: 1, Duration: d, Bytes: max(bytes, 0)})
 	rt := getRequestTelemetry(ctx)
 	if rt == nil {
 		return
@@ -349,10 +350,16 @@ func (p *Proxy) observeCacheLookup(ctx context.Context, start time.Time, c *cach
 
 // cacheGet reads c through every tier (cache.Cache.GetWithTier).
 func (p *Proxy) cacheGet(ctx context.Context, c *cache.Cache, key string) ([]byte, bool) {
+	v, _, ok := p.cacheGetWithTier(ctx, c, key)
+	return v, ok
+}
+
+// cacheGetWithTier is cacheGet that also returns the tier that answered.
+func (p *Proxy) cacheGetWithTier(ctx context.Context, c *cache.Cache, key string) ([]byte, string, bool) {
 	start := time.Now()
 	v, tier, ok := c.GetWithTier(key)
 	p.observeCacheLookup(ctx, start, c, reachStack, tier, key, ok, false, len(v))
-	return v, ok
+	return v, tier, ok
 }
 
 // cachePeek reads c's memory tier without an LRU promotion (cache.Cache.Peek).
